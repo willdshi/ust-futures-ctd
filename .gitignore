@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+
+# Environments (conda env lives outside the repo; these catch local venvs)
+.venv/
+venv/
+.env
+.conda/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code (share settings/extensions if desired, ignore the rest)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.code-workspace
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Data store: raw snapshots keyed by as-of date. Anchored so src/ctd/data/ is NOT ignored.
+/data/*
+!/data/.gitkeep
+
+# Report output
+/output/

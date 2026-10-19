@@ -1,0 +1,14 @@
+name: ctd
+channels:
+  - defaults
+dependencies:
+  - python=3.13
+  - pyarrow
+  - ipykernel
+  - scipy
+  - openpyxl
+  - requests
+  - pytest
+  - pandas
+  - numpy
+  - matplotlib

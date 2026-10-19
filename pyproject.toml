@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctd"
+version = "0.1.0"
+description = "End-of-day CTD probabilities, fair value and key rate durations for CBOT Treasury futures"
+readme = "docs/design.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "pyarrow",
+    "requests",
+    "openpyxl",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ipykernel"]
+
+[project.scripts]
+ctd = "ctd.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+markers = [
+    "slow: long-running tests (backtests, full grids)",
+    "network: tests that hit external data sources",
+]
+xfail_strict = true
