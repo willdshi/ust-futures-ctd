@@ -75,7 +75,6 @@ The figures above are a working summary. **Verify each against the current CBOT 
 | Bond prices by CUSIP | TreasuryDirect daily prices | Yes (prior-day close) | Probably (check depth of past-date lookup) | Single price, rounded, lagged; off-the-runs noisy; slow to pull, so cache |
 | Futures settlements (all eight Treasury contracts, all listed months) | CME settlements | Yes | **No** (paid DataMine) | Collection may be manual; respect terms of use |
 | Futures option settlements by strike (section 3.1) | CME settlements | Yes | **No** (paid) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
-| Futures and options volume and open interest | CME daily volume/OI reports | Yes | **No** | Published with a lag |
 | Deliveries by contract (delivered CUSIPs, if published) | CME delivery reports | Delivery months | **No** | Ground truth for backtest scoring; confirm what CME publishes |
 | Constant-maturity yields | Treasury par curve (CMT), FRED | Yes | Yes, decades | Smoothed curve, not bond-specific |
 | GC funding | NY Fed SOFR (also TGCR, BGCR) | Yes | Since 2018 | Overnight only |
@@ -95,7 +94,7 @@ Daily, for all eight Treasury futures contracts, store the full CME option settl
 | As-of date, option product, expiry date | Keys; expiry drives the term-structure interpolation |
 | Underlying futures contract and its settlement price | Moneyness; mapping vol to the right CTD |
 | Put/call, strike, settlement premium | Implied vol, skew, digitals |
-| Volume and open interest (if published) | Liquidity filter only |
+| Volume and open interest (if on the settlement page) | Liquidity tiebreaker only; the filters below are price-based |
 
 Coverage:
 - **Expiries**: every listed expiry (quarterly, serial and all weeklies) on every listed underlying month. The model chooses which to use; storing all of them is cheap, keeps past dates reproducible, and can't be done later.
@@ -123,7 +122,6 @@ A free source that only shows recent days is lost for good on any day it isn't p
 **Not backfillable for free: pull every business day, full files, unfiltered.**
 - CME futures settlements: all eight Treasury contracts (ZT, Z3N, ZF, ZN, TN, TWE, ZB, UB), all listed months, including calendar-spread settlements if published.
 - CME option settlements: options on all eight, every listed expiry, every strike, puts and calls.
-- CME volume and open interest reports for those futures and options.
 - CME deliverable baskets and conversion factor tables for every listed contract month, pulled daily so changes after auctions are captured. CME doesn't keep past versions.
 - CME delivery reports during delivery months (actual deliveries; backtest ground truth).
 - CME 1-month SOFR, 3-month SOFR and 30-day fed funds futures settlements (repo path, 5.3).
@@ -137,7 +135,7 @@ A free source that only shows recent days is lost for good on any day it isn't p
 **Operations**
 - `ctd fetch` runs on a schedule every business day after CME final settlements are published. It is idempotent: re-running a date never overwrites a stored file, it only fills what's missing.
 - Each date gets a manifest listing every expected file and its status. A completeness check flags missing products, and a gap triggers retry and an alert.
-- Find out how many past days each CME page still shows. That is the recovery window for a missed run; beyond it, record the gap rather than fill it from another source.
+- Recovery window for a missed run: CME futures and option settlement pages show **5 trailing business days**. The windows for CF tables and delivery reports are still to be confirmed (section 11); treat them as zero until then. Beyond the window, record the gap rather than fill it from another source.
 - Store files exactly as downloaded (lossless compression at rest is fine). Record the source URL and download timestamp alongside each file.
 - Respect each source's terms of use (section 11).
 
@@ -311,7 +309,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 ## 11. Open questions
 
 - How to collect CME settlements reliably (manual download vs vendor) within their terms of use?
-- How many past days does each CME page (settlements, volume/OI, CF tables, delivery reports) still show? That sets the recovery window for a missed run.
+- How many past days do CME's CF table and delivery report pages still show? (Futures and option settlements: 5 business days, confirmed.)
 - What exactly do CME's delivery reports publish (delivered CUSIPs and amounts, or only totals)?
 - How far back does TreasuryDirect's past-date price lookup go?
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?

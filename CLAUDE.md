@@ -31,7 +31,6 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
   - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
     - CME futures settlements and options chains for all eight contracts
-    - volume/OI
     - CF tables
     - delivery reports
     - SOFR and fed funds futures
