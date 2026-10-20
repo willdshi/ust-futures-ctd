@@ -17,6 +17,10 @@ class FetchError(Exception):
     """A source returned nothing usable; nothing is stored for it."""
 
 
+class NoData(FetchError):
+    """The source answered normally but has nothing for this date (e.g. a holiday)."""
+
+
 @dataclass(frozen=True)
 class Response:
     url: str

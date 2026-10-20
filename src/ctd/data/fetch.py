@@ -6,10 +6,14 @@ from pathlib import Path
 
 from ctd.data import manifest as mf
 from ctd.data import refdata, registry
-from ctd.data.http import Http
+from ctd.data.http import Http, NoData
 from ctd.data.inbox import MANUAL_UNIT
 from ctd.data.sources import SourceSpec
 from ctd.data.store import RawStore, utc_now
+
+# A source with nothing for a date this many business days later never will have (holiday, no
+# publication). Before that, nothing may just mean not published yet: a failure, retried next run.
+NO_DATA_SETTLED_AFTER = 5
 
 
 def _unit_entry(status: str, files: list[str], origin: str | None = None, error: str | None = None) -> dict:
@@ -20,6 +24,8 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
               lag: int, prev: dict | None, has_manual: bool) -> dict:
     names = store.names(asof, spec.id, unit)
     if prev and prev["status"] == mf.OK and set(prev["files"]) <= set(names):
+        return prev
+    if prev and prev["status"] == mf.NOT_EXPECTED and not names:
         return prev
     if names and any(store.meta(asof, spec.id, unit, n).get("origin") == "manual" for n in names):
         return _unit_entry(mf.OK, names, origin="manual")
@@ -37,6 +43,10 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
                     "method": f.method, "params": f.params, "downloaded_at": utc_now()}
             store.write(asof, spec.id, unit, f.name, f.content, meta)
             stored.append(f.name)
+    except NoData as e:
+        if lag > NO_DATA_SETTLED_AFTER and not stored:
+            return _unit_entry(mf.NOT_EXPECTED, [], error=f"no data published: {e}")
+        return _unit_entry(mf.FAILED, store.names(asof, spec.id, unit), error=f"{type(e).__name__}: {e}")
     except Exception as e:  # one failing source must not stop the others
         return _unit_entry(mf.FAILED, store.names(asof, spec.id, unit), error=f"{type(e).__name__}: {e}")
     return _unit_entry(mf.OK, stored, origin="auto")

@@ -137,3 +137,17 @@ def test_save_keeps_entries_written_by_another_run(store):
 
     _, man = run(store, Interleaved(gov_routes()), sources=[registry.SOURCES["fred"]], fill_missing=False)
     assert statuses(man) == {"td_prices": mf.OK, "fred": mf.OK}
+
+
+def test_no_data_on_an_old_date_is_not_a_gap(store):
+    empty = [("POST", "https://www.treasurydirect.gov/GA-FI/FedInvest/securityPriceDetail", ok("x", b""))]
+    spec = [registry.SOURCES["td_prices"]]
+    old = date(2024, 11, 28)  # Thanksgiving 2024: not in the holiday list, no prices published
+    gaps, man = run(store, FakeHttp(empty + gov_routes()), asof=old, today=MON, sources=spec, fill_missing=False)
+    assert statuses(man)["td_prices"] == mf.NOT_EXPECTED and not gaps
+    http = FakeHttp(gov_routes())
+    run(store, http, asof=old, today=MON, sources=spec, fill_missing=False)
+    assert http.calls == []  # settled: not asked again
+    # The same empty answer for a recent date is a failure, retried on the next run.
+    _, man = run(store, FakeHttp(empty + gov_routes()), sources=spec)
+    assert statuses(man)["td_prices"] == mf.FAILED

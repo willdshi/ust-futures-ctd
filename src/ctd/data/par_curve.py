@@ -1,7 +1,10 @@
-"""Treasury daily interest rate CSVs (par yield curve and related tables), one file per year.
+"""Treasury daily interest rate CSVs (nominal par yield curve and bill rates), one file per year.
 
 The file for a year holds every date published so far, so a file stored for an as-of date
 can contain later dates when fetched after the fact; readers filter by date.
+
+Treasury's real yield curve and long-term rate tables aren't collected: TIPS aren't deliverable,
+the long-term composites are averages the model doesn't use, and all of them can be backfilled.
 """
 
 from collections.abc import Iterator
@@ -15,10 +18,7 @@ URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rate
 # Table type -> first year published.
 TYPES = {
     "daily_treasury_yield_curve": 1990,
-    "daily_treasury_real_yield_curve": 2003,
     "daily_treasury_bill_rates": 2002,
-    "daily_treasury_long_term_rate": 2000,
-    "daily_treasury_real_long_term": 2000,
 }
 
 
@@ -40,8 +40,8 @@ def fetch_history(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
 
 
 SPECS = [
-    SourceSpec("par_curve", "Treasury daily rate tables, current year", Kind.HISTORY, "cme",
+    SourceSpec("par_curve", "Treasury par yield curve and bill rates, current year", Kind.HISTORY, "cme",
                units=lambda asof, cal: list(TYPES), fetch=fetch),
-    SourceSpec("par_curve_backfill", "Treasury daily rate tables, all past years (one-off)", Kind.HISTORY,
+    SourceSpec("par_curve_backfill", "Treasury par yield curve and bill rates, all past years (one-off)", Kind.HISTORY,
                "cme", units=lambda asof, cal: list(TYPES), fetch=fetch_history, schedule="backfill"),
 ]

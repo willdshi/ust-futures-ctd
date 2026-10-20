@@ -78,11 +78,11 @@ The figures above are a working summary. **Verify each against the current CBOT 
 |---|---|---|---|---|
 | Basket and conversion factors | Rules + CF formula; CME's daily TCF files (public FTP) for validation | Yes | Rebuild from rules + formula; TCF files from December 2023 | Validate rebuilt baskets and CFs against the TCF files |
 | Security terms (CUSIP, coupon, maturity, dated date) | TreasuryDirect / FiscalData | Yes | Yes | Include since-matured issues for history |
-| Bond prices by CUSIP | TreasuryDirect daily prices | Yes (prior-day close) | Probably (check depth of past-date lookup) | Single price, rounded, lagged; off-the-runs noisy; slow to pull, so cache |
+| Bond prices by CUSIP | TreasuryDirect daily prices | Yes (prior-day close) | Yes, from 30 May 2008 (until about September 2008, CUSIP and prices only); stored from 2016 | Single price, rounded, lagged; off-the-runs noisy; slow to pull, so cache |
 | Futures settlements (all six Treasury contracts, all listed months) | CME settlements | Yes | **No** (paid DataMine) | Used only for vol conversion (5.5) and open interest; collection may be manual; respect terms of use |
 | Futures option settlements by strike (section 3.1) | CME settlements | Yes | **No** (paid) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
 | Deliveries by contract (delivered CUSIPs, if published) | CME delivery reports | Delivery months | **No** | Nice to have: tiebreaker for backtest cycles where the actual CTD is ambiguous from prices (section 8); confirm what CME publishes |
-| Constant-maturity yields | Treasury par curve (CMT), FRED | Yes | Yes, decades | Smoothed curve, not bond-specific |
+| Constant-maturity yields | Treasury par yield curve (CMT) and daily bill rates, FRED | Yes | Yes, decades | Smoothed curve, not bond-specific |
 | GC funding | NY Fed SOFR (also TGCR, BGCR) | Yes | Since 2018 | Overnight only |
 | 1-month and 3-month SOFR, 30-day fed funds futures | CME settlements | Yes | **No** | For stepped/stripped repo path |
 | CTD-specific repo | **Not available free** | — | — | Not used: GC for all bonds (no fair value, section 1) |
@@ -130,14 +130,14 @@ A free source that only shows recent days is lost for good on any day it isn't p
 - CME futures settlements: all six Treasury contracts (ZT, ZF, ZN, TN, ZB, UB), all listed months, including calendar-spread settlements if published.
 - CME option settlements: options on all six, every listed expiry, every strike, puts and calls.
 - CME 1-month SOFR, 3-month SOFR and 30-day fed funds futures settlements (repo path, 5.3).
-- TreasuryDirect daily prices: the whole file, every CUSIP, every day. How far back past dates can be looked up is still an open question (section 11), so don't rely on it.
+- TreasuryDirect daily prices: the whole file, every CUSIP, every day. Past dates can currently be looked up back to 30 May 2008, but don't rely on that lasting. History from 2016 is stored once with `ctd backfill --prices-from 2016-01-01`.
 
 **Occasional: not needed daily.**
 - CME delivery reports during delivery months, when convenient. Nice to have, not required: the actual CTD is computed from prices (section 8), and a report only settles the ambiguous cycles, and only if it lists delivered CUSIPs.
 
 **Backfillable: pull daily anyway, and backfill once at setup.**
 - CME Treasury conversion factor tables (TCF) from CME's public FTP server (`ftp.cmegroup.com/settle/TCF/`): a CSV and an xlsx for every business day, back to December 2023. Validation data for the CF formula and basket rebuilds; consecutive files show the day CME changed a basket. How long CME keeps them is unknown (section 11), hence the daily pull.
-- Treasury par curve (CMT), FRED series.
+- Treasury nominal par yield curve (CMT) and daily bill rates, FRED series. Not Treasury's real yield curve or long-term rate tables: TIPS aren't deliverable and the long-term composites are averages the model doesn't use.
 - NY Fed SOFR, TGCR and BGCR.
 - FiscalData / TreasuryDirect security terms and auction results, including matured issues.
 
@@ -326,7 +326,7 @@ Affects futures value, not durations or the probability of a major switch materi
 Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts, from free data.
 
 - **Baskets**: rebuild per past contract from the issue list (including since-matured issues) and eligibility rules; compute CFs with the formula. Validate against any published past tables. This is the main effort.
-- **Prices**: past TreasuryDirect prices by CUSIP; cache aggressively.
+- **Prices**: past TreasuryDirect prices by CUSIP, stored from 2016 (available from May 2008). Before about September 2008 the files have no coupon or maturity columns; join on CUSIP to the security terms.
 - **Repo**: SOFR (from 2018); GC only.
 - **Vol**: realised EWMA vol of the reference CMT yield replaces implied vol.
 - **No futures/option history** (paid), so historical mode drops option-implied probabilities. Probabilities are realised-vol based, not risk-neutral.
@@ -369,7 +369,6 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - How to collect CME settlements reliably? cmegroup.com refuses scripted connections (bot protection), and CME's public FTP server carries only the TCF tables of what's needed. Until a paid feed is chosen, futures settlement JSONs and the options bulletin are downloaded in a browser with the `ctd bookmarklet` (one click a day). Which feed, if any (DataMine, Databento, Barchart OnDemand)?
 - How long does CME keep TCF files on its FTP server (December 2023 onwards as of October 2026)?
 - What exactly do CME's delivery reports publish (delivered CUSIPs and amounts, or only totals), and how many past days do their pages show? Only matters for settling ambiguous backtest cycles (section 8). (Futures and option settlements: 5 business days, confirmed.)
-- How far back does TreasuryDirect's past-date price lookup go?
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?
 - Realised-vol window for historical mode, and how it compares with implied vol once live snapshots accumulate?
 - The Treasury par curve only has 1, 2, 3, 5, 7, 10, 20 and 30-year points. Should the 1-year-step betas (5.4) come from interpolating the curve, or from a fitted curve on bond prices? This matters most for ZB (only 20y and 30y in its range) and UB (only 30y in its range, so its betas are extrapolated).

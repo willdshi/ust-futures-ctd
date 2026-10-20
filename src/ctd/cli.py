@@ -14,7 +14,7 @@
 import argparse
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 CATCH_UP_DAYS = 5  # CME settlement pages show 5 trailing business days
@@ -108,6 +108,17 @@ def cmd_backfill(args) -> int:
         print(f"{d} cme_tcf: {_source_status(store, d, spec.id)}")
     if odd:
         print(f"cme_tcf: skipped files dated on non-business days: {', '.join(odd)}")
+
+    # TreasuryDirect prices by date (available from 30 May 2008), each under its own date.
+    if args.prices_from:
+        spec, cal = registry.SOURCES["td_prices"], refdata.calendar("sifma")
+        d = args.prices_from
+        while d <= asof:
+            if cal.is_business_day(d):
+                got = fetch_date(d, store, http, sources=[spec], fill_missing=False, log=lambda _: None)
+                gaps += [g for g in got if g.source == spec.id]
+                print(f"{d} td_prices: {_source_status(store, d, spec.id)}")
+            d += timedelta(days=1)
     return _report(gaps)
 
 
@@ -190,6 +201,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     b = sub.add_parser("backfill", help="one-off histories (par curve years, NY Fed since 2018, CME TCF files)")
     asof_args(b)
+    b.add_argument("--prices-from", type=date.fromisoformat,
+                   help="also store TreasuryDirect daily prices from this date (earliest 2008-05-30)")
     b.set_defaults(func=cmd_backfill)
 
     sub.add_parser("ingest", help="move bookmarklet downloads and manual-drop files into the raw store"
