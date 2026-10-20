@@ -77,7 +77,7 @@ pages = [
 # the Daily Bulletin page it uses the link there whose URL contains link_match;
 # elsewhere it falls back to url (unverified).
 [[bulletin]]
-source = "cme_opt"
+source = "cme_bulletin"
 name = "Section42"
 link_match = "Section42"
 url = "https://www.cmegroup.com/daily_bulletin/current/Section42_10YrNote_5yrNote_2yrNote_30YrBond_Options.pdf"

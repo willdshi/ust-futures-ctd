@@ -68,6 +68,8 @@ def gaps(manifest: dict) -> list[Gap]:
     asof = date.fromisoformat(manifest["asof"])
     out = []
     for sid, src in manifest["sources"].items():
+        if src.get("schedule") == "occasional":  # nice to have: never a gap
+            continue
         units = src.get("units") or {}
         if not units and src["status"] in GAPS:
             out.append(Gap(asof, sid, "*", src["status"], src.get("reason")))

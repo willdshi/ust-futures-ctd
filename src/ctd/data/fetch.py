@@ -56,7 +56,7 @@ def _run_source(spec: SourceSpec, asof: date, store: RawStore, http: Http | None
                 prev: dict | None) -> dict:
     cal = refdata.calendar(spec.calendar)
     entry = {"description": spec.description, "kind": str(spec.kind), "calendar": spec.calendar,
-             "status": mf.NOT_EXPECTED, "reason": None, "units": {}}
+             "schedule": spec.schedule, "status": mf.NOT_EXPECTED, "reason": None, "units": {}}
     if not cal.is_business_day(asof):
         entry["reason"] = f"not a {spec.calendar} business day"
         return entry
@@ -96,7 +96,7 @@ def fetch_date(asof: date, store: RawStore, http: Http | None, *, sources: Itera
     for spec in registry.daily() if fill_missing else []:
         if spec.id not in man["sources"]:
             man["sources"][spec.id] = {"description": spec.description, "kind": str(spec.kind),
-                                       "calendar": spec.calendar, "status": mf.MISSING,
+                                       "calendar": spec.calendar, "schedule": spec.schedule, "status": mf.MISSING,
                                        "reason": "not run yet", "units": {}}
     mf.save(store, asof, man)
     gaps = mf.gaps(man)

@@ -62,4 +62,5 @@ def cme_routes():
          ok("https://www.cmegroup.com/delivery_reports/treasury.html",
             b'<a href="/files/report.pdf">report</a> <a href="/files/report.pdf">again</a>', "text/html")),
         ("GET", "https://www.cmegroup.com/files/", ok("x", b"%PDF-1.4", "application/pdf")),
+        ("GET", "https://www.cmegroup.com/daily_bulletin/", ok("x", b"%PDF-1.4 bulletin", "application/pdf")),
     ]

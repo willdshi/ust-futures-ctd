@@ -13,7 +13,7 @@ def test_config_has_every_product_with_an_id():
     assert {f["code"] for f in futures} == {"ZT", "ZF", "ZN", "TN", "ZB", "UB", "SR1", "SR3", "ZQ"}
     assert all(isinstance(f["id"], int) for f in futures)
     assert {f["source"] for f in futures} == {"cme_fut", "cme_stir"}
-    assert bookmarklet.config()["bulletins"][0]["source"] == "cme_opt"
+    assert bookmarklet.config()["bulletins"][0]["source"] == "cme_bulletin"
 
 
 def test_url_round_trips_to_script():

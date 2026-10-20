@@ -93,7 +93,7 @@ Design rules:
 
 ### 3.1 Options chain required
 
-Daily, for all six Treasury futures contracts, store the full CME option settlement file as downloaded (the model reads ZN, ZB and UB). The model needs these fields from it:
+Daily, for all six Treasury futures contracts, store the full CME option settlements as downloaded (the model reads ZN, ZB and UB). While cmegroup.com blocks scripts, they come as the Daily Bulletin's Section 42 PDF, which covers all six contracts, every listed expiry and strike, weeklies included. CME's per-product option settlement files are collected only if automated access ever works. The model needs these fields:
 
 | Field | Use |
 |---|---|
@@ -128,7 +128,7 @@ A free source that only shows recent days is lost for good on any day it isn't p
 
 **Not backfillable for free: pull every business day, full files, unfiltered.**
 - CME futures settlements: all six Treasury contracts (ZT, ZF, ZN, TN, ZB, UB), all listed months, including calendar-spread settlements if published.
-- CME option settlements: options on all six, every listed expiry, every strike, puts and calls.
+- CME option settlements: options on all six, every listed expiry, every strike, puts and calls. Collected as the Daily Bulletin's Section 42 PDF (section 3.1).
 - CME 1-month SOFR, 3-month SOFR and 30-day fed funds futures settlements (repo path, 5.3).
 - TreasuryDirect daily prices: the whole file, every CUSIP, every day. Past dates can currently be looked up back to 30 May 2008, but don't rely on that lasting. History from 2016 is stored once with `ctd backfill --prices-from 2016-01-01`.
 
@@ -367,6 +367,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 ## 11. Open questions
 
 - How to collect CME settlements reliably? cmegroup.com refuses scripted connections (bot protection), and CME's public FTP server carries only the TCF tables of what's needed. Until a paid feed is chosen, futures settlement JSONs and the options bulletin are downloaded in a browser with the `ctd bookmarklet` (one click a day). Which feed, if any (DataMine, Databento, Barchart OnDemand)?
+- Option settlements from the Section 42 PDF: tested on 2026-10-16 with pdfplumber and pypdf, and the text extracts cleanly (about 3,200 strike rows in 35 pages). Layout: a product and put/call header (e.g. "10Y NOTE CALL", or a weekly such as "HYO OPT WK THU"), then an expiry label ("DEC26"), then one row per strike: strike (1055 = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high and low, prices in 64ths. Each block ends in a TOTAL line. The header also states the trade date and FINAL. Check: the 100.5 December ZN call settled at 4-61/64 with delta 1.000, against futures at 105-14.5 (intrinsic 4.95). Open: write the parser (phase 2), validating each block (strikes increasing, columns complete) because the layout can change without notice.
 - How long does CME keep TCF files on its FTP server (December 2023 onwards as of October 2026)?
 - What exactly do CME's delivery reports publish (delivered CUSIPs and amounts, or only totals), and how many past days do their pages show? Only matters for settling ambiguous backtest cycles (section 8). (Futures and option settlements: 5 business days, confirmed.)
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?

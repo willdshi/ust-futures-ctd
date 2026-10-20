@@ -84,14 +84,14 @@ def test_collect_downloads(tmp_path):
     dl.mkdir()
     (dl / "ctd_2026-10-16_cme_fut_ZN.json").write_bytes(b"zn")
     (dl / "ctd_2026-10-16_cme_fut_ZB (1).json").write_bytes(b"zb")  # browser's repeat-download name
-    (dl / "ctd_2026-10-16_cme_opt_Section42.pdf").write_bytes(b"%PDF")
+    (dl / "ctd_2026-10-16_cme_bulletin_Section42.pdf").write_bytes(b"%PDF")
     (dl / "ctd_2026-10-16_nonsense_X.json").write_bytes(b"?")
     (dl / "holiday.jpg").write_bytes(b"not ours")
-    collect_downloads(dl, inbox, {"cme_fut", "cme_opt"})
+    collect_downloads(dl, inbox, {"cme_fut", "cme_bulletin"})
     day = inbox / "2026-10-16"
     assert (day / "cme_fut" / "ZN.json").read_bytes() == b"zn"
     assert (day / "cme_fut" / "ZB.json").read_bytes() == b"zb"
-    assert (day / "cme_opt" / "Section42.pdf").exists()
+    assert (day / "cme_bulletin" / "Section42.pdf").exists()
     assert sorted(p.name for p in dl.iterdir()) == ["ctd_2026-10-16_nonsense_X.json", "holiday.jpg"]
 
 

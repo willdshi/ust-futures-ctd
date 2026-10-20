@@ -85,9 +85,10 @@ SPECS = [
     SourceSpec("cme_fut", "CME Treasury futures settlements, all six contracts, all months", Kind.DATED,
                "cme", units=lambda asof, cal: list(_products("treasury")), fetch=_futures("treasury"),
                window=WINDOW, cme=True),
+    # Occasional: options arrive daily as the Daily Bulletin (cme_bulletin) while cmegroup.com blocks scripts.
     SourceSpec("cme_opt", "CME options on Treasury futures, every expiry and strike", Kind.DATED, "cme",
                units=lambda asof, cal: list(_products("treasury")), fetch=fetch_options,
-               window=WINDOW, cme=True),
+               window=WINDOW, cme=True, schedule="occasional"),
     SourceSpec("cme_stir", "CME 1M SOFR, 3M SOFR and 30-day fed funds futures settlements", Kind.DATED,
                "cme", units=lambda asof, cal: list(_products("stir")), fetch=_futures("stir"),
                window=WINDOW, cme=True),

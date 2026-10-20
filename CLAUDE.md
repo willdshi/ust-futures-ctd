@@ -30,7 +30,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. The model reads only from that store, never from the network directly, and re-running a past date must give the same answer.
 - **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
   - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
-    - CME futures settlements and options chains for all six contracts (browser bookmarklet; cmegroup.com blocks scripts)
+    - CME futures settlements for all six contracts, and their option settlements as the Daily Bulletin's Section 42 PDF (browser bookmarklet; cmegroup.com blocks scripts)
     - CME conversion factor tables (TCF, from CME's public FTP server)
     - SOFR and fed funds futures
     - the full TreasuryDirect price file

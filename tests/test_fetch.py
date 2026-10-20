@@ -10,7 +10,7 @@ from ctd.data.inbox import ingest
 
 FRI = date(2026, 10, 16)
 MON = date(2026, 10, 19)
-CME_IDS = {"cme_fut", "cme_opt", "cme_stir"}
+CME_IDS = {"cme_fut", "cme_bulletin", "cme_stir"}
 
 
 def run(store, http, asof=FRI, today=FRI, **kw):
@@ -26,7 +26,7 @@ def test_auto_sources_ok_and_cme_manual_needed(store):
     gaps, man = run(store, FakeHttp(gov_routes()))
     st = statuses(man)
     assert set(st) == {s.id for s in registry.daily()}
-    assert "cme_delivery" not in st  # occasional: never expected
+    assert "cme_delivery" not in st and "cme_opt" not in st  # occasional: never expected
     assert store.names(FRI, "cme_tcf", "csv") == ["TCF_20261016.csv"]
     for sid, status in st.items():
         if sid in CME_IDS:
@@ -54,7 +54,10 @@ def test_rerun_is_idempotent(store):
 def test_cme_auto(store):
     _, man = run(store, FakeHttp(gov_routes() + cme_routes()), cme_auto=True)
     assert set(man["sources"]["cme_fut"]["units"]) == {"ZT", "ZF", "ZN", "TN", "ZB", "UB"}
-    assert statuses(man)["cme_fut"] == statuses(man)["cme_opt"] == statuses(man)["cme_stir"] == mf.OK
+    assert statuses(man)["cme_fut"] == statuses(man)["cme_bulletin"] == statuses(man)["cme_stir"] == mf.OK
+    assert store.names(FRI, "cme_bulletin", "Section42") == ["Section42.pdf"]
+    _, man = run(store, FakeHttp(cme_routes()), cme_auto=True, sources=[registry.SOURCES["cme_opt"]])
+    assert statuses(man)["cme_opt"] == mf.OK
     zn_opt = store.names(FRI, "cme_opt", "ZN")
     assert len(zn_opt) == 3 and "ZN_expirations_2026-10-16.json" in zn_opt  # expirations + 2 series
 
@@ -151,3 +154,17 @@ def test_no_data_on_an_old_date_is_not_a_gap(store):
     # The same empty answer for a recent date is a failure, retried on the next run.
     _, man = run(store, FakeHttp(empty + gov_routes()), sources=spec)
     assert statuses(man)["td_prices"] == mf.FAILED
+
+
+def test_occasional_source_is_never_a_gap(store):
+    gaps, man = run(store, FakeHttp([]), sources=[registry.SOURCES["cme_opt"]], fill_missing=False)
+    assert statuses(man)["cme_opt"] == mf.MANUAL_NEEDED and not gaps
+
+
+def test_bulletin_drop_counts_as_collected(store, tmp_path):
+    p = tmp_path / "inbox" / FRI.isoformat() / "cme_bulletin" / "Section42.pdf"
+    p.parent.mkdir(parents=True)
+    p.write_bytes(b"%PDF-1.4")
+    ingest(store, tmp_path / "inbox", registry.units_for)
+    gaps, man = run(store, None, sources=[registry.SOURCES["cme_bulletin"]], fill_missing=False)
+    assert statuses(man)["cme_bulletin"] == mf.OK and not gaps
