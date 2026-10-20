@@ -47,6 +47,7 @@ def gov_routes():
         ("GET", "https://home.treasury.gov/", ok("x", b'Date,"1 Mo"\n10/16/2026,4.12\n', "text/csv")),
         ("GET", "https://fred.stlouisfed.org/", ok("x", b"observation_date,DGS10\n2026-10-16,5.09\n", "text/csv")),
         ("GET", "https://markets.newyorkfed.org/", ok("x", b'{"refRates": []}', "application/json")),
+        ("GET", "ftp://ftp.cmegroup.com/settle/TCF/TCF_", ok("x", b"CUSIP,Coupon,Maturity\n")),
     ]
 
 
@@ -57,7 +58,8 @@ def cme_routes():
         ("GET", base + "Futures/", ok("x", b'{"settlements": []}', "application/json")),
         ("GET", base + "Options/TradeDateAndExpirations/", ok("x", expirations, "application/json")),
         ("GET", base + "Options/Settlements/", ok("x", b'{"settlements": []}', "application/json")),
-        ("GET", "https://www.cmegroup.com/trading/", ok("https://www.cmegroup.com/trading/cf.html",
-                                                         b'<a href="/files/cf-table.xlsx">CF</a>', "text/html")),
-        ("GET", "https://www.cmegroup.com/files/", ok("x", b"PK\x03\x04xlsx", "application/vnd.ms-excel")),
+        ("GET", "https://www.cmegroup.com/delivery_reports/",
+         ok("https://www.cmegroup.com/delivery_reports/treasury.html",
+            b'<a href="/files/report.pdf">report</a> <a href="/files/report.pdf">again</a>', "text/html")),
+        ("GET", "https://www.cmegroup.com/files/", ok("x", b"%PDF-1.4", "application/pdf")),
     ]

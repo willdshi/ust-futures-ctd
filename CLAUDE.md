@@ -30,8 +30,8 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. The model reads only from that store, never from the network directly, and re-running a past date must give the same answer.
 - **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
   - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
-    - CME futures settlements and options chains for all six contracts
-    - delivery reports
+    - CME futures settlements and options chains for all six contracts (browser bookmarklet; cmegroup.com blocks scripts)
+    - CME conversion factor tables (TCF, from CME's public FTP server)
     - SOFR and fed funds futures
     - the full TreasuryDirect price file
   - Never narrow a fetcher to the products the model currently reads.
@@ -48,8 +48,8 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Explicit conventions.** Settlement (T+1) and delivery dates are always passed in, never assumed. Accrual is actual/actual, compounding is semiannual, and days are business days for delivery calendars.
 - **Reference data is data, not code (§2).**
   - Contract grades, delivery calendars and option products live in `reference/` as records with effective-from dates, never as constants. Verify each against the current CBOT rulebook when encoding it.
-  - Conversion factors come from the 6% CF formula (maturity rounded down to the quarter for ZN, ZB and UB) in both live and historical mode. CME's published tables are validation data, saved occasionally rather than daily (§3.2), and the formula is tested against them.
-  - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against a saved CME table or another published list.
+  - Conversion factors come from the 6% CF formula (maturity rounded down to the quarter for ZN, ZB and UB) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data, and the formula is tested against them.
+  - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against the TCF files.
   - Store delivery calendars per contract month; don't compute them ad hoc.
   - Basket eligibility, measured from the first day of the delivery month:
     - ZN is 6.5 to 10y (original maturity ≤ 10y)

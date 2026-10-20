@@ -4,7 +4,7 @@ Drop files as::
 
     inbox/<asof>/<source>/<unit>.<ext>    e.g. cme_fut/ZN.json (also ZN_anything.json, any case): unit ZN
     inbox/<asof>/<source>/<unit>/<file>   any file name
-    inbox/<asof>/<source>/<file>          a source with one unit (cme_cf, cme_delivery): that unit
+    inbox/<asof>/<source>/<file>          a source with one unit (e.g. cme_delivery): that unit
 
 A file matched to a unit counts as that unit collected (status "ok", origin "manual"). Any other
 file directly under a source (e.g. a Daily Bulletin PDF covering several products) is stored
@@ -13,8 +13,13 @@ under the ``_manual`` unit: kept, but coverage of the source's units is not veri
 Ingest copies each file byte-for-byte into the raw store and moves the original to
 ``inbox/_ingested/``. A file whose name is already stored with different content stays in the
 inbox and is reported as a conflict; nothing is overwritten.
+
+Files saved by the CME bookmarklet land in the browser's Downloads folder as
+``ctd_<asof>_<source>_<name>`` (e.g. ``ctd_2026-10-16_cme_fut_ZN.json``); ``collect_downloads``
+moves them into the inbox first.
 """
 
+import re
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,6 +30,8 @@ from ctd.data.store import RawStore, sha256
 
 MANUAL_UNIT = "_manual"
 INGESTED = "_ingested"
+_DOWNLOAD = re.compile(r"^ctd_(\d{4}-\d{2}-\d{2})_(.+)$")
+_BROWSER_COPY = re.compile(r" \(\d+\)(?=\.[^.]+$)")  # "ZN (1).json" from a repeated download
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,38 @@ def _move(path: Path, dest: Path) -> None:
     if dest.exists():
         dest = dest.with_name(f"{dest.stem}.{datetime.now():%Y%m%dT%H%M%S}{dest.suffix}")
     shutil.move(path, dest)
+
+
+def collect_downloads(downloads: Path, inbox: Path, sources: set[str]) -> list[str]:
+    """Move ``ctd_<asof>_<source>_<name>`` files from ``downloads`` into ``inbox/<asof>/<source>/<name>``.
+
+    A repeated download of the same bytes is deleted; a different file whose target name is already
+    in the inbox stays in ``downloads``. Returns one message per file handled.
+    """
+    out = []
+    if not downloads.is_dir():
+        return out
+    for path in sorted(p for p in downloads.iterdir() if p.is_file()):
+        m = _DOWNLOAD.match(path.name)
+        if not m or path.suffix in (".crdownload", ".tmp"):
+            continue
+        source = max((s for s in sources if m[2].startswith(s + "_")), key=len, default=None)
+        if source is None:
+            out.append(f"{path.name}: left in downloads (unknown source)")
+            continue
+        name = _BROWSER_COPY.sub("", m[2][len(source) + 1:])
+        dest = inbox / m[1] / source / name
+        if dest.exists():
+            if dest.read_bytes() == path.read_bytes():
+                path.unlink()
+                out.append(f"{path.name}: duplicate of {dest.relative_to(inbox)}, deleted")
+            else:
+                out.append(f"{path.name}: left in downloads ({dest.relative_to(inbox)} already in inbox)")
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(path, dest)
+        out.append(f"{path.name} -> inbox/{dest.relative_to(inbox).as_posix()}")
+    return out
 
 
 def match_unit(name: str, units: list[str]) -> str:

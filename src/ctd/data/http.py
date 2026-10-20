@@ -1,6 +1,7 @@
-"""HTTP access for fetchers: one small interface so tests can substitute a fake."""
+"""HTTP (and anonymous FTP) access for fetchers: one small interface so tests can substitute a fake."""
 
 import time
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -63,6 +64,9 @@ class RequestsHttp:
 
     def get(self, url, params=None, headers=None) -> Response:
         self._wait()
+        if url.startswith("ftp://"):  # anonymous FTP; a missing file raises URLError
+            with urllib.request.urlopen(url, timeout=self.timeout) as r:
+                return Response(url, 200, r.read())
         return self._wrap(self.session.get(url, params=params, headers=headers, timeout=self.timeout))
 
     def post(self, url, data=None, headers=None) -> Response:

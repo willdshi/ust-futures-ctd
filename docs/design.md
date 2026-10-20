@@ -45,7 +45,7 @@ The figures above are a working summary. **Verify each against the current CBOT 
   - last delivery day = last business day of the month.
 
   The short contracts (ZT, ZF) use a different calendar: last trading day is the last business day of the month, and last delivery day is the 3rd business day of the following month.
-- Conversion factor: price per $1 par at a 6% yield, per CME's formula, with remaining maturity rounded down to the quarter. **Computed with the formula in both live and historical mode.** CME's published table is validation data: snapshots are saved occasionally (section 3.2) and the formula is tested against them.
+- Conversion factor: price per $1 par at a 6% yield, per CME's formula, with remaining maturity rounded down to the quarter. **Computed with the formula in both live and historical mode.** CME's published table (TCF) is validation data, collected daily from CME's public FTP server (section 3.2), and the formula is tested against it.
 - Invoice price = futures settlement × CF × face/100 + accrued interest at delivery date.
 - **Basket changes**: rebuild each basket from the eligibility rules and Treasury security terms on each contract-month roll and after each auction in any basket's maturity range. New issues can join:
   - new 10-year notes for ZN;
@@ -53,7 +53,7 @@ The figures above are a working summary. **Verify each against the current CBOT 
   - new 30-year bonds for UB;
   - aging 30-year bonds move from UB to ZB once under 25 years.
 
-  Check rebuilt baskets against a published deliverable list whenever one is on hand (a saved CME table, or another source). Reopenings don't change CUSIP, coupon, maturity or CF. Rerun crossovers whenever the basket changes.
+  Check rebuilt baskets against CME's daily TCF files (section 3.2); the first file a bond appears in dates its addition to the basket. Reopenings don't change CUSIP, coupon, maturity or CF. Rerun crossovers whenever the basket changes.
 - **Baskets are dated, not fixed per contract.** The basket used for a run is the one valid at the horizon date.
 - **ZB/UB boundary.** A bond crosses from UB's basket to ZB's when its remaining maturity falls below 25 years. Basket rebuilds (historical mode) must apply the boundary at each contract's first delivery day, so the same bond can be in UB for one contract and ZB for the next.
 
@@ -68,12 +68,12 @@ The figures above are a working summary. **Verify each against the current CBOT 
 
 | Data | Source | Live | History | Known weaknesses |
 |---|---|---|---|---|
-| Basket and conversion factors | Rules + CF formula; CME tables for validation | Yes | Rebuild from rules + formula | Validate rebuilt baskets and CFs against saved CME tables |
+| Basket and conversion factors | Rules + CF formula; CME's daily TCF files (public FTP) for validation | Yes | Rebuild from rules + formula; TCF files from December 2023 | Validate rebuilt baskets and CFs against the TCF files |
 | Security terms (CUSIP, coupon, maturity, dated date) | TreasuryDirect / FiscalData | Yes | Yes | Include since-matured issues for history |
 | Bond prices by CUSIP | TreasuryDirect daily prices | Yes (prior-day close) | Probably (check depth of past-date lookup) | Single price, rounded, lagged; off-the-runs noisy; slow to pull, so cache |
 | Futures settlements (all six Treasury contracts, all listed months) | CME settlements | Yes | **No** (paid DataMine) | Collection may be manual; respect terms of use |
 | Futures option settlements by strike (section 3.1) | CME settlements | Yes | **No** (paid) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
-| Deliveries by contract (delivered CUSIPs, if published) | CME delivery reports | Delivery months | **No** | Ground truth for backtest scoring; confirm what CME publishes |
+| Deliveries by contract (delivered CUSIPs, if published) | CME delivery reports | Delivery months | **No** | Nice to have: tiebreaker for backtest cycles where the actual CTD is ambiguous from prices (section 8); confirm what CME publishes |
 | Constant-maturity yields | Treasury par curve (CMT), FRED | Yes | Yes, decades | Smoothed curve, not bond-specific |
 | GC funding | NY Fed SOFR (also TGCR, BGCR) | Yes | Since 2018 | Overnight only |
 | 1-month and 3-month SOFR, 30-day fed funds futures | CME settlements | Yes | **No** | For stepped/stripped repo path |
@@ -120,14 +120,14 @@ A free source that only shows recent days is lost for good on any day it isn't p
 **Not backfillable for free: pull every business day, full files, unfiltered.**
 - CME futures settlements: all six Treasury contracts (ZT, ZF, ZN, TN, ZB, UB), all listed months, including calendar-spread settlements if published.
 - CME option settlements: options on all six, every listed expiry, every strike, puts and calls.
-- CME delivery reports during delivery months (actual deliveries; backtest ground truth).
 - CME 1-month SOFR, 3-month SOFR and 30-day fed funds futures settlements (repo path, 5.3).
 - TreasuryDirect daily prices: the whole file, every CUSIP, every day. How far back past dates can be looked up is still an open question (section 11), so don't rely on it.
 
 **Occasional: not needed daily.**
-- CME conversion factor and deliverable basket tables. CFs follow from the formula and baskets from the rules plus security terms, so a missed day loses nothing. Save a snapshot at each new contract listing and after 10-, 20- and 30-year auctions, as validation data for the CF formula and basket rebuilds.
+- CME delivery reports during delivery months, when convenient. Nice to have, not required: the actual CTD is computed from prices (section 8), and a report only settles the ambiguous cycles, and only if it lists delivered CUSIPs.
 
 **Backfillable: pull daily anyway, and backfill once at setup.**
+- CME Treasury conversion factor tables (TCF) from CME's public FTP server (`ftp.cmegroup.com/settle/TCF/`): a CSV and an xlsx for every business day, back to December 2023. Validation data for the CF formula and basket rebuilds; consecutive files show the day CME changed a basket. How long CME keeps them is unknown (section 11), hence the daily pull.
 - Treasury par curve (CMT), FRED series.
 - NY Fed SOFR, TGCR and BGCR.
 - FiscalData / TreasuryDirect security terms and auction results, including matured issues.
@@ -135,7 +135,7 @@ A free source that only shows recent days is lost for good on any day it isn't p
 **Operations**
 - `ctd fetch` runs on a schedule every business day after CME final settlements are published. It is idempotent: re-running a date never overwrites a stored file, it only fills what's missing.
 - Each date gets a manifest listing every expected file and its status. A completeness check flags missing products, and a gap triggers retry and an alert.
-- Recovery window for a missed run: CME futures and option settlement pages show **5 trailing business days**. The window for delivery reports is still to be confirmed (section 11); treat it as zero until then. Beyond the window, record the gap rather than fill it from another source.
+- Recovery window for a missed run: CME futures and option settlement pages show **5 trailing business days**. Beyond the window, record the gap rather than fill it from another source.
 - Store files exactly as downloaded (lossless compression at rest is fine). Record the source URL and download timestamp alongside each file.
 - Respect each source's terms of use (section 11).
 
@@ -283,7 +283,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - **Unit tests**: accrued interest; price/yield round trip to 1e-10 with the single pricing function; CF formula vs CME table for ZN, ZB and UB; delivery calendars, and option expiry dates vs CME's published calendar; a bond crossing the 25-year ZB/UB boundary between contract months; forward price vs carry hand calculation including a coupon between today and delivery; settlement on a coupon date; end-of-month maturities; crossover root-finding on a synthetic two-bond basket with a known answer; term repo compounding.
 - **Independent checks**: a handful of bonds vs QuantLib (test dependency only) or TreasuryDirect published values.
 - **Sanity**: on a flat 6% curve all converted prices ≈ 100; below 6% low-duration bonds are CTD, above 6% high-duration.
-- **Backtest**: run historical mode over past cycles with large moves (2022–23; the 2026 long-end sell-off). Score probabilities against the actual CTD at delivery (Brier score). Check that the model shows the switches reported in 2026 (ZB moving along the basket in August and October). Score ZN, ZB and UB separately.
+- **Backtest**: run historical mode over past cycles with large moves (2022–23; the 2026 long-end sell-off). Score probabilities against the actual CTD at delivery (Brier score). The actual CTD is computed from prices: on each delivery day, the bond with the smallest gross basis (cash price − futures × CF). The final futures price is fixed on the last trading day, but the CTD can still change over the last 7 delivery days. Flag a cycle as ambiguous when the two smallest bases are within price noise (TreasuryDirect prices are rounded and struck at a different time from the futures settlement). Exclude ambiguous cycles from scoring, or settle them from a CME delivery report if one was saved and lists CUSIPs. Check that the model shows the switches reported in 2026 (ZB moving along the basket in August and October). Score ZN, ZB and UB separately.
 - **Sensitivity**: β ± 0.05; horizon first vs last delivery; vol ± 10%; crossover-strike vs ATM vol; interpolated vs √T vol; flat vs stripped repo; GC vs 50bp special CTD repo.
 - **Cross-check**: dealer/Bloomberg CTD scenarios when available.
 
@@ -308,9 +308,9 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 
 ## 11. Open questions
 
-- How to collect CME settlements reliably (manual download vs vendor) within their terms of use?
-- How many past days do CME's delivery report pages still show? (Futures and option settlements: 5 business days, confirmed.)
-- What exactly do CME's delivery reports publish (delivered CUSIPs and amounts, or only totals)?
+- How to collect CME settlements reliably? cmegroup.com refuses scripted connections (bot protection), and CME's public FTP server carries only the TCF tables of what's needed. Until a paid feed is chosen, futures settlement JSONs and the options bulletin are downloaded in a browser with the `ctd bookmarklet` (one click a day). Which feed, if any (DataMine, Databento, Barchart OnDemand)?
+- How long does CME keep TCF files on its FTP server (December 2023 onwards as of October 2026)?
+- What exactly do CME's delivery reports publish (delivered CUSIPs and amounts, or only totals), and how many past days do their pages show? Only matters for settling ambiguous backtest cycles (section 8). (Futures and option settlements: 5 business days, confirmed.)
 - How far back does TreasuryDirect's past-date price lookup go?
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?
 - Realised-vol window for historical mode, and how it compares with implied vol once live snapshots accumulate?

@@ -10,7 +10,7 @@ from ctd.data.inbox import ingest
 
 FRI = date(2026, 10, 16)
 MON = date(2026, 10, 19)
-CME_IDS = {"cme_fut", "cme_opt", "cme_stir", "cme_delivery"}
+CME_IDS = {"cme_fut", "cme_opt", "cme_stir"}
 
 
 def run(store, http, asof=FRI, today=FRI, **kw):
@@ -26,14 +26,14 @@ def test_auto_sources_ok_and_cme_manual_needed(store):
     gaps, man = run(store, FakeHttp(gov_routes()))
     st = statuses(man)
     assert set(st) == {s.id for s in registry.daily()}
+    assert "cme_delivery" not in st  # occasional: never expected
+    assert store.names(FRI, "cme_tcf", "csv") == ["TCF_20261016.csv"]
     for sid, status in st.items():
-        if sid == "cme_delivery":
-            assert status == mf.NOT_EXPECTED  # October: no deliveries
-        elif sid in CME_IDS:
+        if sid in CME_IDS:
             assert status == mf.MANUAL_NEEDED
         else:
             assert status == mf.OK, sid
-    assert {g.source for g in gaps} == CME_IDS - {"cme_delivery"}
+    assert {g.source for g in gaps} == CME_IDS
     assert store.names(FRI, "fiscaldata_auctions", "auctions_query") == ["auctions_query_p001.json",
                                                                          "auctions_query_p002.json"]
     assert store.names(FRI, "td_prices", "securityprice") == ["securityprice_2026-10-16.csv"]
@@ -55,22 +55,27 @@ def test_cme_auto(store):
     _, man = run(store, FakeHttp(gov_routes() + cme_routes()), cme_auto=True)
     assert set(man["sources"]["cme_fut"]["units"]) == {"ZT", "ZF", "ZN", "TN", "ZB", "UB"}
     assert statuses(man)["cme_fut"] == statuses(man)["cme_opt"] == statuses(man)["cme_stir"] == mf.OK
-    assert "cme_cf" not in man["sources"]  # occasional: only when asked for
-    _, man = run(store, FakeHttp(cme_routes()), cme_auto=True, sources=[registry.SOURCES["cme_cf"]])
     zn_opt = store.names(FRI, "cme_opt", "ZN")
     assert len(zn_opt) == 3 and "ZN_expirations_2026-10-16.json" in zn_opt  # expirations + 2 series
-    assert store.names(FRI, "cme_cf", "tables") == ["cf-table.xlsx", "cf.html"]
 
 
-def test_past_asof_snapshot_not_recoverable(store):
-    every = [registry.SOURCES["cme_cf"], registry.SOURCES["cme_stir"]]
-    _, man = run(store, FakeHttp(gov_routes() + cme_routes()), today=MON, cme_auto=True, sources=every)
-    assert man["sources"]["cme_cf"]["status"] == mf.NOT_RECOVERABLE
-    assert man["sources"]["cme_stir"]["status"] == mf.OK  # 1 business day back, within CME's window
-    _, man = run(store, FakeHttp(gov_routes() + cme_routes()), asof=date(2026, 10, 15), today=date(2026, 10, 30),
-                 cme_auto=True, sources=every)
-    assert man["sources"]["cme_stir"]["status"] == mf.NOT_RECOVERABLE  # 11 business days back
-    assert man["sources"]["cme_cf"]["status"] == mf.NOT_RECOVERABLE
+def test_delivery_reports_when_asked(store):
+    dec = date(2026, 12, 15)
+    _, man = run(store, FakeHttp(cme_routes()), asof=dec, today=dec, cme_auto=True,
+                 sources=[registry.SOURCES["cme_delivery"]])
+    assert statuses(man)["cme_delivery"] == mf.OK
+    assert store.names(dec, "cme_delivery", "reports") == ["report.pdf", "treasury.html"]  # page + link, once
+
+
+def test_recovery_window(store):
+    srcs = [registry.SOURCES["cme_delivery"], registry.SOURCES["cme_stir"]]
+    dec = date(2026, 12, 15)
+    _, man = run(store, FakeHttp(cme_routes()), asof=dec, today=date(2026, 12, 16), cme_auto=True, sources=srcs)
+    assert statuses(man)["cme_delivery"] == mf.NOT_RECOVERABLE  # window 0
+    assert statuses(man)["cme_stir"] == mf.OK  # 1 business day back, within CME's window
+    _, man = run(store, FakeHttp(cme_routes()), asof=date(2026, 10, 15), today=date(2026, 10, 30), cme_auto=True,
+                 sources=srcs[1:])
+    assert statuses(man)["cme_stir"] == mf.NOT_RECOVERABLE  # 11 business days back
 
 
 def test_holidays_not_expected(store):
@@ -117,3 +122,18 @@ def test_source_filter_records_others_missing(store):
     _, man = run(store, FakeHttp(gov_routes()), sources=[registry.SOURCES["fred"]])
     assert statuses(man)["fred"] == mf.OK
     assert statuses(man)["td_prices"] == mf.MISSING
+
+
+def test_save_keeps_entries_written_by_another_run(store):
+    from ctd.data import manifest
+
+    class Interleaved(FakeHttp):
+        """While this run fetches FRED, another run records td_prices in the same manifest."""
+
+        def get(self, url, params=None, headers=None):
+            if url.startswith("https://fred") and not manifest.load(store, FRI)["sources"]:
+                manifest.save(store, FRI, {"asof": FRI.isoformat(), "sources": {"td_prices": {"status": "ok"}}})
+            return super().get(url, params, headers)
+
+    _, man = run(store, Interleaved(gov_routes()), sources=[registry.SOURCES["fred"]], fill_missing=False)
+    assert statuses(man) == {"td_prices": mf.OK, "fred": mf.OK}

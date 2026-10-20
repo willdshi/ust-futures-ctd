@@ -3,7 +3,7 @@ from datetime import date
 from ctd.data.inbox import INGESTED, MANUAL_UNIT, ingest
 
 ASOF = date(2026, 10, 16)
-UNITS = {"cme_fut": ["ZN", "ZB", "TN", "UB"], "cme_opt": ["ZN", "ZB"], "cme_cf": ["tables"]}
+UNITS = {"cme_fut": ["ZN", "ZB", "TN", "UB"], "cme_opt": ["ZN", "ZB"], "cme_delivery": ["reports"]}
 
 
 def SOURCES(source, asof):
@@ -72,6 +72,38 @@ def test_file_named_after_its_unit(store, tmp_path):
 
 def test_single_unit_source_takes_any_file(store, tmp_path):
     inbox = tmp_path / "inbox"
-    drop(inbox, "cme_cf/TCF.xlsx", b"PK")
+    drop(inbox, "cme_delivery/report.pdf", b"%PDF")
     [r] = ingest(store, inbox, SOURCES)
-    assert r.unit == "tables" and store.names(ASOF, "cme_cf", "tables") == ["TCF.xlsx"]
+    assert r.unit == "reports" and store.names(ASOF, "cme_delivery", "reports") == ["report.pdf"]
+
+
+def test_collect_downloads(tmp_path):
+    from ctd.data.inbox import collect_downloads
+
+    dl, inbox = tmp_path / "Downloads", tmp_path / "inbox"
+    dl.mkdir()
+    (dl / "ctd_2026-10-16_cme_fut_ZN.json").write_bytes(b"zn")
+    (dl / "ctd_2026-10-16_cme_fut_ZB (1).json").write_bytes(b"zb")  # browser's repeat-download name
+    (dl / "ctd_2026-10-16_cme_opt_Section42.pdf").write_bytes(b"%PDF")
+    (dl / "ctd_2026-10-16_nonsense_X.json").write_bytes(b"?")
+    (dl / "holiday.jpg").write_bytes(b"not ours")
+    collect_downloads(dl, inbox, {"cme_fut", "cme_opt"})
+    day = inbox / "2026-10-16"
+    assert (day / "cme_fut" / "ZN.json").read_bytes() == b"zn"
+    assert (day / "cme_fut" / "ZB.json").read_bytes() == b"zb"
+    assert (day / "cme_opt" / "Section42.pdf").exists()
+    assert sorted(p.name for p in dl.iterdir()) == ["ctd_2026-10-16_nonsense_X.json", "holiday.jpg"]
+
+
+def test_collect_downloads_never_overwrites_inbox(tmp_path):
+    from ctd.data.inbox import collect_downloads
+
+    dl, inbox = tmp_path / "Downloads", tmp_path / "inbox"
+    (inbox / "2026-10-16" / "cme_fut").mkdir(parents=True)
+    (inbox / "2026-10-16" / "cme_fut" / "ZN.json").write_bytes(b"first")
+    dl.mkdir()
+    (dl / "ctd_2026-10-16_cme_fut_ZN.json").write_bytes(b"first")
+    (dl / "ctd_2026-10-16_cme_fut_ZN (1).json").write_bytes(b"different")
+    collect_downloads(dl, inbox, {"cme_fut"})
+    assert [p.name for p in dl.iterdir()] == ["ctd_2026-10-16_cme_fut_ZN (1).json"]  # identical one deleted
+    assert (inbox / "2026-10-16" / "cme_fut" / "ZN.json").read_bytes() == b"first"

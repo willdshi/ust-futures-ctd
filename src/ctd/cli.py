@@ -4,6 +4,7 @@
     ctd ingest
     ctd check [--from 2026-10-01] [--to 2026-10-16]
     ctd backfill
+    ctd bookmarklet [--print]
     ctd run --contract ZBZ6 --asof 2026-10-16      (not implemented yet)
     ctd history --contract ZB --from ... --to ...  (not implemented yet)
 
@@ -26,6 +27,10 @@ def data_root() -> Path:
     return repo / "data" if (repo / "pyproject.toml").exists() else Path.cwd() / "data"
 
 
+def downloads_dir() -> Path:
+    return Path(os.environ.get("CTD_DOWNLOADS", Path.home() / "Downloads"))
+
+
 def default_asof(now: datetime, cutoff_hour: int) -> date:
     """Today if it's a CME business day and past the cutoff (local time), else the latest business day before."""
     from ctd.data import refdata
@@ -41,8 +46,10 @@ def _ingest(store, root: Path) -> bool:
     """Ingest the manual-drop folder and refresh the manifests it touched. True if any conflict."""
     from ctd.data import registry
     from ctd.data.fetch import fetch_date
-    from ctd.data.inbox import ingest
+    from ctd.data.inbox import collect_downloads, ingest
 
+    for msg in collect_downloads(downloads_dir(), root / "inbox", set(registry.SOURCES)):
+        print("downloads:", msg)
     results = ingest(store, root / "inbox", registry.units_for)
     for r in results:
         print(f"ingest {r.asof} {r.source}/{r.unit}/{r.name}: {r.status}")
@@ -74,14 +81,53 @@ def cmd_fetch(args) -> int:
 
 
 def cmd_backfill(args) -> int:
-    from ctd.data import registry
+    from dataclasses import replace
+
+    from ctd.data import cme_tcf, refdata, registry
     from ctd.data.fetch import fetch_date
     from ctd.data.http import RequestsHttp
     from ctd.data.store import RawStore
 
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
-    gaps = fetch_date(asof, RawStore(args.data_root), RequestsHttp(), sources=registry.backfill())
-    return _report([g for g in gaps if g.source in {s.id for s in registry.backfill()}])
+    store, http = RawStore(args.data_root), RequestsHttp()
+    ids = {s.id for s in registry.backfill()}
+    gaps = [g for g in fetch_date(asof, store, http, sources=registry.backfill()) if g.source in ids]
+
+    # Every dated TCF file on CME's FTP server, each stored under its own date.
+    spec, cal = registry.SOURCES["cme_tcf"], refdata.calendar("cme")
+    odd = []
+    for d, formats in cme_tcf.listing(http).items():
+        if d > asof:
+            continue
+        if not cal.is_business_day(d):
+            odd.append(d.isoformat())
+            continue
+        one = replace(spec, units=lambda a, c, f=tuple(formats): list(f))
+        got = fetch_date(d, store, http, sources=[one], fill_missing=False, log=lambda _: None)
+        gaps += [g for g in got if g.source == spec.id]
+        print(f"{d} cme_tcf: {_source_status(store, d, spec.id)}")
+    if odd:
+        print(f"cme_tcf: skipped files dated on non-business days: {', '.join(odd)}")
+    return _report(gaps)
+
+
+def _source_status(store, asof: date, source: str) -> str:
+    from ctd.data import manifest as mf
+
+    return mf.load(store, asof)["sources"][source]["status"]
+
+
+def cmd_bookmarklet(args) -> int:
+    from ctd.data import bookmarklet
+
+    if args.print:
+        print(bookmarklet.url())
+        return 0
+    page = Path(args.data_root) / "cme_bookmarklet.html"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(bookmarklet.install_page(), encoding="utf-8")
+    print(f"wrote {page}: open it in Chrome and drag the link onto the bookmarks bar")
+    return 0
 
 
 def cmd_ingest(args) -> int:
@@ -142,11 +188,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"also fill gaps in the {CATCH_UP_DAYS} business days ending on --asof")
     f.set_defaults(func=cmd_fetch)
 
-    b = sub.add_parser("backfill", help="one-off full histories (par curve years, NY Fed since 2018)")
+    b = sub.add_parser("backfill", help="one-off histories (par curve years, NY Fed since 2018, CME TCF files)")
     asof_args(b)
     b.set_defaults(func=cmd_backfill)
 
-    sub.add_parser("ingest", help="move manual-drop files into the raw store").set_defaults(func=cmd_ingest)
+    sub.add_parser("ingest", help="move bookmarklet downloads and manual-drop files into the raw store"
+                   ).set_defaults(func=cmd_ingest)
+
+    k = sub.add_parser("bookmarklet", help="build the Chrome bookmarklet that downloads CME files")
+    k.add_argument("--print", action="store_true", help="print the javascript: URL instead of writing the page")
+    k.set_defaults(func=cmd_bookmarklet)
 
     c = sub.add_parser("check", help="list gaps across stored manifests")
     c.add_argument("--from", dest="date_from", type=date.fromisoformat)

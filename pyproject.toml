@@ -29,6 +29,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ctd.reference" = ["data/*"]
+"ctd.data" = ["*.js"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

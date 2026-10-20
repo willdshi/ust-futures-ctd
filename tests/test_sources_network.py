@@ -20,7 +20,7 @@ UNITS = {
     "cme_fut": "ZN",
     "cme_opt": "ZN",
     "cme_stir": "SR3",
-    "cme_cf": "tables",
+    "cme_tcf": "csv",
 }
 
 
