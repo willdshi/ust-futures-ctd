@@ -27,9 +27,13 @@ ctd = "ctd.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"ctd.reference" = ["data/*"]
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+pythonpath = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
 markers = [
     "slow: long-running tests (backtests, full grids)",

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-End-of-day model of cheapest-to-deliver (CTD) probabilities, futures fair value and key rate DV01s for CBOT Treasury futures, built only from free public data. The model focuses on **ZN, ZB and UB** (ZN and ZB first, then UB), but data collection covers all eight physically delivered Treasury contracts. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11.
+End-of-day model of cheapest-to-deliver (CTD) probabilities, futures fair value and key rate DV01s for CBOT Treasury futures, built only from free public data. The model focuses on **ZN, ZB and UB** (ZN and ZB first, then UB), but data collection covers six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11.
 
 ## Environment and commands
 
@@ -30,8 +30,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. The model reads only from that store, never from the network directly, and re-running a past date must give the same answer.
 - **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
   - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
-    - CME futures settlements and options chains for all eight contracts
-    - CF tables
+    - CME futures settlements and options chains for all six contracts
     - delivery reports
     - SOFR and fed funds futures
     - the full TreasuryDirect price file
@@ -49,7 +48,8 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Explicit conventions.** Settlement (T+1) and delivery dates are always passed in, never assumed. Accrual is actual/actual, compounding is semiannual, and days are business days for delivery calendars.
 - **Reference data is data, not code (§2).**
   - Contract grades, delivery calendars and option products live in `reference/` as records with effective-from dates, never as constants. Verify each against the current CBOT rulebook when encoding it.
-  - Live mode reads conversion factors from CME's published tables. The 6% CF formula (maturity rounded down to the quarter for ZN, ZB and UB) is used for historical basket rebuilds and is tested against the CME tables.
+  - Conversion factors come from the 6% CF formula (maturity rounded down to the quarter for ZN, ZB and UB) in both live and historical mode. CME's published tables are validation data, saved occasionally rather than daily (§3.2), and the formula is tested against them.
+  - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against a saved CME table or another published list.
   - Store delivery calendars per contract month; don't compute them ad hoc.
   - Basket eligibility, measured from the first day of the delivery month:
     - ZN is 6.5 to 10y (original maturity ≤ 10y)

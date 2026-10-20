@@ -1,0 +1,79 @@
+# CME products collected every business day (design section 3.2): six Treasury
+# futures and their options, plus SOFR and fed funds futures.
+#
+# product_id is CME's internal id used by its settlement web services
+# (cmegroup.com/CmeWS/mvc/Settlements/...). verified = true means a settlement
+# file fetched with that id was checked to be the named product (2026-10-16).
+# A product with no product_id is reported as a failed fetch (and falls back
+# to the manual-drop folder) rather than skipped.
+#
+# Option series are not listed here: for each Treasury future, the collector
+# reads CME's list of option expiries (quarterly, serial and every weekly
+# series) and pulls all of them.
+
+[[treasury]]
+code = "ZT"
+name = "2-Year T-Note"
+product_id = 303
+verified = true
+
+[[treasury]]
+code = "ZF"
+name = "5-Year T-Note"
+product_id = 329
+verified = true
+
+[[treasury]]
+code = "ZN"
+name = "10-Year T-Note"
+product_id = 316
+verified = true
+
+[[treasury]]
+code = "TN"
+name = "Ultra 10-Year T-Note"
+product_id = 7978
+verified = true
+
+[[treasury]]
+code = "ZB"
+name = "U.S. Treasury Bond"
+product_id = 307
+verified = true
+
+[[treasury]]
+code = "UB"
+name = "Ultra U.S. Treasury Bond"
+product_id = 3141
+verified = true
+
+[[stir]]
+code = "SR1"
+name = "One-Month SOFR"
+product_id = 8463
+verified = true
+
+[[stir]]
+code = "SR3"
+name = "Three-Month SOFR"
+product_id = 8462
+verified = true
+
+[[stir]]
+code = "ZQ"
+name = "30-Day Federal Funds"
+product_id = 305
+verified = true
+
+# Pages listing CME's conversion factor / deliverable basket tables and its
+# Treasury delivery reports. The collector stores each page plus every
+# .xls/.xlsx/.csv/.pdf it links to. URLs unverified.
+[cme_cf]
+pages = [
+    "https://www.cmegroup.com/trading/interest-rates/treasury-conversion-factors.html",
+]
+
+[cme_delivery]
+pages = [
+    "https://www.cmegroup.com/delivery_reports/treasury-futures-delivery-reports.html",
+]
