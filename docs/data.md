@@ -26,6 +26,15 @@ Backfill-only source ids (`par_curve_backfill`, `nyfed_rates_backfill`, `yahoo_f
 
 The six Treasury futures in scope are ZT, ZF, ZN, TN, ZB and UB. The model reads ZN, ZB and UB (design §1); the others are collected so they can be added later.
 
+### History starts in 2016
+
+Historical mode, backtests and basket rebuilds go back to **January 2016 (the March 2016 contract month) and no further**. Treasury futures rules changed several times before that, and those changes aren't encoded or handled.
+
+- Some stored data goes back further: Yahoo's front-month series (2000), the par yield curve (1990), FRED series, FiscalData auctions (1979) and TreasuryDirect security terms. Keep it as collected, but don't use observations before 2016.
+- TreasuryDirect prices are stored from 2016-01-04 to match; earlier dates (back to May 2008) aren't backfilled.
+- Deliverable-grade records (`src/ctd/reference/data/contract_grades.toml`) start with the March 2016 contract month. Looking up an earlier month raises an error rather than applying an unchecked rule.
+- Rule changes from 2016 on are encoded as dated records, e.g. ZN's 8-year cap from the September 2023 contract month.
+
 ## 2. The raw store
 
 ### 2.1 Layout
@@ -88,6 +97,7 @@ Occasional sources are never reported as gaps. `ctd check` lists gaps and warnin
 - **Ingest** (`ctd ingest`, also the first step of `ctd fetch`) moves those files from Downloads (`CTD_DOWNLOADS` overrides the folder) into `inbox/<asof>/<source>/<name>`, dropping the prefix and any ` (1)` Chrome adds to repeat downloads. It then copies each inbox file into the store and moves the original to `inbox/_ingested/`.
 - **Matching a file to a unit:** `inbox/<asof>/<source>/<unit>/<file>` always works. A file directly under the source folder is matched by name (`ZN.json`, `ZN_anything.json`, any case), or goes to the only unit if the source has one. Anything else is stored under `_manual`.
 - **Conflicts:** a file whose name is already stored with different bytes stays in the inbox (or in Downloads) and is reported; nothing is overwritten. An identical repeat is just cleared away.
+- **Content checks:** a source can check a manual file before it's stored. The Daily Bulletin's is the only one so far: ingest reads the bulletin number, trade date and `FINAL` from page 1 and rejects a bulletin printed for a different date, or not yet final. A rejected file stays in the inbox with the reason, and the date remains a gap.
 
 ### 2.5 Calendars and recovery windows
 
@@ -141,7 +151,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 `0.000000` means no price was provided in that column. Bills usually have no buy price, and the end-of-day column is sometimes empty too (as in this bill on 2026-10-19), so check which column holds a price before using it.
 
-- **History:** past dates can be requested back to **30 May 2008**. Until about September 2008 only CUSIP and prices are filled in (type, coupon and maturity are blank); join to security terms on CUSIP. Stored from 2016-01-04; 108 dates since then had no prices (holidays).
+- **History:** past dates can be requested back to **30 May 2008**, but history is only used from 2016 (§1). Until about September 2008 only CUSIP and prices are filled in (type, coupon and maturity are blank); join to security terms on CUSIP. Stored from 2016-01-04; 108 dates since then had no prices (holidays).
 
 ### 5.2 `td_securities`: TreasuryDirect securities search
 
@@ -213,7 +223,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 ### 5.9 `cme_bulletin`: Daily Bulletin Section 42 (options)
 
 - **What:** "10YR NOTE, 5YR NOTE, 2YR NOTE AND 30YR BOND OPTIONS", the bulletin section covering options on ZT, ZF, ZN, TN, ZB and UB, every listed expiry (quarterly, serial, weeklies) and every strike. About 35 pages and 3,200 strike rows a day. It is the daily source of option settlements.
-- **How:** the bookmarklet uses the Section 42 link on CME's Daily Bulletin page (fallback URL in `cme_products.toml`). **CME's link always serves the latest bulletin.** Run the bookmarklet the morning after the trade date; a bulletin for an earlier date can't be downloaded this way.
+- **How:** the bookmarklet uses the Section 42 link on CME's Daily Bulletin page (fallback URL in `cme_products.toml`). **CME's link always serves the latest bulletin.** Run the bookmarklet the morning after the trade date; a bulletin for an earlier date can't be downloaded this way. Ingest checks the trade date printed on page 1 against the as-of date and rejects a mismatch (§2.4); the automated fetch, if CME ever allows it, applies the same check.
 - **Files:** `Section42/Section42.pdf`.
 - **Layout** (extracts cleanly with pdfplumber or pypdf): the page header gives the bulletin number, trade date and `FINAL` (`PG42 BULLETIN # 201@ ... Mon, Oct 19, 2026`). Each block has a product and put/call header (`10Y NOTE CALL`, or a weekly such as `HYO OPT WK THU`), an expiry label (`DEC26`), one row per strike, then a `TOTAL` line. Strike rows: strike (`1055` = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high, contract low. ZN option prices are in 64ths (`461` = 4 61/64). The parser is phase 2 work.
 - **Check:** the 2026-10-16 bulletin has the 100.5 December ZN call at 4-61/64 with delta 1.000, against futures at 105-14.5.
@@ -333,7 +343,7 @@ For a reproducible run on a past date:
 ## 8. Known issues and open items
 
 - **ZN grade before September 2023** can't be validated against TCF files, which start in December 2023 (§5.7).
-- **Missing bulletins for 2026-10-14 and 2026-10-15.** Their bulletins were downloaded after 10/19's was published, so CME served 10/19's; those copies were deleted. They remain gaps unless an archive copy turns up. Ingest doesn't yet check a bulletin's printed trade date against the as-of date.
+- **Missing bulletins for 2026-10-14 and 2026-10-15.** Their bulletins were downloaded after 10/19's was published, so CME served 10/19's; those copies were deleted. They remain gaps unless an archive copy turns up. Ingest now checks each bulletin's printed trade date, so a late download like these is rejected.
 - **Holiday calendar** covers 2026–27 only and is unverified; earlier holidays are inferred from empty TreasuryDirect files.
 - **TCF holiday files:** 8 files dated on CME holidays or a weekend weren't stored.
 - **TCF retention** on CME's FTP is unknown.

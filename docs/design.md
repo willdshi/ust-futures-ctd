@@ -214,11 +214,11 @@ CLAUDE.md
 
 ### 5.4 Factor and betas
 - Factor `x` = constant-maturity yield near the current CTD, per contract (section 2 table): **7-year for ZN, 20-year for ZB, 30-year for UB**.
-- For each CMT point across the basket range (ZN ~6–9y, or ~6–11y for contract months before September 2023; ZB ~14–26y; UB ~24–30y; 1-year steps), regress yield changes on the reference: `Δy(τ) = β(τ)·Δx + ε(τ)`.
+- For each published CMT tenor that brackets the basket (5, 7 and 10y for ZN; 10, 20 and 30y for ZB; 20 and 30y for UB), regress yield changes on the reference: `Δy(τ) = β(τ)·Δx + ε(τ)`. Linear interpolation of these node betas equals regressing on a linearly interpolated curve, so nothing is lost by estimating only at published tenors (method and alternatives in [decisions.md](decisions.md)).
   - 2–3 day or weekly changes; 6–12 month window or exponential weights (half-life ~3 months).
   - Shrink betas slightly toward 1.
   - Also estimate on **sell-off days only**; use those if materially different.
-- Interpolate β at each bond's remaining maturity at T.
+- Interpolate β linearly at each bond's remaining maturity at T (the basket spans ZN ~6–9y, or ~6–11y for contract months before September 2023; ZB ~14–26y; UB ~24–30y).
 - Store residual SDs `σ_ε(τ)` and the residual SD of the spread between candidate bonds (used in 5.7; diagnostic for one-factor adequacy: under ~4bp over the horizon is fine, above ~6bp suggests a second factor).
 
 ### 5.5 Volatility
@@ -328,6 +328,8 @@ Affects futures value, not durations or the probability of a major switch materi
 
 Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts, from free data.
 
+**Start: 2016.** Historical mode goes back to the March 2016 contract month and no further, because earlier Treasury futures rule changes aren't handled. Rule changes since then (e.g. ZN's 8-year cap from September 2023) are dated reference records.
+
 - **Baskets**: rebuild per past contract from the issue list (including since-matured issues) and eligibility rules; compute CFs with the formula. Validate against any published past tables. This is the main effort.
 - **Prices**: past TreasuryDirect prices by CUSIP, stored from 2016 (available from May 2008). Before about September 2008 the files have no coupon or maturity columns; join on CUSIP to the security terms.
 - **Repo**: SOFR (from 2018); GC only.
@@ -339,7 +341,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 
 ## 8. Validation
 
-- **Unit tests**: accrued interest; price/yield round trip to 1e-10 with the single pricing function; CF formula vs CME table for ZN, ZB and UB; delivery calendars, and option expiry dates vs CME's published calendar; a bond crossing the 25-year ZB/UB boundary between contract months; forward price vs carry hand calculation including a coupon between today and delivery; settlement on a coupon date; end-of-month maturities; crossover root-finding on a synthetic two-bond basket with a known answer; term repo compounding; region-weighted DV01 vs finite-difference on a synthetic basket.
+- **Unit tests**: accrued interest; price/yield round trip to 1e-10 with the single pricing function; CF formula vs CME table for ZN, ZB and UB; delivery calendars, and option expiry dates vs CME's published calendar; a bond crossing the 25-year ZB/UB boundary between contract months; a note crossing the ZN grade change (91282CFV8, 4⅛% Nov 2032: 9.46y remaining for June 2023, deliverable under the 10-year cap; 9.21y for September 2023, not deliverable under the 8-year cap); forward price vs carry hand calculation including a coupon between today and delivery; settlement on a coupon date; end-of-month maturities; crossover root-finding on a synthetic two-bond basket with a known answer; term repo compounding; region-weighted DV01 vs finite-difference on a synthetic basket.
 - **Independent checks**: a handful of bonds vs QuantLib (test dependency only) or TreasuryDirect published values.
 - **Sanity**: on a flat 6% curve all converted prices ≈ 100; below 6% low-duration bonds are CTD, above 6% high-duration.
 - **Backtest**: run historical mode over past cycles with large moves (2022–23; the 2026 long-end sell-off). Score probabilities against the actual CTD at delivery (Brier score). The actual CTD is computed from prices: on each delivery day, the bond with the smallest gross basis (cash price − futures × CF). The final futures price is fixed on the last trading day, but the CTD can still change over the last 7 delivery days. Flag a cycle as ambiguous when the two smallest bases are within price noise (TreasuryDirect prices are rounded and struck at a different time from the futures settlement). Exclude ambiguous cycles from scoring, or settle them from a CME delivery report if one was saved and lists CUSIPs. Check that the model shows the switches reported in 2026 (ZB moving along the basket in August and October). Score ZN, ZB and UB separately. ZN cycles before September 2023 use the old 6.5–10y grade; report them apart from later cycles.
@@ -375,7 +377,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - What exactly do CME's delivery reports publish (delivered CUSIPs and amounts, or only totals), and how many past days do their pages show? Only matters for settling ambiguous backtest cycles (section 8). (Futures and option settlements: 5 business days, confirmed.)
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?
 - Realised-vol window for historical mode, and how it compares with implied vol once live snapshots accumulate?
-- The Treasury par curve only has 1, 2, 3, 5, 7, 10, 20 and 30-year points. Should the 1-year-step betas (5.4) come from interpolating the curve, or from a fitted curve on bond prices? This matters most for ZB (only 20y and 30y in its range) and UB (only 30y in its range, so its betas are extrapolated).
+- How to estimate betas between the par curve's published points (1, 2, 3, 5, 7, 10, 20 and 30 years) is worked through in [decisions.md](decisions.md). Starting point: regress at the published tenors and interpolate β linearly, which equals interpolating the curve. No basket needs extrapolation: ZN's bonds sit between the 5, 7 and 10-year points, ZB's between 10, 20 and 30, and UB's (25 to 30 years) between 20 and 30. Still open: whether pooled bond-level betas (possible now, with TreasuryDirect prices stored from 2016) beat node betas in the backtest, and whether ZB should use a reference other than the 20-year CMT.
 - How often are UB options too thin to use, and is ZB vol mapped through betas a good enough substitute?
 - Which weekly expiries are listed today for ZN, ZB and UB options (Monday to Friday weeklies vary by product)? Confirm before building the expiry calendar.
 

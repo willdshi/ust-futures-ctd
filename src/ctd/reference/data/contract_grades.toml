@@ -1,0 +1,34 @@
+# Deliverable grades: which Treasuries each futures contract can deliver (design section 2).
+#
+# One record per rule, in force from `from_contract_month` (YYYY-MM, a delivery month) until the
+# next record for the same contract. Look a grade up by contract month, never by run date.
+#
+# History starts with the March 2016 contract month (docs/data.md): earlier rule changes aren't
+# encoded, so the first record for each contract starts there and earlier months are an error.
+#
+# Terms are in months:
+#   min_remaining_months / max_remaining_months: remaining term to maturity, measured from the
+#     first day of the delivery month. Both limits are inclusive ("at least ... but not more
+#     than ..." in the CBOT rulebook wording).
+#   max_original_months: original term to maturity, measured from the original issue date.
+#
+# Verify every record against the CBOT rulebook (Chapter 19) when encoding it. `verified` lists
+# what has been confirmed; `to_verify` what hasn't.
+
+[[grade]]
+contract = "ZN"
+from_contract_month = "2016-03"   # project history start, not the rule's start
+min_remaining_months = 78     # 6 years 6 months
+max_remaining_months = 120    # 10 years
+max_original_months = 120     # 10 years
+verified = ["10-year remaining-term cap applied to contract months before September 2023"]
+to_verify = ["inclusive limits"]
+
+[[grade]]
+contract = "ZN"
+from_contract_month = "2023-09"
+min_remaining_months = 78     # 6 years 6 months
+max_remaining_months = 96     # 8 years
+max_original_months = 120     # 10 years
+verified = ["8-year remaining-term cap from the September 2023 contract month"]
+to_verify = ["inclusive limits"]

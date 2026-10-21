@@ -50,14 +50,14 @@ def _ingest(store, root: Path) -> bool:
 
     for msg in collect_downloads(downloads_dir(), root / "inbox", set(registry.SOURCES)):
         print("downloads:", msg)
-    results = ingest(store, root / "inbox", registry.units_for)
+    results = ingest(store, root / "inbox", registry.units_for, registry.validate_manual)
     for r in results:
         print(f"ingest {r.asof} {r.source}/{r.unit}/{r.name}: {r.status}")
-    touched = {(r.asof, r.source) for r in results if not r.status.startswith("conflict")}
+    touched = {(r.asof, r.source) for r in results if not r.problem}
     for asof in sorted({a for a, _ in touched}):
         specs = [registry.SOURCES[s] for a, s in touched if a == asof]
         fetch_date(asof, store, None, sources=specs, log=lambda _: None)
-    return any(r.status.startswith("conflict") for r in results)
+    return any(r.problem for r in results)
 
 
 def cmd_fetch(args) -> int:

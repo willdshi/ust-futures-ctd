@@ -12,7 +12,8 @@ under the ``_manual`` unit: kept, but coverage of the source's units is not veri
 
 Ingest copies each file byte-for-byte into the raw store and moves the original to
 ``inbox/_ingested/``. A file whose name is already stored with different content stays in the
-inbox and is reported as a conflict; nothing is overwritten.
+inbox and is reported as a conflict; nothing is overwritten. A file that fails its source's content
+check (e.g. a Daily Bulletin printed for another date) also stays in the inbox, reported as rejected.
 
 Files saved by the CME bookmarklet land in the browser's Downloads folder as
 ``ctd_<asof>_<source>_<name>`` (e.g. ``ctd_2026-10-16_cme_fut_ZN.json``); ``collect_downloads``
@@ -40,7 +41,11 @@ class Ingested:
     source: str
     unit: str
     name: str
-    status: str  # "stored", "duplicate" (same bytes already stored) or "conflict: ..."
+    status: str  # "stored", "duplicate" (same bytes already stored), "conflict: ..." or "rejected: ..."
+
+    @property
+    def problem(self) -> bool:
+        return self.status.startswith(("conflict", "rejected"))
 
 
 def _move(path: Path, dest: Path) -> None:
@@ -93,8 +98,10 @@ def match_unit(name: str, units: list[str]) -> str:
     return MANUAL_UNIT
 
 
-def ingest(store: RawStore, inbox: Path, units_for: Callable[[str, date], list[str] | None]) -> list[Ingested]:
-    """``units_for(source, asof)`` lists a source's units on a date, or None for an unknown source."""
+def ingest(store: RawStore, inbox: Path, units_for: Callable[[str, date], list[str] | None],
+           validate: Callable[[str, date, str, bytes], str | None] | None = None) -> list[Ingested]:
+    """``units_for(source, asof)`` lists a source's units on a date, or None for an unknown source.
+    ``validate(source, asof, name, content)`` returns a reason to reject a file, or None."""
     out = []
     if not inbox.is_dir():
         return out
@@ -118,6 +125,10 @@ def ingest(store: RawStore, inbox: Path, units_for: Callable[[str, date], list[s
                     out.append(Ingested(asof, source_dir.name, unit, name, "conflict: nested too deep"))
                     continue
                 content = path.read_bytes()
+                reason = validate(source_dir.name, asof, name, content) if validate else None
+                if reason:
+                    out.append(Ingested(asof, source_dir.name, unit, name, f"rejected: {reason}"))
+                    continue
                 mtime = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
                 meta = {"origin": "manual", "url": None, "original_path": str(path),
                         "original_mtime": mtime.strftime("%Y-%m-%dT%H:%M:%SZ")}

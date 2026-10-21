@@ -20,6 +20,12 @@ def backfill() -> list[SourceSpec]:
     return [s for s in SOURCES.values() if s.schedule == "backfill"]
 
 
+def validate_manual(source: str, asof: date, name: str, content: bytes) -> str | None:
+    """Why a manual file can't be stored for ``asof``, or None if it's fine (or the source has no check)."""
+    spec = SOURCES.get(source)
+    return spec.validate(asof, name, content) if spec and spec.validate else None
+
+
 def units_for(source: str, asof: date) -> list[str] | None:
     """A source's units on ``asof``, or None if the source is unknown."""
     spec = SOURCES.get(source)

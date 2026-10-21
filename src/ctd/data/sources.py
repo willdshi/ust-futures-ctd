@@ -39,6 +39,8 @@ class SourceSpec:
     ``schedule``: "daily" sources are expected every business day and flagged when missing;
     "backfill" ones run only via ``ctd backfill``; "occasional" ones only when asked for
     (``ctd fetch --source ...``) or dropped in the inbox, and are never flagged as gaps.
+    ``validate(asof, name, content)``, if set, checks a manual file before ingest stores it and
+    returns the reason to reject it (e.g. a bulletin printed for another date), or None.
     """
 
     id: str
@@ -50,6 +52,7 @@ class SourceSpec:
     window: int | None = None
     cme: bool = False
     schedule: Literal["daily", "backfill", "occasional"] = "daily"
+    validate: Callable[[date, str, bytes], str | None] | None = None
 
 
 def mmddyyyy(d: date) -> str:

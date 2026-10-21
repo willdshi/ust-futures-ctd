@@ -72,5 +72,31 @@ def cme_routes():
          ok("https://www.cmegroup.com/delivery_reports/treasury.html",
             b'<a href="/files/report.pdf">report</a> <a href="/files/report.pdf">again</a>', "text/html")),
         ("GET", "https://www.cmegroup.com/files/", ok("x", b"%PDF-1.4", "application/pdf")),
-        ("GET", "https://www.cmegroup.com/daily_bulletin/", ok("x", b"%PDF-1.4 bulletin", "application/pdf")),
+        ("GET", "https://www.cmegroup.com/daily_bulletin/", ok("x", bulletin_pdf("Fri, Oct 16, 2026"), "application/pdf")),
     ]
+
+
+def make_pdf(*lines: str) -> bytes:
+    """A minimal one-page PDF whose extractable text is ``lines``."""
+    text = "BT /F1 10 Tf 20 750 Td 14 TL " + " ".join(f"({line}) Tj T*" for line in lines) + " ET"
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
+               b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+               b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+               b" /Resources << /Font << /F1 5 0 R >> >> >>",
+               b"<< /Length %d >>\nstream\n%s\nendstream" % (len(text), text.encode()),
+               b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for i, obj in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (i, obj)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return bytes(out)
+
+
+def bulletin_pdf(trade_date: str, number: int = 200, final: bool = True) -> bytes:
+    """A stand-in Section 42 bulletin with the page-1 header ingest checks."""
+    lines = ["10YR NOTE, 5YR NOTE, 2YR NOTE, AND 30YR BOND OPTIONS"] + (["FINAL"] if final else [])
+    return make_pdf(*lines, f"PG42 BULLETIN # {number}@ 10YR NOTE OPTIONS {trade_date} PG42")

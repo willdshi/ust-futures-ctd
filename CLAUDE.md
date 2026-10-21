@@ -53,7 +53,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
   - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against the TCF files.
   - Store delivery calendars per contract month; don't compute them ad hoc.
   - Basket eligibility, measured from the first day of the delivery month:
-    - ZN is 6.5 to 8y (original maturity ≤ 10y) from the September 2023 contract month; 6.5 to 10y before. Historical rebuilds must use the grade in force for each contract month
+    - ZN is 6.5 to 8y (original maturity ≤ 10y) from the September 2023 contract month; 6.5 to 10y before. Historical rebuilds must use the grade in force for each contract month (records in `src/ctd/reference/data/contract_grades.toml`, looked up with `ctd.reference.grades.grade_for`)
     - ZB is 15 to under 25y
     - UB is 25y and over
   - A bond moves from UB's basket to ZB's when it drops below 25y, so baskets are dated per contract.
@@ -77,6 +77,7 @@ Required unit tests:
 - CF formula vs the CME table for ZN, ZB and UB
 - delivery calendars, and option expiry dates vs CME's published calendar
 - a bond crossing the 25-year ZB/UB boundary between contract months
+- a note crossing the ZN grade change: 91282CFV8 (4⅛% Nov 2032) is deliverable for June 2023 (6.5–10y) but not September 2023 (6.5–8y)
 - forward price vs a hand carry calculation, including a coupon between today and delivery
 - settlement on a coupon date; end-of-month maturities
 - crossover root-finding on a synthetic two-bond basket with a known answer

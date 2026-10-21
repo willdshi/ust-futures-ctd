@@ -12,3 +12,4 @@ dependencies:
   - pandas
   - numpy
   - matplotlib
+  - pdfplumber

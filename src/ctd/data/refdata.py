@@ -7,6 +7,7 @@ from functools import cache
 from importlib.resources import files
 
 from ctd.reference.calendar import BusinessCalendar
+from ctd.reference.grades import Grade
 
 CALENDARS = ("cme", "sifma")
 
@@ -30,3 +31,12 @@ def calendar(name: str) -> BusinessCalendar:
 def cme_products() -> dict:
     with _ref_file("cme_products.toml").open("rb") as f:
         return tomllib.load(f)
+
+
+@cache
+def grades() -> list[Grade]:
+    """Deliverable-grade records from ``contract_grades.toml``."""
+    with _ref_file("contract_grades.toml").open("rb") as f:
+        records = tomllib.load(f)["grade"]
+    return [Grade(**{**r, "verified": tuple(r.get("verified", ())), "to_verify": tuple(r.get("to_verify", ()))})
+            for r in records]

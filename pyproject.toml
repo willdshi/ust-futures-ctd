@@ -16,6 +16,7 @@ dependencies = [
     "requests",
     "openpyxl",
     "matplotlib",
+    "pdfplumber",
 ]
 
 [project.optional-dependencies]
