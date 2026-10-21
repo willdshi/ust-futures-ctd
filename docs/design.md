@@ -34,7 +34,7 @@ All contracts: quarterly delivery months (Mar, Jun, Sep, Dec); first delivery da
 
 | Contract | Face | Original maturity | Remaining maturity (deliverable) | Basket span | CF maturity rounding | Reference CMT (5.4) |
 |---|---|---|---|---|---|---|
-| **ZN** (10-year) | $100k | ≤ 10y | 6y 6m to 10y from first day of delivery month | ~3.5y | Down to quarter | 7y |
+| **ZN** (10-year) | $100k | ≤ 10y | 6y 6m to 8y from first day of delivery month (6y 6m to 10y before the September 2023 contract) | ~1.5y (~3.5y before Sep 2023) | Down to quarter | 7y |
 | **ZB** (T-bond) | $100k | — | 15y to under 25y | ~10y | Down to quarter | 20y |
 | **UB** (Ultra bond) | $100k | — | 25y and over | ~5y (25–30y) | Down to quarter | 30y |
 
@@ -46,7 +46,7 @@ Other contracts, not in v1 (kept so they can be added later through reference da
 | ZF (5-year) | $100k | ≤ 5y 3m | ≥ 4y 2m from first day of delivery month | Down to whole month | Short |
 | TN (Ultra 10-year) | $100k | ≤ 10y | 9y 5m to 10y | Down to quarter | Long |
 
-The figures above are a working summary. **Verify each against the current CBOT rulebook chapter when encoding it**. They live in `reference/` as data (one record per contract, with an effective-from date because CME has changed grades before, e.g. ZB in 2011), never as constants in code.
+The figures above are a working summary. **Verify each against the current CBOT rulebook chapter when encoding it**. They live in `reference/` as data (one record per contract, with an effective-from date because CME has changed grades before, e.g. ZB in 2011, and ZN from the September 2023 contract month), never as constants in code.
 
 - **Delivery calendar** (stored per contract month, not computed ad hoc). ZN, ZB and UB share it:
   - last trading day = 7th business day before the last business day of the month;
@@ -56,13 +56,14 @@ The figures above are a working summary. **Verify each against the current CBOT 
 - Conversion factor: price per $1 par at a 6% yield, per CME's formula, with remaining maturity rounded down to the quarter. **Computed with the formula in both live and historical mode.** CME's published table (TCF) is validation data, collected daily from CME's public FTP server (section 3.2), and the formula is tested against it.
 - Invoice price = futures settlement × CF × face/100 + accrued interest at delivery date.
 - **Basket changes**: rebuild each basket from the eligibility rules and Treasury security terms on each contract-month roll and after each auction in any basket's maturity range. New issues can join:
-  - new 10-year notes for ZN;
+  - for ZN, new 7-year notes, and 10-year notes once they fall under 8 years (new 10-year notes before September 2023; they're now deliverable into TN instead);
   - new 20-year bonds for ZB;
   - new 30-year bonds for UB;
   - aging 30-year bonds move from UB to ZB once under 25 years.
 
   Check rebuilt baskets against CME's daily TCF files (section 3.2); the first file a bond appears in dates its addition to the basket. Reopenings don't change CUSIP, coupon, maturity or CF. Rerun crossovers whenever the basket changes.
 - **Baskets are dated, not fixed per contract.** The basket used for a run is the one valid at the horizon date.
+- **ZN grade change (September 2023).** From the September 2023 contract month, CME caps ZN's remaining maturity at 8 years; before that the cap was 10 years. Basket rebuilds look up the grade in force for each contract month, never a single rule. CME's TCF files start in December 2023, so pre-2023 ZN baskets can't be checked against them, and ZN backtest cycles before September 2023 run on the old, wider basket.
 - **ZB/UB boundary.** A bond crosses from UB's basket to ZB's when its remaining maturity falls below 25 years. Basket rebuilds (historical mode) must apply the boundary at each contract's first delivery day, so the same bond can be in UB for one contract and ZB for the next.
 
 ### Options on futures (reference data per option product)
@@ -80,6 +81,7 @@ The figures above are a working summary. **Verify each against the current CBOT 
 | Security terms (CUSIP, coupon, maturity, dated date) | TreasuryDirect / FiscalData | Yes | Yes | Include since-matured issues for history |
 | Bond prices by CUSIP | TreasuryDirect daily prices | Yes (prior-day close) | Yes, from 30 May 2008 (until about September 2008, CUSIP and prices only); stored from 2016 | Single price, rounded, lagged; off-the-runs noisy; slow to pull, so cache |
 | Futures settlements (all six Treasury contracts, all listed months) | CME settlements | Yes | **No** (paid DataMine) | Used only for vol conversion (5.5) and open interest; collection may be manual; respect terms of use |
+| Futures daily bars, cross-check (six Treasury contracts) | Yahoo Finance chart endpoint | Yes | Listed contracts since listing; continuous front month from 2000 (2010 for UB, TN) | Closes equal CME settlements on dates checked; misses some listed months (e.g. June 2027 ZT, ZF, ZN, TN); continuous series rolls on the last trading day, unadjusted; unofficial endpoint, personal-use terms |
 | Futures option settlements by strike (section 3.1) | CME settlements | Yes | **No** (paid) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
 | Deliveries by contract (delivered CUSIPs, if published) | CME delivery reports | Delivery months | **No** | Nice to have: tiebreaker for backtest cycles where the actual CTD is ambiguous from prices (section 8); confirm what CME publishes |
 | Constant-maturity yields | Treasury par yield curve (CMT) and daily bill rates, FRED | Yes | Yes, decades | Smoothed curve, not bond-specific |
@@ -130,6 +132,7 @@ A free source that only shows recent days is lost for good on any day it isn't p
 - CME futures settlements: all six Treasury contracts (ZT, ZF, ZN, TN, ZB, UB), all listed months, including calendar-spread settlements if published.
 - CME option settlements: options on all six, every listed expiry, every strike, puts and calls. Collected as the Daily Bulletin's Section 42 PDF (section 3.1).
 - CME 1-month SOFR, 3-month SOFR and 30-day fed funds futures settlements (repo path, 5.3).
+- Yahoo Finance daily bars for the six Treasury futures: each listed contract Yahoo carries and the continuous front-month series, 10 days per daily pull, full history backfilled once. A cross-check on CME settlements; not a replacement, since Yahoo drops expired contracts and skips some listed months.
 - TreasuryDirect daily prices: the whole file, every CUSIP, every day. Past dates can currently be looked up back to 30 May 2008, but don't rely on that lasting. History from 2016 is stored once with `ctd backfill --prices-from 2016-01-01`.
 
 **Occasional: not needed daily.**
@@ -211,7 +214,7 @@ CLAUDE.md
 
 ### 5.4 Factor and betas
 - Factor `x` = constant-maturity yield near the current CTD, per contract (section 2 table): **7-year for ZN, 20-year for ZB, 30-year for UB**.
-- For each CMT point across the basket range (ZN ~6–11y, ZB ~14–26y, UB ~24–30y, 1-year steps), regress yield changes on the reference: `Δy(τ) = β(τ)·Δx + ε(τ)`.
+- For each CMT point across the basket range (ZN ~6–9y, or ~6–11y for contract months before September 2023; ZB ~14–26y; UB ~24–30y; 1-year steps), regress yield changes on the reference: `Δy(τ) = β(τ)·Δx + ε(τ)`.
   - 2–3 day or weekly changes; 6–12 month window or exponential weights (half-life ~3 months).
   - Shrink betas slightly toward 1.
   - Also estimate on **sell-off days only**; use those if materially different.
@@ -282,7 +285,7 @@ C_i(z) = P_i(z) / CF_i
 
 ### 5.7 Envelope, crossovers and probabilities
 - `min_i C_i(z)`; record the argmin (the CTD in each state). Only the argmin is used; the envelope's value is not published.
-- Root-find the exact z where the argmin changes: crossovers `z_1 < z_2 < …`. Expect ZN: usually one major switch (6.5–7y cluster → 9.5–10y cluster); ZB: a staircase of two or three; UB: one or two, between the shortest and longest 30-year issues.
+- Root-find the exact z where the argmin changes: crossovers `z_1 < z_2 < …`. Expect ZN: switches within the 6.5–8y basket since September 2023, so smaller duration jumps; before then usually one major switch (6.5–7y cluster → 9.5–10y cluster); ZB: a staircase of two or three; UB: one or two, between the shortest and longest 30-year issues.
 - Tail probability per crossover, measured from the forward (z = 0) on its own side:
   - sell-off side: `Q_k = P(z > z_k)`; rally side: `Q_k = P(z < z_k)`.
   - v1: `Q_k = Φ(−|z_k| / S)`. With 5.5.1: read from the smile-implied CDF. With 5.5.2: `Φ(−|z_k| / S_k)`, then the monotonicity cap.
@@ -339,7 +342,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - **Unit tests**: accrued interest; price/yield round trip to 1e-10 with the single pricing function; CF formula vs CME table for ZN, ZB and UB; delivery calendars, and option expiry dates vs CME's published calendar; a bond crossing the 25-year ZB/UB boundary between contract months; forward price vs carry hand calculation including a coupon between today and delivery; settlement on a coupon date; end-of-month maturities; crossover root-finding on a synthetic two-bond basket with a known answer; term repo compounding; region-weighted DV01 vs finite-difference on a synthetic basket.
 - **Independent checks**: a handful of bonds vs QuantLib (test dependency only) or TreasuryDirect published values.
 - **Sanity**: on a flat 6% curve all converted prices ≈ 100; below 6% low-duration bonds are CTD, above 6% high-duration.
-- **Backtest**: run historical mode over past cycles with large moves (2022–23; the 2026 long-end sell-off). Score probabilities against the actual CTD at delivery (Brier score). The actual CTD is computed from prices: on each delivery day, the bond with the smallest gross basis (cash price − futures × CF). The final futures price is fixed on the last trading day, but the CTD can still change over the last 7 delivery days. Flag a cycle as ambiguous when the two smallest bases are within price noise (TreasuryDirect prices are rounded and struck at a different time from the futures settlement). Exclude ambiguous cycles from scoring, or settle them from a CME delivery report if one was saved and lists CUSIPs. Check that the model shows the switches reported in 2026 (ZB moving along the basket in August and October). Score ZN, ZB and UB separately.
+- **Backtest**: run historical mode over past cycles with large moves (2022–23; the 2026 long-end sell-off). Score probabilities against the actual CTD at delivery (Brier score). The actual CTD is computed from prices: on each delivery day, the bond with the smallest gross basis (cash price − futures × CF). The final futures price is fixed on the last trading day, but the CTD can still change over the last 7 delivery days. Flag a cycle as ambiguous when the two smallest bases are within price noise (TreasuryDirect prices are rounded and struck at a different time from the futures settlement). Exclude ambiguous cycles from scoring, or settle them from a CME delivery report if one was saved and lists CUSIPs. Check that the model shows the switches reported in 2026 (ZB moving along the basket in August and October). Score ZN, ZB and UB separately. ZN cycles before September 2023 use the old 6.5–10y grade; report them apart from later cycles.
 - **Sensitivity**: β ± 0.05; horizon first vs last delivery; vol ± 10%; smile-implied vs ATM-normal probabilities; interpolated vs √T vol; convolution vs rescaling to the horizon; grid tolerance and cap; flat vs stripped repo; GC vs 50bp special CTD repo; with vs without `c_i`.
 - **Cross-check**: dealer/Bloomberg CTD scenarios when available.
 

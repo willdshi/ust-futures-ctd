@@ -33,6 +33,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
     - CME futures settlements for all six contracts, and their option settlements as the Daily Bulletin's Section 42 PDF (browser bookmarklet; cmegroup.com blocks scripts)
     - CME conversion factor tables (TCF, from CME's public FTP server)
     - SOFR and fed funds futures
+    - Yahoo Finance daily bars for the six Treasury futures (cross-check on CME settlements)
     - the full TreasuryDirect price file
   - Never narrow a fetcher to the products the model currently reads.
   - Fetches are idempotent and never overwrite a stored file.
@@ -52,7 +53,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
   - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against the TCF files.
   - Store delivery calendars per contract month; don't compute them ad hoc.
   - Basket eligibility, measured from the first day of the delivery month:
-    - ZN is 6.5 to 10y (original maturity ≤ 10y)
+    - ZN is 6.5 to 8y (original maturity ≤ 10y) from the September 2023 contract month; 6.5 to 10y before. Historical rebuilds must use the grade in force for each contract month
     - ZB is 15 to under 25y
     - UB is 25y and over
   - A bond moves from UB's basket to ZB's when it drops below 25y, so baskets are dated per contract.

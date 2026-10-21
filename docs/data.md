@@ -1,0 +1,342 @@
+# Data
+
+What the collector gathers, where it comes from, how it's stored, and how the datasets fit together. [design.md](design.md) §3 says *why* each dataset is needed; this file is the working reference for *what is actually there*. Figures are as of 2026-10-20.
+
+## 1. Overview
+
+Every business day, `ctd fetch` snapshots each source into a local raw store under the as-of date. Most sources are fetched automatically. The CME settlement files and the Daily Bulletin can't be (cmegroup.com refuses scripted connections), so they are downloaded in Chrome with the `ctd bookmarklet` and picked up by `ctd ingest`.
+
+| Source id | What | From | How | Schedule | Stored so far |
+|---|---|---|---|---|---|
+| `td_prices` | End-of-day prices, every Treasury CUSIP | TreasuryDirect FedInvest | auto | daily | 2016-01-04 → today (2,702 dates) |
+| `td_securities` | Security terms, every auctioned security | TreasuryDirect securities search | auto | daily | full history in each daily file |
+| `fiscaldata_auctions` | Auction results, every auction since Oct 1979 | FiscalData API | auto | daily | full history in each daily file |
+| `par_curve` | Nominal par yield curve and bill rates | Treasury (home.treasury.gov) | auto | daily | current year daily; 1990+ backfilled |
+| `fred` | CMT yields, SOFR, effective fed funds | FRED | auto | daily | full history in each daily file |
+| `nyfed_rates` | SOFR, TGCR, BGCR, EFFR | NY Fed Markets API | auto | daily | trailing 2 weeks daily; 2018-04-02+ backfilled |
+| `cme_tcf` | Conversion factors and deliverable baskets | CME public FTP | auto | daily | 2023-12-11 → today (740 dates) |
+| `yahoo_fut` | Daily bars, six Treasury futures | Yahoo Finance chart endpoint | auto | daily | 10 days per pull; listed contracts and front month from 2000 backfilled |
+| `cme_fut` | Futures settlements: ZT, ZF, ZN, TN, ZB, UB | cmegroup.com | bookmarklet | daily | 2026-10-14 → |
+| `cme_stir` | Futures settlements: SR1, SR3, ZQ | cmegroup.com | bookmarklet | daily | 2026-10-14 → |
+| `cme_bulletin` | Daily Bulletin Section 42: options on the six Treasury futures | cmegroup.com | bookmarklet | daily | 2026-10-16 → |
+| `cme_opt` | Per-product option settlement files | cmegroup.com | auto if CME allowed | occasional | none |
+| `cme_delivery` | Treasury delivery reports | cmegroup.com | manual | occasional | none |
+
+Backfill-only source ids (`par_curve_backfill`, `nyfed_rates_backfill`, `yahoo_fut_backfill`) hold the one-off history pulls; see §4.
+
+The six Treasury futures in scope are ZT, ZF, ZN, TN, ZB and UB. The model reads ZN, ZB and UB (design §1); the others are collected so they can be added later.
+
+## 2. The raw store
+
+### 2.1 Layout
+
+The store lives in `/data/` at the repo root (gitignored; override with `CTD_DATA_ROOT`). Total size today: about 107 MB.
+
+```
+data/
+  raw/<asof>/<source>/<unit>/<name>.gz          the file exactly as downloaded, gzip-compressed
+  raw/<asof>/<source>/<unit>/<name>.meta.json   where it came from (2.2)
+  raw/<asof>/manifest.json                      what was expected and collected that day (2.3)
+  inbox/<asof>/<source>/...                     manual-drop folder (2.4)
+  inbox/_ingested/...                           originals after ingest
+  gaps.log                                      append-only log of every gap reported
+  fetch.log                                     output of the scheduled fetch
+  cme_bookmarklet.html                          page to install the bookmarklet (`ctd bookmarklet`)
+```
+
+- **`<asof>`** is the business day the data describes, as `YYYY-MM-DD`. For history-type sources (§3) it's the day the file was pulled.
+- **`<unit>`** splits a source into independently tracked pieces: a product (`ZN`), a series (`DGS10`), a security type (`Bond`), a table, or a file format (`csv`/`xlsx`). A source-level manual drop that can't be matched to a unit goes under `_manual`.
+- **`<name>`** is chosen by the fetcher, usually the remote file name with the date added (e.g. `securityprice_2026-10-19.csv`, `TCF_20261019.csv`). Files from the bookmarklet keep the short names ingest gives them (`ZN.json`, `Section42.pdf`), since the date and source are already in the path.
+
+### 2.2 File rules and metadata
+
+- **Exactly as downloaded.** Bytes are stored unchanged, gzip-compressed at rest (`mtime=0`, so the same bytes always give the same `.gz`). Read them back with `RawStore.read` (§7).
+- **Never overwritten.** Writes use exclusive create; a re-run skips anything already stored. Re-running a fetch is always safe.
+- **Validated before storing.** A fetcher rejects an empty or obviously wrong response (an HTML error page instead of CSV, a non-PDF bulletin) so it can't block the correct file later.
+
+Each file has a `.meta.json` sidecar:
+
+| Field | Meaning |
+|---|---|
+| `asof`, `source`, `unit`, `name` | where it sits in the store |
+| `bytes`, `sha256` | size and SHA-256 of the original, uncompressed bytes |
+| `stored_at` | when it was written to the store (UTC) |
+| `origin` | `auto` (fetched) or `manual` (inbox or bookmarklet) |
+| `url`, `method`, `params`, `http_status`, `content_type`, `downloaded_at` | automatic fetches: the request and response |
+| `original_path`, `original_mtime` | manual files: where the file was dropped and when it was saved |
+| `renamed_from`, `moved_from` | present on the few files reorganised by hand |
+
+### 2.3 Manifests and statuses
+
+`raw/<asof>/manifest.json` lists every source expected that day, with a status per unit, the files collected and any error. It's the collector's bookkeeping (not raw data) and is rewritten on each run; a run re-reads it just before saving, so overlapping runs don't erase each other's entries.
+
+| Status | Meaning | A gap? |
+|---|---|---|
+| `ok` | collected (`origin` says how) | no |
+| `not_expected` | weekend or holiday on the source's calendar, or nothing published that day (e.g. a past holiday that returned an empty file) | no |
+| `manual` | a manual file was dropped at source level; coverage of the units isn't verified | no (warning) |
+| `missing` | daily source not attempted yet | yes |
+| `manual_needed` | CME file not dropped yet | yes |
+| `failed` | fetch attempted and failed; retried next run | yes |
+| `not_recoverable` | outside the source's recovery window and never stored | yes |
+
+Occasional sources are never reported as gaps. `ctd check` lists gaps and warnings across stored dates and exits 1 if there are any.
+
+### 2.4 Manual files: inbox, bookmarklet, Downloads
+
+- **Bookmarklet.** Run from a cmegroup.com tab, it saves the nine futures settlement JSONs and the Section 42 PDF to the browser's Downloads folder as `ctd_<asof>_<source>_<name>`, e.g. `ctd_2026-10-19_cme_fut_ZN.json`. It skips settlements not yet marked Final.
+- **Ingest** (`ctd ingest`, also the first step of `ctd fetch`) moves those files from Downloads (`CTD_DOWNLOADS` overrides the folder) into `inbox/<asof>/<source>/<name>`, dropping the prefix and any ` (1)` Chrome adds to repeat downloads. It then copies each inbox file into the store and moves the original to `inbox/_ingested/`.
+- **Matching a file to a unit:** `inbox/<asof>/<source>/<unit>/<file>` always works. A file directly under the source folder is matched by name (`ZN.json`, `ZN_anything.json`, any case), or goes to the only unit if the source has one. Anything else is stored under `_manual`.
+- **Conflicts:** a file whose name is already stored with different bytes stays in the inbox (or in Downloads) and is reported; nothing is overwritten. An identical repeat is just cleared away.
+
+### 2.5 Calendars and recovery windows
+
+Two business calendars are kept in `src/ctd/reference/data/holidays.csv`: `cme` (CME interest rate settlements) and `sifma` (cash Treasuries; adds Columbus Day and Veterans Day). Only 2026–27 holidays are listed so far, unverified against the official calendars. Earlier holidays are recognised from the data instead: TreasuryDirect returns an empty file, and more than 5 business days later that's recorded as `not_expected`.
+
+A source's recovery window is how many business days after the as-of date it still serves that date:
+
+| Source | Window | Consequence |
+|---|---|---|
+| `cme_fut`, `cme_stir`, `cme_opt` | 4 (CME shows 5 trailing business days) | after that, a missing day is lost |
+| `cme_bulletin` | current bulletin only | CME's link serves only the latest edition; earlier dates can't be downloaded (§5.9) |
+| `cme_delivery` | 0 (unconfirmed) | |
+| everything else | unlimited | can be re-fetched for a past date |
+
+## 3. Kinds of source
+
+- **Dated:** the request names the date, so a file covers that date only (TreasuryDirect prices, CME settlements, TCF, NY Fed range, Yahoo window).
+- **History:** each pull returns everything published so far (FiscalData, TreasuryDirect securities, FRED, the par curve year file). A file stored under a past as-of date can contain data published later. **Code reading these must filter to dates on or before the as-of date**, or past runs won't reproduce.
+
+## 4. Operations
+
+| Task | Command |
+|---|---|
+| Daily collection | Scheduled task `ctd-daily-fetch` runs `ctd fetch --catch-up` at 19:00 on weekdays (log in `data/fetch.log`). `--catch-up` also retries the previous 4 business days. |
+| CME files | Morning after each trade date: click the bookmarklet on a cmegroup.com tab, then `ctd ingest` or wait for the evening run. |
+| Check | `ctd check [--from D] [--to D]` |
+| One date / one source | `ctd fetch --asof D [--source ID ...]` |
+| One-off history | `ctd backfill [--asof D] [--prices-from D]`: par curve years, NY Fed since 2018, every TCF file on CME's FTP, Yahoo histories, and (with `--prices-from`) TreasuryDirect prices by date |
+| Rebuild the bookmarklet | `ctd bookmarklet` (after editing `cme_products.toml`) |
+
+Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.cli <command>`.
+
+## 5. Sources in detail
+
+### 5.1 `td_prices`: TreasuryDirect FedInvest prices
+
+- **What:** one price file per business day covering every marketable Treasury (bills, notes, bonds, TIPS, FRNs), about 460 securities today. TreasuryDirect's single end-of-day price, rounded and struck before the futures settlement; clean prices (design §5.1).
+- **How:** a three-step form flow, each step handing out a CSRF token: GET the date form, POST the date, POST for the CSV. Calendar `sifma`.
+- **File:** `td_prices/securityprice/securityprice_<asof>.csv`. No header row. Columns:
+
+| # | Column | Example |
+|---|---|---|
+| 0 | CUSIP | `912810UX4` |
+| 1 | Security type | `MARKET BASED BILL` / `NOTE` / `BOND` / `FRN`, `TIPS` |
+| 2 | Coupon, decimal | `0.05125` (= 5.125%) |
+| 3 | Maturity | `08/15/2046` (MM/DD/YYYY) |
+| 4 | Call date | usually blank |
+| 5 | Buy | `0.000000` |
+| 6 | Sell | `99.989444` |
+| 7 | End of day | `0.000000` |
+
+`0.000000` means no price was provided in that column. Bills usually have no buy price, and the end-of-day column is sometimes empty too (as in this bill on 2026-10-19), so check which column holds a price before using it.
+
+- **History:** past dates can be requested back to **30 May 2008**. Until about September 2008 only CUSIP and prices are filled in (type, coupon and maturity are blank); join to security terms on CUSIP. Stored from 2016-01-04; 108 dates since then had no prices (holidays).
+
+### 5.2 `td_securities`: TreasuryDirect securities search
+
+- **What:** the terms of every auctioned security, one JSON array per type.
+- **How:** `GET https://www.treasurydirect.gov/TA_WS/securities/search?format=json&type=<type>`.
+- **Units/files:** `Bill`, `Note`, `Bond`, `CMB`, `TIPS`, `FRN` → `securities_<type>.json`. About 80 MB raw a day (bills alone 55 MB), about 11 MB compressed.
+- **Fields:** camelCase strings, e.g. `cusip`, `securityType`, `securityTerm`, `interestRate` (percent, `"5.125"`), `issueDate`, `maturityDate` (`2046-08-15T00:00:00`), `datedDate`, `announcedAsCusip`, `corpusCusip`, plus auction details. One object per auction, so reopenings repeat a CUSIP.
+
+### 5.3 `fiscaldata_auctions`: FiscalData auctions
+
+- **What:** Treasury securities auction data, every auction since **31 October 1979**: 11,154 rows (8,361 bills, 2,338 notes incl. TIPS and FRNs, 455 bonds).
+- **How:** `GET https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query?format=json&page[size]=10000&page[number]=N`.
+- **Files:** `auctions_query_p001.json`, `p002.json`, ... Each holds `data` (rows) and `meta` (`total-count`, `total-pages`).
+- **Fields:** 114 per row, all strings, missing values as the string `"null"`. Key ones: `cusip`, `security_type`, `security_term`, `auction_date`, `issue_date`, `maturity_date`, `dated_date`, `first_int_payment_date`, `int_rate` (percent), `reopening` (`Yes`/`No`), `original_issue_date` (filled on reopenings only), `currently_outstanding`, `floating_rate`, `inflation_index_security`.
+- **Quirks:**
+  - one row per auction, so take one row per CUSIP for security terms;
+  - FRNs have no `int_rate`;
+  - **includes announced auctions not yet held** (dates after the pull), so filter on `auction_date` ≤ as-of;
+  - nothing issued before October 1979, which doesn't matter: every bond deliverable into any of the six contracts since 2008 was issued later.
+
+### 5.4 `par_curve`: Treasury par yield curve and bill rates
+
+- **What:** two of Treasury's daily interest rate tables, one CSV per year:
+  - `daily_treasury_yield_curve` (from 1990): `Date, "1 Mo", "1.5 Month", "2 Mo", "3 Mo", "4 Mo", "6 Mo", "1 Yr", "2 Yr", "3 Yr", "5 Yr", "7 Yr", "10 Yr", "20 Yr", "30 Yr"`
+  - `daily_treasury_bill_rates` (from 2002): bank discount and coupon-equivalent rates for 4, 6, 8, 13, 17, 26 and 52-week bills.
+- **How:** `GET https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/<year>/all?type=<table>&...`. Each yearly file takes about 20 s to arrive.
+- **Files:** `<table>_<year>.csv`. Dates are `MM/DD/YYYY`, newest first, yields in percent. The daily pull fetches the current year; `par_curve_backfill` (stored under 2026-10-19) has every earlier year.
+- **Not collected:** the real yield curve and the long-term rate tables (TIPS aren't deliverable; the long-term composites are averages the model doesn't use). Some early pulls still include them.
+
+### 5.5 `fred`: FRED series
+
+- **What:** 13 series, each as its full history: `DGS1MO`, `DGS3MO`, `DGS6MO`, `DGS1`, `DGS2`, `DGS3`, `DGS5`, `DGS7`, `DGS10`, `DGS20`, `DGS30` (CMT yields), `SOFR`, `DFF` (effective fed funds, every calendar day).
+- **How:** `GET https://fred.stlouisfed.org/graph/fredgraph.csv?id=<series>`. FRED stalls on some user agents (e.g. ones containing "collector"); the collector's is accepted.
+- **Files:** `<series>.csv`, columns `observation_date,<series>`, ISO dates, blank where there's no value.
+- **Note:** every series duplicates data already collected from its publisher (Treasury, NY Fed). Kept as a cross-check, and for CMT history before 1990.
+
+### 5.6 `nyfed_rates`: NY Fed reference rates
+
+- **What:** SOFR, TGCR, BGCR (secured) and EFFR (unsecured).
+- **How:** `GET https://markets.newyorkfed.org/api/rates/<secured|unsecured>/<rate>/search.json?startDate=...&endDate=...`.
+- **Files:** `<rate>_<start>_<end>.json`. The daily pull covers the two weeks ending on the as-of date, because a rate for day D is published the next morning; the file therefore holds every rate known that evening. `nyfed_rates_backfill` covers 2018-04-02 onwards.
+- **Fields** (`refRates[]`): `effectiveDate`, `type`, `percentRate`, `percentPercentile1/25/75/99`, `volumeInBillions`, `revisionIndicator`.
+
+### 5.7 `cme_tcf`: CME Treasury conversion factor tables
+
+- **What:** CME's table of every deliverable CUSIP and its conversion factor, for every listed contract month of every Treasury future. Validation data: the model computes CFs with the formula and rebuilds baskets from the rules (design §2).
+- **How:** anonymous FTP, `ftp://ftp.cmegroup.com/settle/TCF/TCF_YYYYMMDD.csv` and `.xlsx`. The CSV is posted around 06:30 on the date in its name, the xlsx around 19:00; the evening run picks up a late xlsx the next day.
+- **Units/files:** `csv/TCF_<yyyymmdd>.csv`, `xlsx/TCF_<yyyymmdd>.xlsx`, keyed by the date in CME's file name.
+- **CSV columns:** `Exch, Period, PFCode, CUSIP, Invoice_Conversion_Factor, Create_Time`, e.g. `CBT,202612,17,912810QU5,0.7182,2026-10-19 11:30:22`. `Period` is the contract month (`YYYYMM`); `PFCode` is CME's clearing code (§6.2). There's no coupon or maturity; join on CUSIP.
+- **History:** CSV from 2023-12-11 and xlsx from 2024-03-25; everything on the server is stored (740 dates). CME also posts files on some of its holidays and on one Saturday (2023-12-09); those 8 weren't stored. The file includes Z3N and TWE, which this project doesn't model. ZN rows reflect the 8-year cap CME applies from the September 2023 contract month (6.58–7.96 years remaining in every month stored); earlier ZN baskets, under the old 10-year cap, aren't covered.
+- **Not known:** how long CME keeps old files. The first one falling about three years back suggests a rolling window, which is why the pull is daily.
+
+### 5.8 `cme_fut` and `cme_stir`: CME futures settlements
+
+- **What:** CME's settlement page data for each product: every listed month, with open, high, low, last, change, settlement, volume and open interest. `cme_fut` holds ZT, ZF, ZN, TN, ZB, UB; `cme_stir` holds SR1, SR3, ZQ.
+- **How:** the bookmarklet requests `https://www.cmegroup.com/CmeWS/mvc/Settlements/Futures/Settlements/<product_id>/FUT?strategy=DEFAULT&tradeDate=MM/DD/YYYY&pageSize=500` from your browser. Product IDs are in `src/ctd/reference/data/cme_products.toml` (ZT 303, ZF 329, ZN 316, TN 7978, ZB 307, UB 3141, SR1 8463, SR3 8462, ZQ 305), each confirmed against a downloaded file. A Python fetcher for the same URL exists but is switched off (`--cme-auto`), since cmegroup.com refuses scripted connections.
+- **Files:** `<product>/<product>.json`.
+- **JSON:** top level `tradeDate` (`10/19/2026`), `reportType` (`Final` once settled; the bookmarklet only saves Final), `updateTime`, `dsHeader` (product name, e.g. `10-Year T-Note Future`), `empty`, and `settlements[]` with `month` (`DEC 26`), `open`, `high`, `low`, `last`, `change`, `settle`, `volume` (with commas), `openInterest`.
+- **Price notation** (strings):
+
+| Product | Example | Means |
+|---|---|---|
+| ZB, UB | `105'13` | 105 + 13/32 |
+| ZN, TN | `105'145` | 105 + 14.5/32 (third digit in halves: 0, 5) |
+| ZF | `103'312` | 103 + 31.25/32 (third digit in quarters: 0, 2, 5, 7) |
+| ZT | `101'296` | 101 + 29.625/32 (third digit in eighths: 1, 2, 3, 5, 6, 7) |
+| SR1, SR3, ZQ | `96.1100` | decimal |
+
+### 5.9 `cme_bulletin`: Daily Bulletin Section 42 (options)
+
+- **What:** "10YR NOTE, 5YR NOTE, 2YR NOTE AND 30YR BOND OPTIONS", the bulletin section covering options on ZT, ZF, ZN, TN, ZB and UB, every listed expiry (quarterly, serial, weeklies) and every strike. About 35 pages and 3,200 strike rows a day. It is the daily source of option settlements.
+- **How:** the bookmarklet uses the Section 42 link on CME's Daily Bulletin page (fallback URL in `cme_products.toml`). **CME's link always serves the latest bulletin.** Run the bookmarklet the morning after the trade date; a bulletin for an earlier date can't be downloaded this way.
+- **Files:** `Section42/Section42.pdf`.
+- **Layout** (extracts cleanly with pdfplumber or pypdf): the page header gives the bulletin number, trade date and `FINAL` (`PG42 BULLETIN # 201@ ... Mon, Oct 19, 2026`). Each block has a product and put/call header (`10Y NOTE CALL`, or a weekly such as `HYO OPT WK THU`), an expiry label (`DEC26`), one row per strike, then a `TOTAL` line. Strike rows: strike (`1055` = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high, contract low. ZN option prices are in 64ths (`461` = 4 61/64). The parser is phase 2 work.
+- **Check:** the 2026-10-16 bulletin has the 100.5 December ZN call at 4-61/64 with delta 1.000, against futures at 105-14.5.
+
+### 5.10 `yahoo_fut`: Yahoo Finance daily bars
+
+- **What:** daily OHLCV bars for the six Treasury futures, a cross-check on CME settlements. On the dates checked, each contract's close equals CME's settlement.
+- **How:** `GET https://query1.finance.yahoo.com/v8/finance/chart/<ticker>?interval=1d&period1=..&period2=..`, the endpoint the yfinance library uses, called with a plain request (no browser impersonation); the JSON is stored as received. It's an unofficial endpoint with personal-use terms.
+- **Tickers:** contracts as `<product><month code><yy>.CBT` (`ZNZ26.CBT`, month codes H, M, U, Z), and the continuous front month as `<product>=F` (`ZN=F`). Each run tries the next four quarterly contracts and skips any Yahoo doesn't carry (it lacks June 2027 for ZT, ZF, ZN and TN).
+- **Files:** daily `<ticker>_<start>_<asof>.json`, covering the 10 days ending on the as-of date (overlapping windows keep files small and cover a missed day). Backfill `<ticker>_history_<asof>.json` under `yahoo_fut_backfill/` on 2026-10-19.
+- **JSON:** `chart.result[0]` with `meta` (exchange, currency, `firstTradeDate`, ...), `timestamp[]` (epoch seconds, the session date at 00:00 New York time), and `indicators.quote[0]` with `open`, `high`, `low`, `close`, `volume` arrays (`null` where missing).
+- **History stored:**
+
+| Series | From |
+|---|---|
+| `ZT=F` | 2000-06-02 |
+| `ZF=F`, `ZN=F`, `ZB=F` | 2000-09-21 |
+| `UB=F` | 2010-01-11 |
+| `TN=F` | 2010-10-22 |
+| Dec 2026 contracts | March 2026 (listing) |
+| Mar 2027 contracts | June 2026 |
+| ZB, UB Jun 2027 | 2026-09-22 |
+
+- **Quirks:**
+  - Yahoo drops a contract once it expires, so per-contract history exists only for currently listed contracts;
+  - the `=F` series stays on the expiring contract until its last trading day (about three weeks after trading moves to the next contract) and isn't adjusted at the roll: never splice it into one price series;
+  - volume occasionally repeats the previous day's;
+  - a bar for the current session is live until the close; the fetch's default as-of date avoids capturing one;
+  - SR1, SR3 and long-dated ZQ have no usable Yahoo data, so they aren't collected.
+
+### 5.11 Occasional and legacy
+
+- **`cme_opt`:** CME's per-product option settlement files (an expiry list plus one JSON per option series). Only used if automated CME access ever works; the bulletin replaces it.
+- **`cme_delivery`:** CME Treasury delivery reports. Nice to have: the backtest takes the actual CTD from prices (design §8). Fetch with `ctd fetch --source cme_delivery`, or drop the files in the inbox.
+- **`cme_cf`** (2026-10-16 only): the conversion factor spreadsheet downloaded by hand before the FTP source existed. The source no longer exists; the FTP file for that date is under `cme_tcf`.
+
+## 6. Identifiers and joins
+
+### 6.1 Securities: CUSIP
+
+CUSIP is the key for every bond-level dataset. All identifiers were checked on 2026-10-20: every one is 9 characters with a valid check digit, with no case or whitespace problems.
+
+| Dataset | Field | Distinct CUSIPs |
+|---|---|---|
+| FiscalData auctions | `cusip` | 5,099 |
+| TreasuryDirect securities | `cusip` | 5,099 (the same set) |
+| TreasuryDirect prices (2016 →) | column 0 | 2,098, all found in both of the above |
+| CME TCF (2023 →) | `CUSIP` | 364, all found in both of the above |
+
+Coupon and maturity agree for every shared CUSIP (FiscalData vs TreasuryDirect securities: 5,099; prices vs FiscalData: 921 notes and bonds). The usual route:
+
+```
+TCF (contract month, CUSIP, CF) ─┐
+TreasuryDirect prices (CUSIP, price) ─┼── CUSIP ──► FiscalData / TreasuryDirect securities (coupon, maturity, dated date, first coupon)
+```
+
+When joining:
+- FiscalData and TreasuryDirect securities have one row per **auction**; reduce to one row per CUSIP (reopenings keep CUSIP, coupon and maturity).
+- Coupons are decimal in the prices file (`0.05125`) and percent elsewhere (`5.125`).
+- The par curve, FRED and NY Fed data have no security identifiers; they're keyed by date and tenor or rate name.
+
+### 6.2 Contracts
+
+Each source names a futures contract differently. ZN December 2026:
+
+| Source | Contract | Month |
+|---|---|---|
+| Reference data / CLI | `ZN` | `ZNZ6` |
+| TCF | `PFCode` `21` | `Period` `202612` |
+| CME settlement JSON | product ID `316`, `dsHeader` `10-Year T-Note Future` | `month` `DEC 26` |
+| Section 42 bulletin | header `10Y NOTE CALL` / `PUT` | expiry `DEC26` |
+| Yahoo | `ZNZ26.CBT` (contract), `ZN=F` (front month) | in the ticker |
+
+TCF clearing codes, inferred from the maturities of each code's deliverables:
+
+| PFCode | `26` | `25` | `21` | `TN` | `17` | `UBE` | `3YR` | `TWE` |
+|---|---|---|---|---|---|---|---|---|
+| Contract | ZT | ZF | ZN | TN | ZB | UB | Z3N (not modelled) | TWE (not modelled) |
+
+They're stored as `clearing_code` in `src/ctd/reference/data/cme_products.toml`, next to each contract's product ID, so every CME source maps to one contract record.
+
+### 6.3 Dates and times
+
+| Source | Format |
+|---|---|
+| Store paths, manifests, FiscalData, FRED, NY Fed | `YYYY-MM-DD` |
+| TreasuryDirect prices, par curve, CME `tradeDate` | `MM/DD/YYYY` |
+| TreasuryDirect securities | `YYYY-MM-DDT00:00:00` |
+| TCF `Period` | `YYYYMM`; file names `YYYYMMDD` |
+| CME settlement month | `DEC 26`; bulletin `DEC26` |
+| Yahoo | epoch seconds (session date, 00:00 New York) |
+| Metadata timestamps (`stored_at`, `downloaded_at`) | UTC, `YYYY-MM-DDTHH:MM:SSZ` |
+
+## 7. Reading the data
+
+The model reads only from the store, never from the network (design §3). Use `RawStore`:
+
+```python
+from datetime import date
+from ctd.data.store import RawStore
+from ctd.data import manifest
+
+store = RawStore("data")
+asof = date(2026, 10, 19)
+store.units(asof, "td_securities")                       # ['Bill', 'Bond', 'CMB', 'FRN', 'Note', 'TIPS']
+store.names(asof, "cme_tcf", "csv")                      # ['TCF_20261019.csv']
+raw = store.read(asof, "cme_tcf", "csv", "TCF_20261019.csv")   # original bytes (decompressed)
+meta = store.meta(asof, "cme_tcf", "csv", "TCF_20261019.csv")  # sidecar dict
+manifest.load(store, asof)["sources"]["cme_tcf"]["status"]       # 'ok'
+```
+
+For a reproducible run on a past date:
+- read only files stored under dates on or before it;
+- filter history-type files (FiscalData, TreasuryDirect securities, FRED, par curve) to observations on or before it;
+- for FiscalData, keep only auctions held by then.
+
+## 8. Known issues and open items
+
+- **ZN grade before September 2023** can't be validated against TCF files, which start in December 2023 (§5.7).
+- **Missing bulletins for 2026-10-14 and 2026-10-15.** Their bulletins were downloaded after 10/19's was published, so CME served 10/19's; those copies were deleted. They remain gaps unless an archive copy turns up. Ingest doesn't yet check a bulletin's printed trade date against the as-of date.
+- **Holiday calendar** covers 2026–27 only and is unverified; earlier holidays are inferred from empty TreasuryDirect files.
+- **TCF holiday files:** 8 files dated on CME holidays or a weekend weren't stored.
+- **TCF retention** on CME's FTP is unknown.
+- **FRED** duplicates Treasury and NY Fed data; kept for now.
+- **Yahoo** is an unofficial endpoint and may change or stop without notice.
+- **CME automation:** cmegroup.com blocks scripts, so settlements and the bulletin depend on the daily bookmarklet click. A paid feed (DataMine, Databento, Barchart OnDemand) is the alternative (design §11).

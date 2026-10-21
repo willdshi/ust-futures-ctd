@@ -21,6 +21,7 @@ UNITS = {
     "cme_opt": "ZN",
     "cme_stir": "SR3",
     "cme_tcf": "csv",
+    "yahoo_fut": "ZN",
 }
 
 

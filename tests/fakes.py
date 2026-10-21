@@ -48,7 +48,17 @@ def gov_routes():
         ("GET", "https://fred.stlouisfed.org/", ok("x", b"observation_date,DGS10\n2026-10-16,5.09\n", "text/csv")),
         ("GET", "https://markets.newyorkfed.org/", ok("x", b'{"refRates": []}', "application/json")),
         ("GET", "ftp://ftp.cmegroup.com/settle/TCF/TCF_", ok("x", b"CUSIP,Coupon,Maturity\n")),
+        ("GET", "https://query1.finance.yahoo.com/v8/finance/chart/", yahoo),
     ]
+
+
+def yahoo(url, params):
+    """Yahoo chart API: June contracts aren't carried (404), everything else has one bar."""
+    if "M27.CBT" in url:
+        return Response(url, 404, b'{"chart":{"result":null,"error":{"code":"Not Found"}}}')
+    body = {"chart": {"result": [{"meta": {}, "timestamp": [1792036800],
+                                  "indicators": {"quote": [{"close": [105.25]}]}}], "error": None}}
+    return ok(url, json.dumps(body).encode(), "application/json")
 
 
 def cme_routes():

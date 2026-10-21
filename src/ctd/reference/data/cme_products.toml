@@ -7,42 +7,52 @@
 # A product with no product_id is reported as a failed fetch (and falls back
 # to the manual-drop folder) rather than skipped.
 #
+# clearing_code is CME's clearing code for the contract, the PFCode column in its
+# TCF conversion factor files (cme_tcf). Matched to each contract from the
+# remaining maturities of its deliverables in TCF_20261019.csv.
+#
 # Option series are not listed here: for each Treasury future, the collector
 # reads CME's list of option expiries (quarterly, serial and every weekly
 # series) and pulls all of them.
 
 [[treasury]]
 code = "ZT"
+clearing_code = "26"
 name = "2-Year T-Note"
 product_id = 303
 verified = true
 
 [[treasury]]
 code = "ZF"
+clearing_code = "25"
 name = "5-Year T-Note"
 product_id = 329
 verified = true
 
 [[treasury]]
 code = "ZN"
+clearing_code = "21"
 name = "10-Year T-Note"
 product_id = 316
 verified = true
 
 [[treasury]]
 code = "TN"
+clearing_code = "TN"
 name = "Ultra 10-Year T-Note"
 product_id = 7978
 verified = true
 
 [[treasury]]
 code = "ZB"
+clearing_code = "17"
 name = "U.S. Treasury Bond"
 product_id = 307
 verified = true
 
 [[treasury]]
 code = "UB"
+clearing_code = "UBE"
 name = "Ultra U.S. Treasury Bond"
 product_id = 3141
 verified = true
