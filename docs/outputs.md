@@ -126,9 +126,11 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 |---|---|
 | Charts 1–3, distance to switch, probabilities | Security reference (Fiscal Data auctions), TreasuryDirect daily prices, conversion factors (computed, checked against CME), SOFR, Treasury par curve, CME basket rules and calendar |
 | Roll | Same, plus CME Pace of the Roll for month-level OI |
-| Calibration | Realised CTD at delivery, computed from TreasuryDirect prices and the final futures settlement (design §8). CME delivery reports aren't used: CME posts only the current month |
+| Calibration | Realised CTD computed from own prices at delivery |
 | Asset-manager duration via futures | CFTC TFF futures-only (`gpe5-46if`) |
 | Deliverable float | MSPD outstanding and STRIPS, NY Fed SOMA holdings, buyback results, auction and reopening results |
+
+**Optional: CME delivery reports.** Not part of the core build. CME posts only the current month's Treasury delivery reports (daily issues and stops, month to date), and cmegroup.com blocks scripts, so there is no history to collect. A report saved by hand during a delivery month can serve as an optional validation input: a check on delivery timing, or on the realised CTD for an ambiguous cycle if it identifies the delivered issue.
 
 ## First milestone
 
