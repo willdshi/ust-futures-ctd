@@ -126,7 +126,7 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 |---|---|
 | Charts 1–3, distance to switch, probabilities | Security reference (Fiscal Data auctions), TreasuryDirect daily prices, conversion factors (computed, checked against CME), SOFR, Treasury par curve, CME basket rules and calendar |
 | Roll | Same, plus CME Pace of the Roll for month-level OI |
-| Calibration | Delivery history (CME issues and stops; independent CTD labels) |
+| Calibration | Realised CTD at delivery, computed from TreasuryDirect prices and the final futures settlement (design §8). CME delivery reports aren't used: CME posts only the current month |
 | Asset-manager duration via futures | CFTC TFF futures-only (`gpe5-46if`) |
 | Deliverable float | MSPD outstanding and STRIPS, NY Fed SOMA holdings, buyback results, auction and reopening results |
 

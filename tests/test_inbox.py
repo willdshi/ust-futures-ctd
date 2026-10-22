@@ -3,7 +3,7 @@ from datetime import date
 from ctd.data.inbox import INGESTED, MANUAL_UNIT, ingest
 
 ASOF = date(2026, 10, 16)
-UNITS = {"cme_fut": ["ZN", "ZB", "TN", "UB"], "cme_opt": ["ZN", "ZB"], "cme_delivery": ["reports"]}
+UNITS = {"cme_fut": ["ZN", "ZB", "TN", "UB"], "cme_opt": ["ZN", "ZB"], "cme_bulletin": ["Section42"]}
 
 
 def SOURCES(source, asof):
@@ -72,9 +72,9 @@ def test_file_named_after_its_unit(store, tmp_path):
 
 def test_single_unit_source_takes_any_file(store, tmp_path):
     inbox = tmp_path / "inbox"
-    drop(inbox, "cme_delivery/report.pdf", b"%PDF")
+    drop(inbox, "cme_bulletin/bulletin.pdf", b"%PDF")
     [r] = ingest(store, inbox, SOURCES)
-    assert r.unit == "reports" and store.names(ASOF, "cme_delivery", "reports") == ["report.pdf"]
+    assert r.unit == "Section42" and store.names(ASOF, "cme_bulletin", "Section42") == ["bulletin.pdf"]
 
 
 def test_collect_downloads(tmp_path):

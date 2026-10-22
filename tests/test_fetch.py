@@ -26,7 +26,7 @@ def test_auto_sources_ok_and_cme_manual_needed(store):
     gaps, man = run(store, FakeHttp(gov_routes()))
     st = statuses(man)
     assert set(st) == {s.id for s in registry.daily()}
-    assert "cme_delivery" not in st and "cme_opt" not in st  # occasional: never expected
+    assert "cme_opt" not in st  # occasional: never expected
     assert store.names(FRI, "cme_tcf", "csv") == ["TCF_20261016.csv"]
     for sid, status in st.items():
         if sid in CME_IDS:
@@ -62,19 +62,11 @@ def test_cme_auto(store):
     assert len(zn_opt) == 3 and "ZN_expirations_2026-10-16.json" in zn_opt  # expirations + 2 series
 
 
-def test_delivery_reports_when_asked(store):
-    dec = date(2026, 12, 15)
-    _, man = run(store, FakeHttp(cme_routes()), asof=dec, today=dec, cme_auto=True,
-                 sources=[registry.SOURCES["cme_delivery"]])
-    assert statuses(man)["cme_delivery"] == mf.OK
-    assert store.names(dec, "cme_delivery", "reports") == ["report.pdf", "treasury.html"]  # page + link, once
-
-
 def test_recovery_window(store):
-    srcs = [registry.SOURCES["cme_delivery"], registry.SOURCES["cme_stir"]]
+    srcs = [registry.SOURCES["cme_bulletin"], registry.SOURCES["cme_stir"]]
     dec = date(2026, 12, 15)
     _, man = run(store, FakeHttp(cme_routes()), asof=dec, today=date(2026, 12, 16), cme_auto=True, sources=srcs)
-    assert statuses(man)["cme_delivery"] == mf.NOT_RECOVERABLE  # window 0
+    assert statuses(man)["cme_bulletin"] == mf.NOT_RECOVERABLE  # window 0
     assert statuses(man)["cme_stir"] == mf.OK  # 1 business day back, within CME's window
     _, man = run(store, FakeHttp(cme_routes()), asof=date(2026, 10, 15), today=date(2026, 10, 30), cme_auto=True,
                  sources=srcs[1:])

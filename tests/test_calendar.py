@@ -1,7 +1,6 @@
 from datetime import date
 
 from ctd.data import refdata
-from ctd.data.cme_delivery import in_delivery_period
 
 CME = refdata.calendar("cme")
 SIFMA = refdata.calendar("sifma")
@@ -31,14 +30,3 @@ def test_add_and_trailing_business_days():
     assert CME.add_business_days(date(2026, 11, 27), -1) == date(2026, 11, 25)
     assert CME.trailing_business_days(date(2026, 10, 18), 3) == [date(2026, 10, 14), date(2026, 10, 15),
                                                                   date(2026, 10, 16)]
-
-
-def test_delivery_report_window():
-    # Dec 2026: first business day Tue 1 Dec; first intention day two business days earlier, Fri 27 Nov.
-    assert not in_delivery_period(date(2026, 11, 25), CME)
-    assert in_delivery_period(date(2026, 11, 27), CME)
-    assert in_delivery_period(date(2026, 12, 15), CME)
-    # ... through the 3rd business day of January (1 Jan holiday): Wed 6 Jan 2027.
-    assert in_delivery_period(date(2027, 1, 6), CME)
-    assert not in_delivery_period(date(2027, 1, 7), CME)
-    assert not in_delivery_period(date(2026, 10, 16), CME)

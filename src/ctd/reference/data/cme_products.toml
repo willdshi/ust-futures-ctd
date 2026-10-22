@@ -75,13 +75,6 @@ name = "30-Day Federal Funds"
 product_id = 305
 verified = true
 
-# Page listing CME's Treasury delivery reports. The collector stores the page
-# plus every .xls/.xlsx/.csv/.pdf it links to. URL unverified.
-[cme_delivery]
-pages = [
-    "https://www.cmegroup.com/delivery_reports/treasury-futures-delivery-reports.html",
-]
-
 # Daily Bulletin sections saved by the browser bookmarklet (`ctd bookmarklet`).
 # CME replaces each file with every new bulletin. When the bookmarklet runs on
 # the Daily Bulletin page it uses the link there whose URL contains link_match;

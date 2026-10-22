@@ -34,18 +34,28 @@ So hibernation delays collection rather than losing data, unless the PC is off f
 
 **After a longer absence, by hand:** run `ctd fetch --asof <date>` for each missed day, or `ctd backfill`.
 
+## Key-rate grid for KRDs (design §5.9)
+
+**Status:** adopted (2026-10-22), from [outputs.md](outputs.md) Conventions.
+
+**Decision:** key rates at **2, 5, 7, 10, 15, 20, 25 and 30 years**, with cash flows bucketed by triangular (tent) weights between neighbouring nodes. The grid is fixed; changing it changes every published KRD and the effective-maturity series, so record any change here with its date.
+
+**Why these nodes:**
+- 15 and 25 years aren't par-curve points, but KRDs bucket cash flows and need no market yield at the node. Without them, a ZB switch (about 15y to about 25y) would be split across the 10, 20 and 30-year buckets and barely show.
+- Tent weights keep KRDs and effective maturity smooth as a bond's cash flows roll past a node; a step scheme would add artificial jumps to the time series.
+
 ## Estimating betas for the deliverable basket (design §5.4)
 
 **Status:** option 1 adopted as the starting point (2026-10-21). Run option 2 as a sensitivity case. Option 3 can be estimated now, since TreasuryDirect prices are stored daily from 2016; compare all three in the backtest.
 
-**Question:** each basket bond needs a beta to the contract's reference yield (7-year CMT for ZN, 20-year for ZB, 30-year for UB). But Treasury's par curve only publishes 1, 2, 3, 5, 7, 10, 20 and 30-year points, and the bonds sit between them.
+**Question:** each basket bond needs a beta to the contract's reference yield (7-year CMT for ZN, 10-year for TN, 20-year for ZB, 30-year for UB). But Treasury's par curve only publishes 1, 2, 3, 5, 7, 10, 20 and 30-year points, and the bonds sit between them.
 
 **The key fact:** with any interpolation that is linear in the node yields (linear, or a standard cubic spline), the beta at an intermediate maturity is the same weighted combination of the betas at the nodes. Regression is linear, so "interpolate yields, then regress" gives the same answer as "regress at the nodes, then interpolate the betas". Betas only ever need estimating at the published tenors; the interpolation choice just sets the weights between them.
 
 **Options:**
 
 1. **Node betas, linearly interpolated (start here).**
-   - Regress each published tenor's yield changes on the reference. The 5, 7, 10, 20 and 30-year points cover all three baskets.
+   - Regress each published tenor's yield changes on the reference. The 5, 7, 10, 20 and 30-year points cover all four baskets.
    - Interpolate β linearly in maturity to each bond. That's identical to linear interpolation of the curve.
    - Simple, transparent and stable.
    - For ZB, everything between 15 and 25 years comes from the 10, 20 and 30-year betas. For UB, bonds of 25 to 30 years sit between the 20 and 30-year nodes. That's interpolation, not extrapolation, for every basket.

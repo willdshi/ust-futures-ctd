@@ -2,12 +2,11 @@
 
 from datetime import date
 
-from ctd.data import (cme_bulletin, cme_delivery, cme_settlements, cme_tcf, fiscaldata, fred, nyfed, par_curve, refdata,
+from ctd.data import (cme_bulletin, cme_settlements, cme_tcf, fiscaldata, fred, nyfed, par_curve, refdata,
                       td_prices, td_securities, yahoo_fut)
 from ctd.data.sources import SourceSpec
 
-_MODULES = (td_prices, td_securities, fiscaldata, par_curve, fred, nyfed, cme_tcf, cme_settlements, cme_bulletin, cme_delivery,
-            yahoo_fut)
+_MODULES = (td_prices, td_securities, fiscaldata, par_curve, fred, nyfed, cme_tcf, cme_settlements, cme_bulletin, yahoo_fut)
 
 SOURCES: dict[str, SourceSpec] = {s.id: s for m in _MODULES for s in m.SPECS}
 

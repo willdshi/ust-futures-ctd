@@ -1,20 +1,24 @@
 # CTD Model: Design
 
-End-of-day model of cheapest-to-deliver (CTD) probabilities and futures key rate durations for CBOT Treasury futures, built from free public data. Includes a historical mode for building a time series of CTD probabilities and futures durations.
+End-of-day model of cheapest-to-deliver (CTD) probabilities and futures key rate durations for CBOT Treasury futures, built from free public data. Includes a historical mode for building a time series of CTD probabilities and futures durations. What gets published, and how it's charted, is specified in [outputs.md](outputs.md).
 
 ## 1. Purpose, goals and non-goals
 
 ### Purpose
-Output **sensible CTD probabilities and futures durations/KRDs**, as a daily time series, plus **scenarios** (e.g. ±1σ shifts of the factor) showing how far yields must move for futures duration to change materially. The audience is anyone exposed to changing Treasury futures duration: basis traders, duration hedgers, and those watching the effect of CTD switches on the curve.
+A **duration-drift monitor for Treasury futures users**: how stable is the duration held through futures, what would change it, and when. Output **probability-weighted futures DV01 and KRDs** as a daily time series, a **duration profile** across factor shifts (with ±1σ and ±2σ as points on it), and the distance to the next CTD switch. CTD probabilities are the engine, published as a supporting series rather than the headline.
+
+The audience is a broad rates audience and asset managers who use futures as duration substitutes or overlays. Basis traders are not the audience; they have better tools. Market impact is context, not the headline: a CTD switch transfers duration between longs and shorts rather than creating it ([outputs.md](outputs.md), Positioning).
 
 ### Goals
-- Focus on **ZN, ZB and UB**: the contracts whose baskets span the widest range of maturities, so a CTD switch moves futures duration the most (section 2). Build and validate on ZN and ZB first, then UB. The model code is contract-agnostic, so other contracts can be added later through reference data alone.
+- Contracts: **ZN and ZB first**, because they are prone to switching (section 2). Then **UB and TN**, mainly as stable-duration comparisons. Build and validate on ZN and ZB first. The model code is contract-agnostic, so other contracts can be added later through reference data alone.
 - For a given contract, estimate each deliverable bond's probability of being CTD at delivery.
 - Locate the **crossover levels** (factor shifts at which the CTD changes hands) and group bonds into clusters with similar key rate profiles.
 - Produce futures **DV01 and key rate DV01s**, both probability-weighted and per cluster.
-- Produce **scenario** durations/KRDs at ±1σ (and a duration profile across shifts), recomputing probabilities at each shifted state (5.9).
+- Produce a **duration profile** (DV01 and KRDs across factor shifts, ±1σ and ±2σ marked), recomputing probabilities at each shifted state (5.9).
+- Produce the **comparison series** asset managers need: CTD-label DV01 (what vendor systems report, which jumps at label flips) and constant-CTD DV01, plus DV01-weighted effective maturity (section 6).
 - Run daily from end-of-day data, reproducibly, with every input snapshot stored.
 - Build a **history** of CTD probabilities and futures durations from free historical data (section 7).
+- **First milestone:** Tier 1 outputs for ZN and ZB, plus the December/March roll comparison, ready before the late-November 2026 roll (section 10).
 
 ### Non-goals (v1)
 - **Fair value of the futures contracts.** Not modelled, because the inputs needed to price the contract to the tick aren't available:
@@ -23,9 +27,11 @@ Output **sensible CTD probabilities and futures durations/KRDs**, as a daily tim
   - no view on slope/curvature dynamics beyond the one-factor betas.
 
   Consequently the following are also out of scope: implied CTD repo calibration, the end-of-month option, the wildcard option, and net basis/implied repo outputs. Market futures prices are still collected (section 3.2) and used only where needed (vol conversion, open interest). **Wishlist (far down):** use market futures prices, e.g. the model-to-market residual across contracts, to infer slope vol or other curve dynamics.
+- Curve fitting and idiosyncratic rich/cheap modelling of individual issues.
+- Outputs aimed at basis traders, such as the basis-trade duration mismatch or the hedge-ratio change per $100mm of CTD ([outputs.md](outputs.md), Dropped or reframed).
 - Intraday or live pricing.
 - Full multi-factor term-structure model (later extension, section 10).
-- ZT, ZF and TN. Their baskets are narrow (about a year of maturity or less), so switches move duration little. Keep their facts in reference data (section 2) and **collect their market data from day one (section 3.2)**, but don't build or validate models for them in v1.
+- ZT and ZF. Their baskets are narrow (about a year of maturity or less), so switches move duration little. Keep their facts in reference data (section 2) and **collect their market data from day one (section 3.2)**, but don't build or validate models for them in v1.
 - Cash-settled Treasury products (micro Treasury yield futures, any yield-based contracts) and non-CME venues. No delivery, so no CTD.
 
 ## 2. Contract facts the code must encode
@@ -37,6 +43,9 @@ All contracts: quarterly delivery months (Mar, Jun, Sep, Dec); first delivery da
 | **ZN** (10-year) | $100k | ≤ 10y | 6y 6m to 8y from first day of delivery month (6y 6m to 10y before the September 2023 contract) | ~1.5y (~3.5y before Sep 2023) | Down to quarter | 7y |
 | **ZB** (T-bond) | $100k | — | 15y to under 25y | ~10y | Down to quarter | 20y |
 | **UB** (Ultra bond) | $100k | — | 25y and over | ~5y (25–30y) | Down to quarter | 30y |
+| **TN** (Ultra 10-year) | $100k | ≤ 10y | 9y 5m to 10y | ~0.6y | Down to quarter | 10y |
+
+ZN and ZB are the contracts prone to switching. UB and TN are modelled mainly as stable-duration comparisons: TN's basket is narrow, and UB's switches are between 30-year issues of similar duration.
 
 Other contracts, not in v1 (kept so they can be added later through reference data only):
 
@@ -44,11 +53,10 @@ Other contracts, not in v1 (kept so they can be added later through reference da
 |---|---|---|---|---|---|
 | ZT (2-year) | $200k | ≤ 5y 3m | ≥ 1y 9m from first day, ≤ 2y from last day of delivery month | Down to whole month | Short |
 | ZF (5-year) | $100k | ≤ 5y 3m | ≥ 4y 2m from first day of delivery month | Down to whole month | Short |
-| TN (Ultra 10-year) | $100k | ≤ 10y | 9y 5m to 10y | Down to quarter | Long |
 
 The figures above are a working summary. **Verify each against the current CBOT rulebook chapter when encoding it**. They live in `reference/` as data (one record per contract, with an effective-from date because CME has changed grades before, e.g. ZB in 2011, and ZN from the September 2023 contract month), never as constants in code.
 
-- **Delivery calendar** (stored per contract month, not computed ad hoc). ZN, ZB and UB share it:
+- **Delivery calendar** (stored per contract month, not computed ad hoc). ZN, TN, ZB and UB share it:
   - last trading day = 7th business day before the last business day of the month;
   - last delivery day = last business day of the month.
 
@@ -57,6 +65,7 @@ The figures above are a working summary. **Verify each against the current CBOT 
 - Invoice price = futures settlement × CF × face/100 + accrued interest at delivery date.
 - **Basket changes**: rebuild each basket from the eligibility rules and Treasury security terms on each contract-month roll and after each auction in any basket's maturity range. New issues can join:
   - for ZN, new 7-year notes, and 10-year notes once they fall under 8 years (new 10-year notes before September 2023; they're now deliverable into TN instead);
+  - new 10-year notes for TN, which leave its basket about seven months after issue (under 9y 5m);
   - new 20-year bonds for ZB;
   - new 30-year bonds for UB;
   - aging 30-year bonds move from UB to ZB once under 25 years.
@@ -67,9 +76,9 @@ The figures above are a working summary. **Verify each against the current CBOT 
 - **ZB/UB boundary.** A bond crosses from UB's basket to ZB's when its remaining maturity falls below 25 years. Basket rebuilds (historical mode) must apply the boundary at each contract's first delivery day, so the same bond can be in UB for one contract and ZB for the next.
 
 ### Options on futures (reference data per option product)
-- ZN, ZB and UB each have listed options (quarterly, serial and weekly expiries). Store the product codes, and which futures contract each expiry settles into, in `reference/`.
-- **Quarterly** options settle into the same-month futures contract. **Serial** options (non-quarterly months) settle into the next quarterly contract. **Weekly** options settle into the nearby quarterly contract as of their expiry.
-- Expiry calendar per option product: quarterly and serial options stop trading on the last Friday that is at least 2 business days before the last business day of the month *preceding* the option month. Weeklies expire on their named weekday. Store the expiry dates; verify the rule against the rulebook.
+- ZN, TN, ZB and UB each have listed options with quarterly, serial and weekly expiries. **The model uses quarterly and serial options only.** Weeklies are still collected, because the bulletin is stored whole (section 3.1), but they get no reference data and the parser skips them. Store the product codes, and which futures contract each expiry settles into, in `reference/`.
+- **Quarterly** options settle into the same-month futures contract. **Serial** options (non-quarterly months) settle into the next quarterly contract.
+- Expiry calendar per option product: quarterly and serial options stop trading on the last Friday that is at least 2 business days before the last business day of the month *preceding* the option month. Store the expiry dates; verify the rule against the rulebook.
 - Exercise: American, physically settled into futures, with the premium paid upfront. Discount at SOFR to expiry when inverting prices.
 - Strike interval and premium tick per product (stored, not hard-coded). The strike interval limits how finely the digital in 5.7 can resolve a crossover.
 
@@ -83,11 +92,15 @@ The figures above are a working summary. **Verify each against the current CBOT 
 | Futures settlements (all six Treasury contracts, all listed months) | CME settlements | Yes | **No** (paid DataMine) | Used only for vol conversion (5.5) and open interest; collection may be manual; respect terms of use |
 | Futures daily bars, cross-check (six Treasury contracts) | Yahoo Finance chart endpoint | Yes | Listed contracts since listing; continuous front month from 2000 (2010 for UB, TN) | Closes equal CME settlements on dates checked; misses some listed months (e.g. June 2027 ZT, ZF, ZN, TN); continuous series rolls on the last trading day, unadjusted; unofficial endpoint, personal-use terms |
 | Futures option settlements by strike (section 3.1) | CME settlements | Yes | **No** (paid) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
-| Deliveries by contract (delivered CUSIPs, if published) | CME delivery reports | Delivery months | **No** | Nice to have: tiebreaker for backtest cycles where the actual CTD is ambiguous from prices (section 8); confirm what CME publishes |
 | Constant-maturity yields | Treasury par yield curve (CMT) and daily bill rates, FRED | Yes | Yes, decades | Smoothed curve, not bond-specific |
 | GC funding | NY Fed SOFR (also TGCR, BGCR) | Yes | Since 2018 | Overnight only |
 | 1-month and 3-month SOFR, 30-day fed funds futures | CME settlements | Yes | **No** | For stepped/stripped repo path |
 | CTD-specific repo | **Not available free** | — | — | Not used: GC for all bonds (no fair value, section 1) |
+| Positions by trader type (asset managers, leveraged funds) | CFTC Traders in Financial Futures, futures only (Socrata dataset `gpe5-46if`) | Weekly | Yes | Tuesday positions released Friday; not collected yet. For the fragility dashboard (section 6) |
+| Amount outstanding and stripped, by CUSIP | Monthly Statement of the Public Debt (MSPD), FiscalData | Monthly | Yes | Monthly, so the float is stale between releases; not collected yet |
+| Fed holdings by CUSIP | NY Fed SOMA holdings | Weekly | Yes | Not collected yet |
+| Treasury buyback results | Treasury buyback operations | Per operation | Yes | Not collected yet |
+| Roll progress against past rolls | CME Pace of the Roll | Yes | Unknown | OI by contract month is already in the CME settlements; this only adds the comparison with past rolls. Not collected yet; confirm what it publishes |
 
 Design rules:
 - **Every raw file is stored as downloaded, keyed by as-of date**; the model reads only from that store. Re-running any past date gives the same answer.
@@ -95,7 +108,7 @@ Design rules:
 
 ### 3.1 Options chain required
 
-Daily, for all six Treasury futures contracts, store the full CME option settlements as downloaded (the model reads ZN, ZB and UB). While cmegroup.com blocks scripts, they come as the Daily Bulletin's Section 42 PDF, which covers all six contracts, every listed expiry and strike, weeklies included. CME's per-product option settlement files are collected only if automated access ever works. The model needs these fields:
+Daily, for all six Treasury futures contracts, store the full CME option settlements as downloaded (the model reads ZN, TN, ZB and UB). While cmegroup.com blocks scripts, they come as the Daily Bulletin's Section 42 PDF, which covers all six contracts, every listed expiry and strike, weeklies included (stored, not used by the model). CME's per-product option settlement files are collected only if automated access ever works. The model needs these fields:
 
 | Field | Use |
 |---|---|
@@ -105,7 +118,7 @@ Daily, for all six Treasury futures contracts, store the full CME option settlem
 | Volume and open interest (if on the settlement page) | Liquidity tiebreaker only; the filters below are price-based |
 
 Coverage:
-- **Expiries**: every listed expiry (quarterly, serial and all weeklies) on every listed underlying month. The model chooses which to use; storing all of them is cheap, keeps past dates reproducible, and can't be done later.
+- **Expiries**: every listed expiry (quarterly, serial and all weeklies) on every listed underlying month. The model uses quarterly and serial expiries only; storing all of them is cheap, keeps past dates reproducible, and can't be done later.
 - **Strikes**: the full chain, both puts and calls. The smile fit and digitals need strikes out to the furthest crossover and the grid window (section 5.6), not just near the money.
 
 How the model uses the chain (section 5.5, 5.7):
@@ -114,13 +127,13 @@ How the model uses the chain (section 5.5, 5.7):
 - **Smile fit**: normal SABR per expiry on the filtered chain; digitals and the factor distribution come from the fit (5.5.1).
 - **Crossover-strike vol** (interim, 5.5.2): the smile read at the futures price equivalent to each crossover.
 - **Raw digitals** (diagnostic): put-spread slope between adjacent strikes that straddle each crossover's futures price, compared with the SABR digital.
-- **Term structure**: the two expiries that bracket the horizon (5.5 step 3). The later one is usually a serial or weekly on the *next* quarterly contract.
+- **Term structure**: the two expiries that bracket the horizon (5.5 step 3). The later one is usually a serial on the *next* quarterly contract.
 
 Filters and fallbacks:
 - Drop strikes with a settlement at the minimum tick, deep in-the-money strikes, and prices that break monotonicity or convexity in strike.
 - Skip an expiry with fewer than a minimum number of usable strikes (a parameter, initially 5).
 - If no expiry is usable (most likely for UB, whose options are thinner than ZN's and ZB's), use the following, in order:
-  1. Map vol from the neighbouring contract through betas (UB from ZB, ZB from UB).
+  1. Map vol from the neighbouring contract through betas (UB from ZB, ZB from UB, TN from ZN).
   2. Use realised vol (as in historical mode).
 - Record the source used in diagnostics.
 
@@ -135,14 +148,12 @@ A free source that only shows recent days is lost for good on any day it isn't p
 - Yahoo Finance daily bars for the six Treasury futures: each listed contract Yahoo carries and the continuous front-month series, 10 days per daily pull, full history backfilled once. A cross-check on CME settlements; not a replacement, since Yahoo drops expired contracts and skips some listed months.
 - TreasuryDirect daily prices: the whole file, every CUSIP, every day. Past dates can currently be looked up back to 30 May 2008, but don't rely on that lasting. History from 2016 is stored once with `ctd backfill --prices-from 2016-01-01`.
 
-**Occasional: not needed daily.**
-- CME delivery reports during delivery months, when convenient. Nice to have, not required: the actual CTD is computed from prices (section 8), and a report only settles the ambiguous cycles, and only if it lists delivered CUSIPs.
-
 **Backfillable: pull daily anyway, and backfill once at setup.**
 - CME Treasury conversion factor tables (TCF) from CME's public FTP server (`ftp.cmegroup.com/settle/TCF/`): a CSV and an xlsx for every business day, back to December 2023. Validation data for the CF formula and basket rebuilds; consecutive files show the day CME changed a basket. How long CME keeps them is unknown (section 11), hence the daily pull.
 - Treasury nominal par yield curve (CMT) and daily bill rates, FRED series. Not Treasury's real yield curve or long-term rate tables: TIPS aren't deliverable and the long-term composites are averages the model doesn't use.
 - NY Fed SOFR, TGCR and BGCR.
 - FiscalData / TreasuryDirect security terms and auction results, including matured issues.
+- Not collected yet, needed for the fragility dashboard ([outputs.md](outputs.md)): CFTC Traders in Financial Futures (weekly), MSPD outstanding and stripped amounts (monthly), NY Fed SOMA holdings (weekly), Treasury buyback results. All have free history, so they can be added and backfilled when the dashboard is built. CME Pace of the Roll is on cmegroup.com and may not be backfillable; check before relying on it.
 
 **Operations**
 - `ctd fetch` runs on a schedule every business day after CME final settlements are published. It is idempotent: re-running a date never overwrites a stored file, it only fills what's missing.
@@ -213,12 +224,13 @@ CLAUDE.md
 - Convert to forward yield `y_i^fwd`. Everything is centred on these.
 
 ### 5.4 Factor and betas
-- Factor `x` = constant-maturity yield near the current CTD, per contract (section 2 table): **7-year for ZN, 20-year for ZB, 30-year for UB**.
-- For each published CMT tenor that brackets the basket (5, 7 and 10y for ZN; 10, 20 and 30y for ZB; 20 and 30y for UB), regress yield changes on the reference: `Δy(τ) = β(τ)·Δx + ε(τ)`. Linear interpolation of these node betas equals regressing on a linearly interpolated curve, so nothing is lost by estimating only at published tenors (method and alternatives in [decisions.md](decisions.md)).
+- Factor `x` = constant-maturity yield near the current CTD, per contract (section 2 table): **7-year for ZN, 10-year for TN, 20-year for ZB, 30-year for UB**.
+- For each published CMT tenor that brackets the basket (5, 7 and 10y for ZN; 7 and 10y for TN; 10, 20 and 30y for ZB; 20 and 30y for UB), regress yield changes on the reference: `Δy(τ) = β(τ)·Δx + ε(τ)`. Linear interpolation of these node betas equals regressing on a linearly interpolated curve, so nothing is lost by estimating only at published tenors (method and alternatives in [decisions.md](decisions.md)).
   - 2–3 day or weekly changes; 6–12 month window or exponential weights (half-life ~3 months).
+  - Re-estimate betas and vol daily (rolling or EWMA), never in occasional steps, so the DV01 time series has no artificial jumps.
   - Shrink betas slightly toward 1.
   - Also estimate on **sell-off days only**; use those if materially different.
-- Interpolate β linearly at each bond's remaining maturity at T (the basket spans ZN ~6–9y, or ~6–11y for contract months before September 2023; ZB ~14–26y; UB ~24–30y).
+- Interpolate β linearly at each bond's remaining maturity at T (the basket spans ZN ~6–9y, or ~6–11y for contract months before September 2023; TN ~9–10y; ZB ~14–26y; UB ~24–30y).
 - Store residual SDs `σ_ε(τ)` and the residual SD of the spread between candidate bonds (used in 5.7; diagnostic for one-factor adequacy: under ~4bp over the horizon is fine, above ~6bp suggests a second factor).
 
 ### 5.5 Volatility
@@ -227,7 +239,7 @@ Live mode:
 2. Price vol → normal yield vol of each expiry's CTD: `σ_y ≈ σ_price × F / (100 × D_F)`, using the CTD duration of **that expiry's underlying contract**.
 3. **Interpolate total variance to the horizon** between the bracketing expiries:
    `V(T) = σ_y² T`, linear in time between expiries; `σ_y(T_h) = √(V(T_h)/T_h)`.
-   - Example for a December contract with a December horizon: December quarterly options on December futures expire in late November. January serial options, or a December weekly, on March futures expire in late December. Those two bracket the horizon.
+   - Example for a December contract with a December horizon: December quarterly options on December futures expire in late November. January serial options on March futures expire in late December. Those two bracket the horizon.
    - Captures vol term structure and event variance (e.g. December FOMC).
    - When the later expiry's underlying is the next contract, adjust its vol for that contract's different CTD maturity via betas. This matters most for ZB, whose basket is widest.
    **Fallback**: square-root-of-time scaling from a single expiry, when the horizon is close to the first expiry or only one expiry is usable.
@@ -269,7 +281,7 @@ Historical mode: realised vol (EWMA of daily changes in the reference CMT yield)
 - v1 (normal width): z from −4S to +4S.
 - With the smile-implied distribution (5.5.1), size the window by **quantiles**, not multiples of S, since a skewed or fat-tailed distribution can put meaningful mass beyond ±4S on one side and waste points on the other:
   - `z_min = Q(tol)`, `z_max = Q(1 − tol)`, with `tol` a parameter (initially 1e-4), found by root-finding on the CDF **after** the horizon convolution;
-  - widen to include every crossover with tail probability above `tol`, and the reported scenario range (duration profile, e.g. ±100 to ±150bp; ±1σ);
+  - widen to include every crossover with tail probability above `tol`, and the reported scenario range (duration profile, e.g. ±100 to ±150bp; ±1σ and ±2σ);
   - hard cap (e.g. ±8 × ATM-equivalent width, or ±300bp) against runaway SABR wings; record the mass beyond the cap, renormalise, and flag the fit as suspect if the truncated mass exceeds `tol`;
   - record the probability mass beyond the furthest listed strike (extrapolated).
 
@@ -285,7 +297,7 @@ C_i(z) = P_i(z) / CF_i
 
 ### 5.7 Envelope, crossovers and probabilities
 - `min_i C_i(z)`; record the argmin (the CTD in each state). Only the argmin is used; the envelope's value is not published.
-- Root-find the exact z where the argmin changes: crossovers `z_1 < z_2 < …`. Expect ZN: switches within the 6.5–8y basket since September 2023, so smaller duration jumps; before then usually one major switch (6.5–7y cluster → 9.5–10y cluster); ZB: a staircase of two or three; UB: one or two, between the shortest and longest 30-year issues.
+- Root-find the exact z where the argmin changes: crossovers `z_1 < z_2 < …`. Expect ZN: switches within the 6.5–8y basket since September 2023, so smaller duration jumps; before then usually one major switch (6.5–7y cluster → 9.5–10y cluster); ZB: a staircase of two or three; UB: one or two, between the shortest and longest 30-year issues; TN: rarely any that matter, since its basket is under a year wide.
 - Tail probability per crossover, measured from the forward (z = 0) on its own side:
   - sell-off side: `Q_k = P(z > z_k)`; rally side: `Q_k = P(z < z_k)`.
   - v1: `Q_k = Φ(−|z_k| / S)`. With 5.5.1: read from the smile-implied CDF. With 5.5.2: `Φ(−|z_k| / S_k)`, then the monotonicity cap.
@@ -303,26 +315,48 @@ See section 1. No model futures price, no comparison with market settlement, no 
 - **Futures DV01**: region-weighted over the grid, each bond's DV01 evaluated where it is CTD:
   `DV01_F = Σ_grid φ(z) · DV01_argmin(z)(z) / CF_argmin(z) · Δz`
   For a factor shift this equals the derivative of the expected envelope, so no bump-and-reprice of a futures price is needed. It holds vol fixed (no vega).
-- **Key rate DV01s**: same weighting, with each bond's forward KRDs at T (cash-flow bucketing with triangular weights; curve-based KRDs later if needed).
+- **Key rate DV01s**: same weighting, with each bond's forward KRDs at T (cash-flow bucketing with triangular (tent) weights; curve-based KRDs later if needed). Key-rate grid: **2, 5, 7, 10, 15, 20, 25, 30 years**, fixed ([decisions.md](decisions.md)). The 15 and 25-year nodes make a ZB switch (about 15y to about 25y) visible.
+- **Units**: $/bp per $100mm notional by default; per contract also available.
 - **Clusters**: group bonds with similar key rate profiles (same dominant key rate, DV01 within ~5%). Report expected (blended) KRDs and each cluster's KRDs.
-- **Scenarios (±1σ)**: shift every forward yield by ±1σ × β_i, keep the remaining vol, and recompute crossovers, probabilities, DV01 and KRDs at the shifted state. Don't just read off the CTD at ±1σ, which jumps and overstates the change. Record whether the smile is treated as sticky strike or sticky moneyness.
-- **Duration profile**: blended DV01 and KRDs as a function of the shift (e.g. −100 to +100bp); ±1σ are two points on it.
-- Blended KRDs are local; they understate how fast weights change near a crossover (negative convexity).
+- **Scenarios (±1σ, ±2σ)**: shift every forward yield by kσ × β_i, keep the remaining vol, and recompute crossovers, probabilities, DV01 and KRDs at the shifted state. Don't just read off the CTD at the shifted yield, which jumps and overstates the change. Record whether the smile is treated as sticky strike or sticky moneyness.
+- **Duration profile**: blended DV01 and KRDs as a function of the shift (about −100 to +100bp); ±1σ and ±2σ are points on it. Label shifts both in bp and in percentiles of the move-to-horizon distribution (σ√T).
+- **Comparison measures** (section 6): *CTD-label DV01* is DV01/CF of the single CTD at the forward (z = 0), the number most vendor systems report; it jumps when the label flips. *Constant-CTD DV01* holds one bond fixed through the series, so its gap to the probability-weighted DV01 is the part of the change caused by the basket.
+- **Effective maturity**: DV01-weighted, `Σ_k KRD_k · T_k / Σ_k KRD_k` over the key-rate grid. A cleaner switch signal than DV01, since it barely moves with yield level or roll-down.
+- **Distance to switch**: shift to the nearest crossover on each side, in bp and in σ.
+- Blended KRDs are local; they understate how fast weights change near a crossover (negative convexity). The slope of the duration profile carries futures gamma.
 
 ### 5.10 End-of-month option: out of scope
 Affects futures value, not durations or the probability of a major switch materially. Not modelled (section 1).
 
 ## 6. Outputs (daily, per contract)
 
+The published charts and their tiers are specified in [outputs.md](outputs.md). The headline is duration (chart 1: duration profile with key-rate shape; chart 2: diverging key-rate change bars; chart 3: DV01 time series with effective maturity). The model computes, per contract and date:
+
+**Tier 1**
+- Probability-weighted DV01 and KRDs on the key-rate grid, blended and per cluster (5.9).
+- Duration profile across shifts, with ±1σ and ±2σ (or the 5th, 25th, 75th and 95th percentiles), and the change in each KRD versus today at those points.
+- CTD-label DV01 and constant-CTD DV01 alongside the probability-weighted DV01.
+- DV01-weighted effective maturity, also for the constant CTD, so the basket's contribution can be read as the gap.
+- Distance to switch in bp and σ, flagged when below 1σ.
+- CTD probabilities per bond and per cluster (a supporting series).
+- Event flags per date: basket change, contract roll, parameter re-estimation. Any step in a series must be attributable to one of these, or to near-expiry collapse of probabilities.
+
+**Tier 2**
+- Contract roll: run the December and March contracts (generally the expiring and next) on the same date and show the DV01 and KRD change at the roll with no yield move.
+- Cross-contract comparison: ZN, TN, ZB and UB at today's yields.
+- Uncertainty bands: rerun at vol ±10% and betas ±0.05.
+- Calibration backtest (section 8).
+- Calendar overlay: auctions adding issues, roll period, first notice day, delivery dates.
+- Daily attribution of DV01 changes, sequential in a fixed order: basket, then time, then vol/betas, then yields. Event flags stand in until it's built.
+- Later: charts 1 and 2 for a user-entered mix of contracts.
+
+**Fragility dashboard** (context, not a composite score): asset-manager duration held via futures (CFTC TFF asset-manager long × probability-weighted DV01), deliverable float of the next CTD (outstanding − SOMA − stripped, against open interest), and rebalancing timing (switch zones that coincide with month-end or the roll). Needs the sources marked "not collected yet" in section 3.
+
+**Internal, not published**
 - Basket table: CUSIP, coupon, maturity, CF, price, forward price, forward yield, β, carry, repo used, converted forward price.
 - Crossover table: from-bond → to-bond, crossover z (bp), equivalent futures price, distance from forward, probability (base, slope-adjusted, option-implied).
-- CTD probabilities per bond and per cluster.
-- DV01 and key rate DV01s: blended and per cluster.
-- Scenarios: DV01 and KRDs at ±1σ; duration profile across shifts.
 - Diagnostics: vol source, strike and expiries used; horizon chosen and why; repo path used; beta window; residual SDs; warnings.
-- Optional diagnostic: CTD amount outstanding vs futures open interest (squeeze risk). Not a model input.
 - Chart: converted forward prices vs factor shift (the envelope), with the shift distribution overlaid.
-- Further outputs under consideration: section 11.
 
 ## 7. Historical mode
 
@@ -344,7 +378,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - **Unit tests**: accrued interest; price/yield round trip to 1e-10 with the single pricing function; CF formula vs CME table for ZN, ZB and UB; delivery calendars, and option expiry dates vs CME's published calendar; a bond crossing the 25-year ZB/UB boundary between contract months; a note crossing the ZN grade change (91282CFV8, 4⅛% Nov 2032: 9.46y remaining for June 2023, deliverable under the 10-year cap; 9.21y for September 2023, not deliverable under the 8-year cap); forward price vs carry hand calculation including a coupon between today and delivery; settlement on a coupon date; end-of-month maturities; crossover root-finding on a synthetic two-bond basket with a known answer; term repo compounding; region-weighted DV01 vs finite-difference on a synthetic basket.
 - **Independent checks**: a handful of bonds vs QuantLib (test dependency only) or TreasuryDirect published values.
 - **Sanity**: on a flat 6% curve all converted prices ≈ 100; below 6% low-duration bonds are CTD, above 6% high-duration.
-- **Backtest**: run historical mode over past cycles with large moves (2022–23; the 2026 long-end sell-off). Score probabilities against the actual CTD at delivery (Brier score). The actual CTD is computed from prices: on each delivery day, the bond with the smallest gross basis (cash price − futures × CF). The final futures price is fixed on the last trading day, but the CTD can still change over the last 7 delivery days. Flag a cycle as ambiguous when the two smallest bases are within price noise (TreasuryDirect prices are rounded and struck at a different time from the futures settlement). Exclude ambiguous cycles from scoring, or settle them from a CME delivery report if one was saved and lists CUSIPs. Check that the model shows the switches reported in 2026 (ZB moving along the basket in August and October). Score ZN, ZB and UB separately. ZN cycles before September 2023 use the old 6.5–10y grade; report them apart from later cycles.
+- **Backtest**: run historical mode over past cycles with large moves (2022–23; the 2026 long-end sell-off). Score probabilities against the actual CTD at delivery (Brier score and a reliability plot; published as the calibration output, section 6). The actual CTD is computed from prices: on each delivery day, the bond with the smallest gross basis (cash price − futures × CF). The final futures price is fixed on the last trading day, but the CTD can still change over the last 7 delivery days. Flag a cycle as ambiguous when the two smallest bases are within price noise (TreasuryDirect prices are rounded and struck at a different time from the futures settlement). Exclude ambiguous cycles from scoring. CME delivery reports aren't used: CME posts only the current month, so past cycles can't be checked against them. Check that the model shows the switches reported in 2026 (ZB moving along the basket in August and October). Score each contract separately. ZN cycles before September 2023 use the old 6.5–10y grade; report them apart from later cycles.
 - **Sensitivity**: β ± 0.05; horizon first vs last delivery; vol ± 10%; smile-implied vs ATM-normal probabilities; interpolated vs √T vol; convolution vs rescaling to the horizon; grid tolerance and cap; flat vs stripped repo; GC vs 50bp special CTD repo; with vs without `c_i`.
 - **Cross-check**: dealer/Bloomberg CTD scenarios when available.
 
@@ -358,58 +392,30 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - Option-implied probabilities are risk-neutral, measured at option expiry, and on futures prices rather than bonds; extended to the horizon by an assumed normal increment.
 - Far tails come from SABR extrapolation and can be inflated by rich or floor-priced wing settlements; probabilities for far crossovers are flagged as extrapolated.
 - UB options are thinner than ZN and ZB options; on some days UB vol will come from ZB through betas, or from realised vol.
-- Only ZN, ZB and UB are modelled. Other contracts have collected data but need reference data and validation before use.
+- Only ZN, TN, ZB and UB are modelled. Other contracts have collected data but need reference data and validation before use.
 - American exercise is ignored when inverting out-of-the-money option prices.
 - Historical mode uses realised vol and GC repo only.
 
 ## 10. Roadmap
 
 1. **Phase 1, deterministic core** (ZN, ZB): raw data store and fetchers, bond math with tests, CF formula (tested against saved CME tables), term GC repo (flat), forward prices, parallel-shift grid and crossovers (no probabilities). Check against published switch levels. **Before anything else, start the scheduled daily collection in section 3.2 (all six contracts, full options chains, SOFR and fed funds futures, TreasuryDirect prices), with manifests and gap alerts.** Reference data (grades, calendars, option products) for ZN, ZB and UB.
-2. **Phase 2, one-factor model**: betas, vol calibration (single expiry, √T), probabilities, region-weighted DV01 and KRDs, ±1σ scenarios and duration profile, daily report. First on ZN and ZB, then UB once they pass the phase-2 checks.
+2. **Phase 2, one-factor model**: betas, vol calibration (single expiry, √T), probabilities, region-weighted DV01 and KRDs, scenarios and duration profile, comparison series and effective maturity, distance to switch, event flags, daily report with charts 1–3. First on ZN and ZB, then UB and TN once they pass the phase-2 checks.
+
+   **First milestone (before the late-November 2026 roll):** Tier 1 for ZN and ZB plus the December/March roll comparison ([outputs.md](outputs.md)). That needs phases 1 and 2 for ZN and ZB. Chart 3's time series needs history: until the historical runner (phase 4) exists, it covers only the dates since live runs began (section 11).
 3. **Phase 3, refinements**: total-variance vol interpolation; smile-implied distribution (SABR fit, digitals, envelope mapping, recentring, horizon convolution) with quantile-based grid window; slope adjustment by convolution; digital and ATM-normal diagnostics; horizon decision logic; stepped/stripped repo path. Per-crossover vols (5.5.2) only as a stopgap if the smile fit lags.
-4. **Phase 4, history and extensions**: basket rebuild, historical runner with realised vol, backtest scoring; two-/three-factor PCA simulation with idiosyncratic noise; other contracts (ZT, ZF, TN) if wanted. Far down the wishlist: infer slope vol from market futures prices.
+4. **Phase 4, history and extensions**: basket rebuild, historical runner with realised vol, backtest scoring and reliability plot; Tier 2 outputs and the fragility dashboard (with its new sources, section 3); two-/three-factor PCA simulation with idiosyncratic noise; other contracts (ZT, ZF) if wanted. Far down the wishlist: infer slope vol from market futures prices.
 
 ## 11. Open questions
 
 - How to collect CME settlements reliably? cmegroup.com refuses scripted connections (bot protection), and CME's public FTP server carries only the TCF tables of what's needed. Until a paid feed is chosen, futures settlement JSONs and the options bulletin are downloaded in a browser with the `ctd bookmarklet` (one click a day). Which feed, if any (DataMine, Databento, Barchart OnDemand)?
-- Option settlements from the Section 42 PDF: tested on 2026-10-16 with pdfplumber and pypdf, and the text extracts cleanly (about 3,200 strike rows in 35 pages). Layout: a product and put/call header (e.g. "10Y NOTE CALL", or a weekly such as "HYO OPT WK THU"), then an expiry label ("DEC26"), then one row per strike: strike (1055 = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high and low, prices in 64ths. Each block ends in a TOTAL line. The header also states the trade date and FINAL. Check: the 100.5 December ZN call settled at 4-61/64 with delta 1.000, against futures at 105-14.5 (intrinsic 4.95). Open: write the parser (phase 2), validating each block (strikes increasing, columns complete) because the layout can change without notice.
+- Option settlements from the Section 42 PDF: tested on 2026-10-16 with pdfplumber and pypdf, and the text extracts cleanly (about 3,200 strike rows in 35 pages). Layout: a product and put/call header (e.g. "10Y NOTE CALL", or a weekly such as "HYO OPT WK THU"), then an expiry label ("DEC26"), then one row per strike: strike (1055 = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high and low, prices in 64ths. Each block ends in a TOTAL line. The header also states the trade date and FINAL. Check: the 100.5 December ZN call settled at 4-61/64 with delta 1.000, against futures at 105-14.5 (intrinsic 4.95). Open: write the parser (phase 2), reading quarterly and serial blocks and skipping weeklies, and validating each block (strikes increasing, columns complete) because the layout can change without notice.
 - How long does CME keep TCF files on its FTP server (December 2023 onwards as of October 2026)?
-- What exactly do CME's delivery reports publish (delivered CUSIPs and amounts, or only totals), and how many past days do their pages show? Only matters for settling ambiguous backtest cycles (section 8). (Futures and option settlements: 5 business days, confirmed.)
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?
 - Realised-vol window for historical mode, and how it compares with implied vol once live snapshots accumulate?
 - How to estimate betas between the par curve's published points (1, 2, 3, 5, 7, 10, 20 and 30 years) is worked through in [decisions.md](decisions.md). Starting point: regress at the published tenors and interpolate β linearly, which equals interpolating the curve. No basket needs extrapolation: ZN's bonds sit between the 5, 7 and 10-year points, ZB's between 10, 20 and 30, and UB's (25 to 30 years) between 20 and 30. Still open: whether pooled bond-level betas (possible now, with TreasuryDirect prices stored from 2016) beat node betas in the backtest, and whether ZB should use a reference other than the 20-year CMT.
 - How often are UB options too thin to use, and is ZB vol mapped through betas a good enough substitute?
-- Which weekly expiries are listed today for ZN, ZB and UB options (Monday to Friday weeklies vary by product)? Confirm before building the expiry calendar.
+- Which bond does the constant-CTD DV01 hold fixed: the CTD at the start of each contract's series, or today's CTD carried back? It sets what the gap to the probability-weighted line means.
+- Chart 3 before the historical runner exists: start the series at the first live run, or bring forward a minimal historical runner (realised vol, rebuilt baskets) for ZN and ZB before the first milestone?
+- What CME Pace of the Roll publishes and whether past rolls can be retrieved; month-level open interest already comes from the daily settlements.
 
-### Additional outputs worth considering (undecided)
-
-**Distance to switch**
-- Shift needed for the next switch, in basis points and in standard deviations. A z-score is the most readable single headline.
-- Time series of both, with alerts when the distance drops below 1σ.
-
-**Market impact** (probably the most distinctive output)
-- Aggregate duration supply: open interest × futures DV01, in dollars per basis point, by key rate bucket, across ZN, TN, ZB and UB. That's how much duration the futures market holds and where on the curve it sits.
-- Rebalancing need on a switch: open interest × change in DV01 at the switch, the same quantity as the Barclays estimate of $25 million per basis point. Express it as a 10-year or 30-year cash equivalent.
-- By holder type: CFTC's weekly Traders in Financial Futures report (free) splits open interest between asset managers (mostly long futures as duration substitutes) and leveraged funds (mostly short, against basis trades). That tells you who has to rebalance, and in which direction.
-- CME publishes daily volume and open interest for free.
-
-**Basis-trade relevance**
-- For basis traders, a switch means their long bond no longer matches what the futures track. Show the duration mismatch between the current CTD and the next one, and the hedge-ratio change per $100 million of the current CTD.
-
-**Convexity**
-- Futures gamma: the change in DV01 per basis point of yield move, which peaks near a crossover. Even a modest switch probability can produce outsized hedging flows when gamma is high.
-
-**Contract roll**
-- The December and March contracts can have different CTDs. Around the late-November roll, open interest moves to March and the market's futures duration can change without any yield move. Run both contracts and show the duration change at the roll.
-
-**Cross-contract view**
-- ZN, TN, ZB and UB together, since the stresses so far have been concentrated in the long end. A single key-rate chart across contracts shows where futures duration is concentrated.
-
-**Attribution of daily changes**
-- Split each day's change in futures duration into yield moves, time passing, vol changes and basket changes (new issues, the roll). This makes the time series explainable, which matters if others will read it.
-
-**Calendar of known events**
-- Auctions that add issues to the basket, the roll period, first notice day and delivery dates, overlaid on the time series.
-
-**Uncertainty bands**
-- Report probabilities under the sensitivity cases (vol ±10%, betas ±0.05), so readers can see how firm a figure like "40% chance of a switch" is.
+Which further outputs to publish was settled in [outputs.md](outputs.md), which replaces the list of candidates that was here. Its "Dropped or reframed" table records what was dropped (basis-trade outputs) and what was reframed (market impact as gross duration transfer, gamma as the slope of the duration profile).

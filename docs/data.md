@@ -20,11 +20,10 @@ Every business day, `ctd fetch` snapshots each source into a local raw store und
 | `cme_stir` | Futures settlements: SR1, SR3, ZQ | cmegroup.com | bookmarklet | daily | 2026-10-14 → |
 | `cme_bulletin` | Daily Bulletin Section 42: options on the six Treasury futures | cmegroup.com | bookmarklet | daily | 2026-10-16 → |
 | `cme_opt` | Per-product option settlement files | cmegroup.com | auto if CME allowed | occasional | none |
-| `cme_delivery` | Treasury delivery reports | cmegroup.com | manual | occasional | none |
 
 Backfill-only source ids (`par_curve_backfill`, `nyfed_rates_backfill`, `yahoo_fut_backfill`) hold the one-off history pulls; see §4.
 
-The six Treasury futures in scope are ZT, ZF, ZN, TN, ZB and UB. The model reads ZN, ZB and UB (design §1); the others are collected so they can be added later.
+The six Treasury futures in scope are ZT, ZF, ZN, TN, ZB and UB. The model reads ZN and ZB first, then UB and TN as stable-duration comparisons (design §1); ZT and ZF are collected so they can be added later. What the model publishes is in [outputs.md](outputs.md).
 
 ### History starts in 2016
 
@@ -109,7 +108,6 @@ A source's recovery window is how many business days after the as-of date it sti
 |---|---|---|
 | `cme_fut`, `cme_stir`, `cme_opt` | 4 (CME shows 5 trailing business days) | after that, a missing day is lost |
 | `cme_bulletin` | current bulletin only | CME's link serves only the latest edition; earlier dates can't be downloaded (§5.9) |
-| `cme_delivery` | 0 (unconfirmed) | |
 | everything else | unlimited | can be re-fetched for a past date |
 
 ## 3. Kinds of source
@@ -210,6 +208,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 - **What:** CME's settlement page data for each product: every listed month, with open, high, low, last, change, settlement, volume and open interest. `cme_fut` holds ZT, ZF, ZN, TN, ZB, UB; `cme_stir` holds SR1, SR3, ZQ.
 - **How:** the bookmarklet requests `https://www.cmegroup.com/CmeWS/mvc/Settlements/Futures/Settlements/<product_id>/FUT?strategy=DEFAULT&tradeDate=MM/DD/YYYY&pageSize=500` from your browser. Product IDs are in `src/ctd/reference/data/cme_products.toml` (ZT 303, ZF 329, ZN 316, TN 7978, ZB 307, UB 3141, SR1 8463, SR3 8462, ZQ 305), each confirmed against a downloaded file. A Python fetcher for the same URL exists but is switched off (`--cme-auto`), since cmegroup.com refuses scripted connections.
 - **Files:** `<product>/<product>.json`.
+- **Open interest by month** is in every file, so the contract roll ([outputs.md](outputs.md), Tier 2) can be tracked from `cme_fut` alone; CME's Pace of the Roll would only add the comparison with past rolls.
 - **JSON:** top level `tradeDate` (`10/19/2026`), `reportType` (`Final` once settled; the bookmarklet only saves Final), `updateTime`, `dsHeader` (product name, e.g. `10-Year T-Note Future`), `empty`, and `settlements[]` with `month` (`DEC 26`), `open`, `high`, `low`, `last`, `change`, `settle`, `volume` (with commas), `openInterest`.
 - **Price notation** (strings):
 
@@ -226,7 +225,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 - **What:** "10YR NOTE, 5YR NOTE, 2YR NOTE AND 30YR BOND OPTIONS", the bulletin section covering options on ZT, ZF, ZN, TN, ZB and UB, every listed expiry (quarterly, serial, weeklies) and every strike. About 35 pages and 3,200 strike rows a day. It is the daily source of option settlements.
 - **How:** the bookmarklet uses the Section 42 link on CME's Daily Bulletin page (fallback URL in `cme_products.toml`). **CME's link always serves the latest bulletin.** Run the bookmarklet the morning after the trade date; a bulletin for an earlier date can't be downloaded this way. Ingest checks the trade date printed on page 1 against the as-of date and rejects a mismatch (§2.4); the automated fetch, if CME ever allows it, applies the same check.
 - **Files:** `Section42/Section42.pdf`.
-- **Layout** (extracts cleanly with pdfplumber or pypdf): the page header gives the bulletin number, trade date and `FINAL` (`PG42 BULLETIN # 201@ ... Mon, Oct 19, 2026`). Each block has a product and put/call header (`10Y NOTE CALL`, or a weekly such as `HYO OPT WK THU`), an expiry label (`DEC26`), one row per strike, then a `TOTAL` line. Strike rows: strike (`1055` = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high, contract low. ZN option prices are in 64ths (`461` = 4 61/64). The parser is phase 2 work.
+- **Layout** (extracts cleanly with pdfplumber or pypdf): the page header gives the bulletin number, trade date and `FINAL` (`PG42 BULLETIN # 201@ ... Mon, Oct 19, 2026`). Each block has a product and put/call header (`10Y NOTE CALL`, or a weekly such as `HYO OPT WK THU`), an expiry label (`DEC26`), one row per strike, then a `TOTAL` line. Strike rows: strike (`1055` = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high, contract low. ZN option prices are in 64ths (`461` = 4 61/64). The parser is phase 2 work. It reads quarterly and serial blocks only; weekly blocks stay in the stored PDF but the model doesn't use them (design §2).
 - **Check:** the 2026-10-16 bulletin has the 100.5 December ZN call at 4-61/64 with delta 1.000, against futures at 105-14.5.
 
 ### 5.10 `yahoo_fut`: Yahoo Finance daily bars
@@ -258,7 +257,6 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 ### 5.11 Occasional and legacy
 
 - **`cme_opt`:** CME's per-product option settlement files (an expiry list plus one JSON per option series). Only used if automated CME access ever works; the bulletin replaces it.
-- **`cme_delivery`:** CME Treasury delivery reports. Nice to have: the backtest takes the actual CTD from prices (design §8). Fetch with `ctd fetch --source cme_delivery`, or drop the files in the inbox.
 - **`cme_cf`** (2026-10-16 only): the conversion factor spreadsheet downloaded by hand before the FTP source existed. The source no longer exists; the FTP file for that date is under `cme_tcf`.
 
 ## 6. Identifiers and joins
@@ -350,4 +348,12 @@ For a reproducible run on a past date:
 - **TCF retention** on CME's FTP is unknown.
 - **FRED** duplicates Treasury and NY Fed data; kept for now.
 - **Yahoo** is an unofficial endpoint and may change or stop without notice.
+- **Not collected yet:** the sources [outputs.md](outputs.md) needs for the fragility dashboard and the roll view:
+  - CFTC Traders in Financial Futures, futures only (Socrata dataset `gpe5-46if`): weekly asset-manager and leveraged-fund positions;
+  - Monthly Statement of the Public Debt (FiscalData): amount outstanding and stripped by CUSIP;
+  - NY Fed SOMA holdings by CUSIP (weekly);
+  - Treasury buyback results;
+  - CME Pace of the Roll (confirm what it publishes and whether past rolls can be retrieved).
+
+  All but Pace of the Roll have free history, so they can be added and backfilled when the dashboard is built (design §3.2).
 - **CME automation:** cmegroup.com blocks scripts, so settlements and the bulletin depend on the daily bookmarklet click. A paid feed (DataMine, Databento, Barchart OnDemand) is the alternative (design §11).

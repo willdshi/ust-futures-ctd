@@ -4,7 +4,7 @@ Drop files as::
 
     inbox/<asof>/<source>/<unit>.<ext>    e.g. cme_fut/ZN.json (also ZN_anything.json, any case): unit ZN
     inbox/<asof>/<source>/<unit>/<file>   any file name
-    inbox/<asof>/<source>/<file>          a source with one unit (e.g. cme_delivery): that unit
+    inbox/<asof>/<source>/<file>          a source with one unit: that unit
 
 A file matched to a unit counts as that unit collected (status "ok", origin "manual"). Any other
 file directly under a source (e.g. a Daily Bulletin PDF covering several products) is stored
