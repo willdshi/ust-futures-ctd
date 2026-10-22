@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-End-of-day model of cheapest-to-deliver (CTD) probabilities, futures DV01s and key rate DV01s for CBOT Treasury futures, built only from free public data. The model focuses on **ZN, ZB and UB** (ZN and ZB first, then UB), but data collection covers six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11.
+End-of-day model of cheapest-to-deliver (CTD) probabilities, futures DV01s and key rate DV01s for CBOT Treasury futures, built only from free public data. The model covers **ZN and ZB first** (the contracts prone to switching), then **UB and TN** as stable-duration comparisons. Data collection covers six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11. What gets published (charts, tiers, conventions) is in [docs/outputs.md](docs/outputs.md); collected data is described in [docs/data.md](docs/data.md) and settled choices in [docs/decisions.md](docs/decisions.md).
 
 ## Environment and commands
 
@@ -37,7 +37,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
     - the full TreasuryDirect price file
   - Never narrow a fetcher to the products the model currently reads.
   - Fetches are idempotent and never overwrite a stored file.
-  - Each date gets a manifest, and gaps are flagged, never filled from another source.
+  - Each date gets a manifest, and gaps are flagged (the scheduled `ctd fetch --catch-up --notify` raises a desktop alert), never filled from another source.
 - **Purity.**
   - `bonds/`, `funding/`, `model/` and `risk/` (and the computational parts of `curve/` and `vol/`) are pure functions.
   - Only `data/` and `report/` do I/O.
@@ -49,11 +49,12 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Explicit conventions.** Settlement (T+1) and delivery dates are always passed in, never assumed. Accrual is actual/actual, compounding is semiannual, and days are business days for delivery calendars.
 - **Reference data is data, not code (§2).**
   - Contract grades, delivery calendars and option products live in `reference/` as records with effective-from dates, never as constants. Verify each against the current CBOT rulebook when encoding it.
-  - Conversion factors come from the 6% CF formula (maturity rounded down to the quarter for ZN, ZB and UB) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data, and the formula is tested against them.
+  - Conversion factors come from the 6% CF formula (maturity rounded down to the quarter for ZN, TN, ZB and UB) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data, and the formula is tested against them.
   - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against the TCF files.
   - Store delivery calendars per contract month; don't compute them ad hoc.
   - Basket eligibility, measured from the first day of the delivery month:
     - ZN is 6.5 to 8y (original maturity ≤ 10y) from the September 2023 contract month; 6.5 to 10y before. Historical rebuilds must use the grade in force for each contract month (records in `src/ctd/reference/data/contract_grades.toml`, looked up with `ctd.reference.grades.grade_for`)
+    - TN is 9y 5m to 10y (original maturity ≤ 10y)
     - ZB is 15 to under 25y
     - UB is 25y and over
   - A bond moves from UB's basket to ZB's when it drops below 25y, so baskets are dated per contract.
@@ -64,16 +65,17 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - **Exact cash flows.** Coupons between today and the horizon must be in the forward price, and accrued must be at the correct settlement and delivery dates (§5.1).
 - **Grid centring.** Centre everything on forward yields at the horizon. The per-bond convexity adjustment `c_i` (so that `E[P_i(z)]` equals the forward price) is optional and off by default in v1; add it only if backtests show a bias (§5.6).
 - **Slope-adjusted widths.** The slope-adjusted width `S_eff` is used for **probabilities only**, never for DV01 or KRDs (§5.7).
-- **Vol mapping.** Convert each option expiry's price vol with the CTD duration of *that expiry's* underlying contract, then interpolate total variance to the horizon (§5.5). If UB options are too thin, map vol from ZB through betas, then fall back to realised vol (§3.1).
+- **Vol mapping.** Convert each option expiry's price vol with the CTD duration of *that expiry's* underlying contract, then interpolate total variance to the horizon (§5.5). Use quarterly and serial options only; weeklies are stored in the bulletin but not used (§2). If UB options are too thin, map vol from ZB through betas (TN from ZN), then fall back to realised vol (§3.1).
 - **No fair value (§1, §5.8).** There is no model futures price, no comparison with the market settlement and no implied CTD repo. The end-of-month and wildcard options aren't modelled. Every bond is funded at GC. Market futures prices are used only for vol conversion and open interest.
-- **Key rate durations.** KRDs are forward KRDs at the horizon, divided by CF and probability-weighted. Also report them per cluster, for jump risk (§5.9).
+- **Key rate durations.** KRDs are forward KRDs at the horizon, divided by CF and probability-weighted. Also report them per cluster, for jump risk (§5.9). The key-rate grid is fixed at 2, 5, 7, 10, 15, 20, 25 and 30 years with tent weights ([decisions.md](docs/decisions.md)); units are $/bp per $100mm notional.
+- **Scenarios.** Recompute crossovers and probabilities at each shifted state (±1σ, ±2σ, the duration profile). Never read off the CTD at the shifted yield (§5.9).
 
 ## Validation targets (§8)
 
 Required unit tests:
 - accrued interest
 - price/yield round trips to 1e-10 with the single pricing function
-- CF formula vs the CME table for ZN, ZB and UB
+- CF formula vs the CME table for ZN, TN, ZB and UB
 - delivery calendars, and option expiry dates vs CME's published calendar
 - a bond crossing the 25-year ZB/UB boundary between contract months
 - a note crossing the ZN grade change: 91282CFV8 (4⅛% Nov 2032) is deliverable for June 2023 (6.5–10y) but not September 2023 (6.5–8y)
@@ -81,5 +83,6 @@ Required unit tests:
 - settlement on a coupon date; end-of-month maturities
 - crossover root-finding on a synthetic two-bond basket with a known answer
 - term repo compounding
+- region-weighted DV01 vs finite difference on a synthetic basket
 
 Sanity check: on a flat 6% curve, all converted prices should be about 100.
