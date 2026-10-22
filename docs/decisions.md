@@ -48,7 +48,7 @@ So hibernation delays collection rather than losing data, unless the PC is off f
    - Regress each published tenor's yield changes on the reference. The 5, 7, 10, 20 and 30-year points cover all three baskets.
    - Interpolate β linearly in maturity to each bond. That's identical to linear interpolation of the curve.
    - Simple, transparent and stable.
-   - For ZB, everything between 15 and 25 years comes from the 10, 20 and 30-year betas. For UB, bonds of 25 to 30 years sit between the 20 and 30-year nodes. That's interpolation, not extrapolation, so the open question in design §11 ("UB … its betas are extrapolated") overstates the problem.
+   - For ZB, everything between 15 and 25 years comes from the 10, 20 and 30-year betas. For UB, bonds of 25 to 30 years sit between the 20 and 30-year nodes. That's interpolation, not extrapolation, for every basket.
 2. **Node betas with a smoother curve shape.**
    - A natural cubic spline through the node betas, equivalent to spline-interpolating yields.
    - Gives curvature between nodes. With nodes 10 years apart, linear and spline weights usually differ by a few hundredths of beta at most, within the ±0.05 sensitivity range already in design §8.

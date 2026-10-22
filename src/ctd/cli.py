@@ -1,6 +1,6 @@
 """Command-line entry point.
 
-    ctd fetch [--asof 2026-10-16] [--source cme_fut ...] [--cme-auto] [--catch-up]
+    ctd fetch [--asof 2026-10-16] [--source cme_fut ...] [--cme-auto] [--catch-up] [--notify]
     ctd ingest
     ctd check [--from 2026-10-01] [--to 2026-10-16]
     ctd backfill
@@ -8,7 +8,7 @@
     ctd run --contract ZBZ6 --asof 2026-10-16      (not implemented yet)
     ctd history --contract ZB --from ... --to ...  (not implemented yet)
 
-``fetch`` and ``check`` exit 1 when there are gaps, so a scheduler can alert on the exit code.
+``fetch`` and ``check`` exit 1 when there are gaps. ``fetch --notify`` also shows a desktop alert.
 """
 
 import argparse
@@ -42,8 +42,8 @@ def default_asof(now: datetime, cutoff_hour: int) -> date:
     return cal.latest_business_day(today)
 
 
-def _ingest(store, root: Path) -> bool:
-    """Ingest the manual-drop folder and refresh the manifests it touched. True if any conflict."""
+def _ingest(store, root: Path) -> list:
+    """Ingest the manual-drop folder and refresh the manifests it touched. Returns the files refused."""
     from ctd.data import registry
     from ctd.data.fetch import fetch_date
     from ctd.data.inbox import collect_downloads, ingest
@@ -57,7 +57,19 @@ def _ingest(store, root: Path) -> bool:
     for asof in sorted({a for a, _ in touched}):
         specs = [registry.SOURCES[s] for a, s in touched if a == asof]
         fetch_date(asof, store, None, sources=specs, log=lambda _: None)
-    return any(r.problem for r in results)
+    return [r for r in results if r.problem]
+
+
+def _alert(gaps, problems, newest: date) -> None:
+    """Desktop alert for gaps that survived a retry and for refused manual files (see ctd.data.alert)."""
+    from ctd.data import alert
+
+    lines = alert.message(alert.actionable(gaps, newest), problems)
+    if not lines:
+        return
+    for line in lines:
+        print("ALERT", line)
+    alert.notify(f"ctd fetch: {len(lines)} problem(s)", "\n".join(lines[:3]) + "\nSee data\\fetch.log")
 
 
 def cmd_fetch(args) -> int:
@@ -68,7 +80,7 @@ def cmd_fetch(args) -> int:
 
     root = Path(args.data_root)
     store = RawStore(root)
-    _ingest(store, root)
+    problems = _ingest(store, root)
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
     dates = refdata.calendar("cme").trailing_business_days(asof, CATCH_UP_DAYS) if args.catch_up else [asof]
     specs = [registry.SOURCES[s] for s in args.source] if args.source else None
@@ -77,6 +89,8 @@ def cmd_fetch(args) -> int:
     gaps = []
     for d in dates:
         gaps += fetch_date(d, store, http, sources=specs, cme_auto=cme_auto)
+    if args.notify:
+        _alert(gaps, problems, max(dates))
     return _report(gaps)
 
 
@@ -197,6 +211,8 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--cme-auto", action="store_true", help="fetch CME automatically (or set CTD_CME_AUTO=1)")
     f.add_argument("--catch-up", action="store_true",
                    help=f"also fill gaps in the {CATCH_UP_DAYS} business days ending on --asof")
+    f.add_argument("--notify", action="store_true",
+                   help="desktop alert for gaps before the newest date and refused manual files")
     f.set_defaults(func=cmd_fetch)
 
     b = sub.add_parser("backfill", help="one-off histories (par curve years, NY Fed since 2018, CME TCF files)")

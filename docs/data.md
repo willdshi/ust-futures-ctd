@@ -121,7 +121,8 @@ A source's recovery window is how many business days after the as-of date it sti
 
 | Task | Command |
 |---|---|
-| Daily collection | Scheduled task `ctd-daily-fetch` runs `ctd fetch --catch-up` at 19:00 on weekdays (log in `data/fetch.log`). `--catch-up` also retries the previous 4 business days. |
+| Daily collection | Scheduled task `ctd-daily-fetch` runs `ctd fetch --catch-up --notify` at 19:00 on weekdays (log in `data/fetch.log`). `--catch-up` also retries the previous 4 business days. |
+| Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry, e.g. a missed bookmarklet click) and for manual files ingest refused. The newest date's gaps aren't alerted: its CME files come with the next morning's click, and late files are retried the next evening. |
 | CME files | Morning after each trade date: click the bookmarklet on a cmegroup.com tab, then `ctd ingest` or wait for the evening run. |
 | Check | `ctd check [--from D] [--to D]` |
 | One date / one source | `ctd fetch --asof D [--source ID ...]` |

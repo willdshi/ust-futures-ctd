@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-End-of-day model of cheapest-to-deliver (CTD) probabilities, futures fair value and key rate DV01s for CBOT Treasury futures, built only from free public data. The model focuses on **ZN, ZB and UB** (ZN and ZB first, then UB), but data collection covers six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11.
+End-of-day model of cheapest-to-deliver (CTD) probabilities, futures DV01s and key rate DV01s for CBOT Treasury futures, built only from free public data. The model focuses on **ZN, ZB and UB** (ZN and ZB first, then UB), but data collection covers six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11.
 
 ## Environment and commands
 
@@ -62,12 +62,11 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 
 - **Horizon.** Pick one horizon for the whole basket, not one per bond: last delivery day if carry is positive, first delivery day if negative (§5.2).
 - **Exact cash flows.** Coupons between today and the horizon must be in the forward price, and accrued must be at the correct settlement and delivery dates (§5.1).
-- **Grid centring.** Centre everything on forward yields at the horizon, with a per-bond convexity adjustment `c_i` so that `E[P_i(z)]` equals the forward price (§5.6).
-- **Slope-adjusted widths.** The slope-adjusted width `S_eff` is used for **probabilities only**, never for futures price or DV01 (§5.7).
+- **Grid centring.** Centre everything on forward yields at the horizon. The per-bond convexity adjustment `c_i` (so that `E[P_i(z)]` equals the forward price) is optional and off by default in v1; add it only if backtests show a bias (§5.6).
+- **Slope-adjusted widths.** The slope-adjusted width `S_eff` is used for **probabilities only**, never for DV01 or KRDs (§5.7).
 - **Vol mapping.** Convert each option expiry's price vol with the CTD duration of *that expiry's* underlying contract, then interpolate total variance to the horizon (§5.5). If UB options are too thin, map vol from ZB through betas, then fall back to realised vol (§3.1).
-- **Implied CTD repo.** It's a fitted calibration parameter that absorbs all residual error. Don't treat it as an observed input (§5.8).
+- **No fair value (§1, §5.8).** There is no model futures price, no comparison with the market settlement and no implied CTD repo. The end-of-month and wildcard options aren't modelled. Every bond is funded at GC. Market futures prices are used only for vol conversion and open interest.
 - **Key rate durations.** KRDs are forward KRDs at the horizon, divided by CF and probability-weighted. Also report them per cluster, for jump risk (§5.9).
-- **Wildcard option.** It isn't priced and is left in the model-to-market residual.
 
 ## Validation targets (§8)
 
