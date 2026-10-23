@@ -160,3 +160,43 @@ def test_bulletin_drop_counts_as_collected(store, tmp_path):
     ingest(store, tmp_path / "inbox", registry.units_for)
     gaps, man = run(store, None, sources=[registry.SOURCES["cme_bulletin"]], fill_missing=False)
     assert statuses(man)["cme_bulletin"] == mf.OK and not gaps
+
+
+def test_provisional_td_prices_replaced_once_complete(store):
+    """The one exception to never overwriting: a same-evening TreasuryDirect file (no end-of-day
+    prices) is pulled again on later runs and replaced by the completed file, never by a worse one."""
+    from fakes import TD
+    from ctd.data import td_prices
+
+    evening = b"912810XX0,MARKET BASED BOND,0.045,08/15/2046,,98.6,98.5,0.000000\n"
+    complete = b"912810XX0,MARKET BASED BOND,0.045,08/15/2046,,98.6,98.5,98.4\n"
+    served = {"body": evening}
+    route = ("POST", TD + "securityPriceDetail", lambda url, p: ok(url, served["body"], "application/csv"))
+    http = FakeHttp([route] + gov_routes())
+    td = [registry.SOURCES["td_prices"]]
+    unit = lambda man: man["sources"]["td_prices"]["units"]["securityprice"]  # noqa: E731
+    name = "securityprice_2026-10-16.csv"
+
+    assert td_prices.provisional(evening) and not td_prices.provisional(complete)
+    assert td_prices.provisional(b"garbage")
+
+    _, man = run(store, http, sources=td)
+    assert unit(man)["provisional"] == [name] and unit(man)["status"] == mf.OK
+    assert store.read(FRI, "td_prices", "securityprice", name) == evening
+
+    _, man = run(store, http, sources=td, today=MON)  # still provisional upstream: kept, retried
+    assert store.read(FRI, "td_prices", "securityprice", name) == evening
+    assert "replaced" not in store.meta(FRI, "td_prices", "securityprice", name)
+
+    served["body"] = complete
+    _, man = run(store, http, sources=td, today=MON)
+    assert store.read(FRI, "td_prices", "securityprice", name) == complete
+    assert "provisional" not in unit(man)
+    meta = store.meta(FRI, "td_prices", "securityprice", name)
+    assert [r["bytes"] for r in meta["replaced"]] == [len(evening)]
+
+    served["body"] = evening  # a complete file is never fetched or replaced again
+    n = len(http.calls)
+    run(store, http, sources=td, today=MON)
+    assert len(http.calls) == n
+    assert store.read(FRI, "td_prices", "securityprice", name) == complete

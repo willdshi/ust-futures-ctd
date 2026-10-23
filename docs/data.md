@@ -61,6 +61,7 @@ data/
 
 - **Exactly as downloaded.** Bytes are stored unchanged, gzip-compressed at rest (`mtime=0`, so the same bytes always give the same `.gz`). Read them back with `RawStore.read` (§7).
 - **Never overwritten.** Writes use exclusive create; a re-run skips anything already stored. Re-running a fetch is always safe.
+  - **One exception:** TreasuryDirect price files pulled the same evening are provisional and get replaced by the completed file a day later (§5.1). It applies only to a source that can be pulled again for any past date and is marked `provisional` in its source spec; every other source, including all CME data, is never overwritten.
 - **Validated before storing.** A fetcher rejects an empty or obviously wrong response (an HTML error page instead of CSV, a non-PDF bulletin) so it can't block the correct file later.
 
 Each file has a `.meta.json` sidecar:
@@ -134,9 +135,11 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 ### 5.1 `td_prices`: TreasuryDirect FedInvest prices
 
-- **What:** one price file per business day covering every marketable Treasury (bills, notes, bonds, TIPS, FRNs), about 460 securities today. TreasuryDirect's single end-of-day price, rounded and struck before the futures settlement; clean prices (design §5.1).
+- **What:** one price file per business day covering every marketable Treasury (bills, notes, bonds, TIPS, FRNs), about 460 securities today. Rounded clean prices (design §5.1) in two snapshots: buy and sell, and a later end-of-day price.
 - **How:** a three-step form flow, each step handing out a CSRF token: GET the date form, POST the date, POST for the CSV. Calendar `sifma`.
-- **Date alignment:** the as-of date is the price date requested from FedInvest, and the file holds that day's end-of-day prices: `raw/2026-10-21/` has the prices for the close of 2026-10-21, the same trade date as the CME settlements stored there (checked by hand on the FedInvest site, 2026-10-22). No one-day shift is needed when pairing them with futures.
+- **Date alignment:** the as-of date is the price date requested from FedInvest, and the file holds that day's prices: `raw/2026-10-21/` has the prices for 2026-10-21, the same trade date as the CME settlements stored there (checked by hand on the FedInvest site, 2026-10-22). No one-day shift is needed when pairing them with futures.
+- **End of day comes later.** A file pulled the same evening has buy and sell but an empty end-of-day column for every note and bond; a pull a day or more later has all three. End of day is a later snapshot, not the buy/sell midpoint: on 2026-10-16 the 4½% August 2039 bond was 93-19 buy, 93-16 sell, 93-14 end of day. Every stored file before 2026-10-19 was pulled late, so history has end of day throughout.
+- **Replaced once complete: the one exception to never overwriting (§2.2).** A same-evening file is marked provisional (manifest `"provisional": [file]`). The scheduled `--catch-up` run pulls the date again on the following evenings and replaces the file once end-of-day prices are in. A provisional or unreadable download never replaces anything. The meta sidecar keeps the hash, size and timestamps of each version replaced under `"replaced"`. This is safe only because TreasuryDirect serves any past date again. Use end of day; buy or sell only for a date still provisional, flagged as such.
 - **File:** `td_prices/securityprice/securityprice_<asof>.csv`. No header row. Columns:
 
 | # | Column | Example |

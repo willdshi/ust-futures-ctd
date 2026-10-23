@@ -16,14 +16,26 @@ from ctd.data.store import RawStore, utc_now
 NO_DATA_SETTLED_AFTER = 5
 
 
-def _unit_entry(status: str, files: list[str], origin: str | None = None, error: str | None = None) -> dict:
-    return {"status": status, "origin": origin, "files": files, "attempted_at": utc_now(), "error": error}
+def _unit_entry(status: str, files: list[str], origin: str | None = None, error: str | None = None,
+                provisional: list[str] | None = None) -> dict:
+    entry = {"status": status, "origin": origin, "files": files, "attempted_at": utc_now(), "error": error}
+    if provisional:
+        entry["provisional"] = provisional
+    return entry
+
+
+def _provisional(spec: SourceSpec, store: RawStore, asof: date, unit: str, names: list[str]) -> list[str]:
+    """Stored files still waiting to be completed (the replaceable exception, ``SourceSpec.provisional``)."""
+    if spec.provisional is None:
+        return []
+    return [n for n in names if spec.provisional(store.read(asof, spec.id, unit, n))]
 
 
 def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Http | None, cme_auto: bool,
               lag: int, prev: dict | None, has_manual: bool) -> dict:
     names = store.names(asof, spec.id, unit)
-    if prev and prev["status"] == mf.OK and set(prev["files"]) <= set(names):
+    pending = _provisional(spec, store, asof, unit, names)
+    if prev and prev["status"] == mf.OK and set(prev["files"]) <= set(names) and not pending:
         return prev
     if prev and prev["status"] == mf.NOT_EXPECTED and not names:
         return prev
@@ -35,13 +47,17 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
         status = mf.MANUAL if has_manual else mf.NOT_RECOVERABLE
         return _unit_entry(status, names, error=f"{lag} business days after as-of; window is {spec.window}")
     if http is None:  # offline refresh: report, don't fetch
-        return prev if prev and prev["status"] == mf.FAILED else _unit_entry(mf.MISSING, names)
+        if prev and prev["status"] in (mf.FAILED, mf.OK):
+            return prev
+        return _unit_entry(mf.MISSING, names)
     stored = []
     try:
         for f in spec.fetch(asof, unit, http):
             meta = {"origin": "auto", "url": f.url, "http_status": f.status, "content_type": f.content_type,
                     "method": f.method, "params": f.params, "downloaded_at": utc_now()}
-            store.write(asof, spec.id, unit, f.name, f.content, meta)
+            if not store.write(asof, spec.id, unit, f.name, f.content, meta) and f.name in pending \
+                    and not spec.provisional(f.content):
+                store.replace(asof, spec.id, unit, f.name, f.content, meta)  # the one exception
             stored.append(f.name)
     except NoData as e:
         if lag > NO_DATA_SETTLED_AFTER and not stored:
@@ -49,7 +65,7 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
         return _unit_entry(mf.FAILED, store.names(asof, spec.id, unit), error=f"{type(e).__name__}: {e}")
     except Exception as e:  # one failing source must not stop the others
         return _unit_entry(mf.FAILED, store.names(asof, spec.id, unit), error=f"{type(e).__name__}: {e}")
-    return _unit_entry(mf.OK, stored, origin="auto")
+    return _unit_entry(mf.OK, stored, origin="auto", provisional=_provisional(spec, store, asof, unit, stored))
 
 
 def _run_source(spec: SourceSpec, asof: date, store: RawStore, http: Http | None, cme_auto: bool, today: date,

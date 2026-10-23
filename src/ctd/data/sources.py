@@ -41,6 +41,11 @@ class SourceSpec:
     (``ctd fetch --source ...``) or dropped in the inbox, and are never flagged as gaps.
     ``validate(asof, name, content)``, if set, checks a manual file before ingest stores it and
     returns the reason to reject it (e.g. a bulletin printed for another date), or None.
+    ``provisional(content)``, if set, marks the **one exception to never overwriting a stored
+    file**. It is only for sources that can be pulled again for any past date (so nothing is
+    lost by replacing), whose files for a date are completed after the first pull. A stored file
+    it returns True for is fetched again on later runs and replaced by a download it returns
+    False for (``RawStore.replace``); a provisional or broken download never replaces anything.
     """
 
     id: str
@@ -53,6 +58,7 @@ class SourceSpec:
     cme: bool = False
     schedule: Literal["daily", "backfill", "occasional"] = "daily"
     validate: Callable[[date, str, bytes], str | None] | None = None
+    provisional: Callable[[bytes], bool] | None = None
 
 
 def mmddyyyy(d: date) -> str:

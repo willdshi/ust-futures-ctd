@@ -88,7 +88,7 @@ The figures above are a working summary. **Verify each against the current CBOT 
 |---|---|---|---|---|
 | Basket and conversion factors | Rules + CF formula; CME's daily TCF files (public FTP) for validation | Yes | Rebuild from rules + formula; TCF files from December 2023 | Validate rebuilt baskets and CFs against the TCF files |
 | Security terms (CUSIP, coupon, maturity, dated date) | TreasuryDirect / FiscalData | Yes | Yes | Include since-matured issues for history |
-| Bond prices by CUSIP | TreasuryDirect daily prices | Yes (prior-day close) | Yes, from 30 May 2008 (until about September 2008, CUSIP and prices only); stored from 2016 | Single price, rounded, lagged; off-the-runs noisy; slow to pull, so cache |
+| Bond prices by CUSIP | TreasuryDirect daily prices | Yes (the file stored under a date has that day's prices; end of day is filled in a day later, so the same-evening file is replaced once complete, data.md §5.1) | Yes, from 30 May 2008 (until about September 2008, CUSIP and prices only); stored from 2016 | Single price, rounded; timing against the futures settlement not yet checked; off-the-runs noisy |
 | Futures settlements (all six Treasury contracts, all listed months) | CME settlements | Yes | Front two contracts from 2016, paid one-off Databento backfill (data.md §5.11) | Used only for vol conversion (5.5) and open interest; collection may be manual; respect terms of use |
 | Futures daily bars, cross-check (six Treasury contracts) | Yahoo Finance chart endpoint | Yes | Listed contracts since listing; continuous front month from 2000 (2010 for UB, TN) | Closes equal CME settlements on dates checked; misses some listed months (e.g. June 2027 ZT, ZF, ZN, TN); continuous series rolls on the last trading day, unadjusted; unofficial endpoint, personal-use terms |
 | Futures option settlements by strike (section 3.1) | CME settlements | Yes | **No** (paid) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
@@ -156,7 +156,7 @@ A free source that only shows recent days is lost for good on any day it isn't p
 - Not collected yet, needed for the fragility dashboard ([outputs.md](outputs.md)): CFTC Traders in Financial Futures (weekly), MSPD outstanding and stripped amounts (monthly), NY Fed SOMA holdings (weekly), Treasury buyback results. All have free history, so they can be added and backfilled when the dashboard is built. CME Pace of the Roll is on cmegroup.com and may not be backfillable; check before relying on it.
 
 **Operations**
-- `ctd fetch` runs on a schedule every business day after CME final settlements are published. It is idempotent: re-running a date never overwrites a stored file, it only fills what's missing.
+- `ctd fetch` runs on a schedule every business day after CME final settlements are published. It is idempotent: re-running a date never overwrites a stored file, it only fills what's missing. The one exception is a provisional TreasuryDirect price file, replaced once its end-of-day prices are published (data.md §5.1).
 - Each date gets a manifest listing every expected file and its status. A completeness check flags missing products, and a gap triggers retry and an alert.
 - Recovery window for a missed run: CME futures and option settlement pages show **5 trailing business days**. Beyond the window, record the gap rather than fill it from another source.
 - Store files exactly as downloaded (lossless compression at rest is fine). Record the source URL and download timestamp alongside each file.
@@ -186,6 +186,9 @@ CLAUDE.md
 
 - Python, numpy/scipy/pandas.
 - Pure functions in `bonds/`, `funding/`, `model/`, `risk/`; I/O only in `data/` and `report/`.
+- **Reading the store.** The raw store keeps its layout (one folder per as-of date, files as downloaded, a manifest per date); the model never touches paths or file formats directly.
+  - **Per-date readers** (`data/`, phase 1b): one function per source turns one as-of date's raw files into a clean table, e.g. TreasuryDirect prices as CUSIP, coupon, maturity, price. Enough for any single-date run.
+  - **Derived tables** (phase 2, when betas first need a time series): Parquet tables across dates, e.g. `data/derived/td_prices.parquet` with one row per date and CUSIP, built by running the per-date readers over the store (one parser per source). They are a cache: rebuilt with one command, never edited by hand, each recording the raw files it was built from. The raw store stays the source of truth, and a derived table never holds data the raw store lacks.
 - Dates and conventions explicit everywhere: settlement date (T+1), delivery date, actual/actual accrual, semiannual compounding.
 
 ## 5. Model

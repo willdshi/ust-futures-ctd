@@ -6,7 +6,10 @@ Layout under the data root::
     raw/<asof>/<source>/<unit>/<name>.meta.json  url, timestamps, sha256 of the original bytes, origin
     raw/<asof>/manifest.json                     see ctd.data.manifest
 
-A stored file is never overwritten.
+A stored file is never overwritten, with one exception: ``replace`` swaps in a completed
+version of a provisional file from a source that can be pulled again for any date (see
+``SourceSpec.provisional``; TreasuryDirect prices only). The meta sidecar records every
+version replaced.
 """
 
 import gzip
@@ -68,6 +71,25 @@ class RawStore:
                 "bytes": len(content), "sha256": sha256(content), "stored_at": utc_now(), **meta}
         _create_exclusive(d / (name + META), json.dumps(full, indent=2).encode())
         return True
+
+    def replace(self, asof: date, source: str, unit: str, name: str, content: bytes, meta: dict) -> None:
+        """Overwrite a stored file: **the exception to never overwriting**, for provisional files only.
+
+        The caller decides that ``content`` completes the stored file (``SourceSpec.provisional``).
+        The old version's hash, size and timestamps are kept in the new meta under ``replaced``.
+        """
+        d = self.unit_dir(asof, source, unit)
+        old = self.meta(asof, source, unit, name)
+        replaced = old.pop("replaced", []) + [{k: old.get(k) for k in ("sha256", "bytes", "stored_at",
+                                                                         "downloaded_at")}]
+        full = {"asof": asof.isoformat(), "source": source, "unit": unit, "name": name,
+                "bytes": len(content), "sha256": sha256(content), "stored_at": utc_now(), **meta,
+                "replaced": replaced}
+        for target, payload in ((d / (name + GZ), gzip.compress(content, mtime=0)),
+                                (d / (name + META), json.dumps(full, indent=2).encode())):
+            tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+            tmp.write_bytes(payload)
+            os.replace(tmp, target)
 
     def read(self, asof: date, source: str, unit: str, name: str) -> bytes:
         return gzip.decompress((self.unit_dir(asof, source, unit) / (name + GZ)).read_bytes())

@@ -43,6 +43,7 @@ Phase 1b (the light model, design §5.11) is in progress; the plan, definition o
     - the full TreasuryDirect price file
   - Never narrow a fetcher to the products the model currently reads.
   - Fetches are idempotent and never overwrite a stored file.
+    - **One exception:** a same-evening TreasuryDirect price file (no end-of-day prices yet) is provisional and replaced by the completed file on a later run (`SourceSpec.provisional`, `RawStore.replace`; data.md §5.1). Only sources that can be pulled again for any past date may use it. Never extend it to CME data.
   - Each date gets a manifest, and gaps are flagged (the scheduled `ctd fetch --catch-up --notify` raises a desktop alert), never filled from another source.
 - **Purity.**
   - `bonds/`, `funding/`, `model/` and `risk/` (and the computational parts of `curve/` and `vol/`) are pure functions.
