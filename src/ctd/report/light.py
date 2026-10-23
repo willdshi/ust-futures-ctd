@@ -1,0 +1,77 @@
+"""Text output of a light-model run (design 5.11, phase 1b B5): the basket and crossover tables."""
+
+from ctd.model.light import LightResult
+
+
+def prob(lo: float, hi: float) -> str:
+    """``19.4%`` for a point, ``≤ 3.1%`` for an upper bound, ``27.0–30.0%`` for an interval."""
+    if abs(hi - lo) < 5e-4:
+        return f"{lo:.1%}"
+    if lo < 5e-4:
+        return f"≤ {hi:.1%}"
+    return f"{lo * 100:.1f}–{hi:.1%}"
+
+
+def _row(cells, widths) -> str:
+    return "  ".join(f"{c:<{w}}" if i < 2 else f"{c:>{w}}" for i, (c, w) in enumerate(zip(cells, widths))).rstrip()
+
+
+def _table(header: list[str], rows: list[list[str]]) -> list[str]:
+    widths = [max(len(r[i]) for r in [header, *rows]) for i in range(len(header))]
+    return [_row(header, widths), _row(["-" * w for w in widths], widths), *(_row(r, widths) for r in rows)]
+
+
+NEXT_CHEAPEST = 3  # bonds listed beyond those with a probability: the cheapest of the rest at z = 0
+
+
+def format_run(r: LightResult, all_bonds: bool = False) -> str:
+    """The run as text. The basket lists the bonds with a probability and the next few cheapest
+    (``NEXT_CHEAPEST``), or every bond with ``all_bonds``."""
+    p = r.probabilities
+    by_bond = p.by_bond()
+    shown = set(by_bond)
+    rest = sorted((b for b in r.basket if b.cusip not in shown), key=lambda b: b.converted)
+    shown |= {b.cusip for b in rest[:NEXT_CHEAPEST]}
+    basket = r.basket if all_bonds else [b for b in r.basket if b.cusip in shown]
+    lines = [
+        f"{r.contract} as of {r.asof} (settlement {r.settle})",
+        f"horizon {r.horizon}: {r.horizon_reason}",
+        f"repo: flat SOFR {r.sofr:.4%} ({r.sofr_date})",
+        f"options: {r.expiry.product} {r.expiry.label}, expiry {r.expiry.expiry}, DF {r.df:.6f}",
+        f"futures settlement {r.f_market:.4f}, envelope E(0) {r.e0:.4f}, "
+        f"recentring gap {r.gap:+.4f} ({r.gap * 32:+.1f}/32)",
+        "",
+        f"Basket of {len(r.basket)} (forwards at the horizon, CTD at z = 0 marked *)",
+    ]
+    rows = []
+    for b in basket:
+        lo, hi = by_bond.get(b.cusip, (0.0, 0.0))
+        rows.append([b.cusip + (" *" if b.cusip == p.ctd else ""), f"{b.coupon * 100:.3f} {b.maturity}",
+                     f"{b.cf:.4f}", f"{b.price:.4f}" + ("" if b.price_from == "eod" else f" ({b.price_from})"),
+                     f"{b.fwd:.4f}", f"{b.fwd_yield:.4%}", f"{b.carry:+.4f}", f"{b.converted:.4f}",
+                     prob(lo, hi) if b.cusip in by_bond else ""])
+    lines += _table(["cusip", "coupon maturity", "cf", "price", "fwd", "fwd yield", "carry", "converted", "P(CTD)"],
+                    rows)
+    if len(basket) < len(r.basket):
+        lines.append(f"(bonds with a probability and the next {NEXT_CHEAPEST} cheapest; "
+                     f"{len(r.basket) - len(basket)} more with --all-bonds)")
+
+    lines += ["", "Crossovers (as yields rise; K = futures price at the switch)"]
+    region = {id(reg.switch): reg for reg in p.regions if reg.switch is not None}
+    rows = []
+    for c in r.crossovers:
+        sw, d = c.switch, c.digital
+        reg = region[id(sw)]
+        rows.append([f"{sw.from_cusip} → {sw.to_cusip}", reg.side, f"{sw.z_bp:+.1f}", f"{c.strike:.4f}",
+                     f"{c.strike - r.f_market:+.4f}", " ".join(f"{s:g}" for s in d.strikes_used) or "-",
+                     ("P(F<K) " if d.side == "below" else "P(F>K) ")
+                     + ("-" if d.prob is None else ("≤ " if d.upper_bound else "") + f"{d.prob:.1%}"),
+                     f"{reg.cusip} {prob(reg.lo, reg.hi)}"])
+    lines += _table(["from → to", "side", "z bp", "K", "K − F", "strikes", "digital", "beyond"], rows) \
+        if rows else ["(no switches between -100 and +150bp)"]
+
+    [kept] = [reg for reg in p.regions if reg.side == "ctd"]
+    lines += ["", f"{p.ctd} (CTD) keeps {prob(kept.lo, kept.hi)}"]
+    if r.warnings:
+        lines += ["", "Warnings", *(f"- {w}" for w in r.warnings)]
+    return "\n".join(lines)

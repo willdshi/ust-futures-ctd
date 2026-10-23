@@ -120,3 +120,10 @@ def test_inconsistent_inputs_raise():
         assemble("B", SWITCHES, [d("above", 0.1), d("above", 0.3), d("below", 0.05)])
     with pytest.raises(ValueError, match="one digital per switch"):
         assemble("B", SWITCHES, [d("above", 0.1)])
+
+
+def test_a_bound_is_capped_by_the_digital_inward():
+    # ZNZ6 on 2026-10-22: "≤ 3.1%" outside a 0.5% point can only be ≤ 0.5%
+    p = assemble("B", SWITCHES, [d("above", 0.10), d("below", 0.005), d("below", 0.031, bound=True)])
+    assert p.by_bond()["D"] == pytest.approx((0.0, 0.005))
+    assert p.by_bond()["C"] == pytest.approx((0.0, 0.005))

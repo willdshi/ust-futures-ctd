@@ -108,3 +108,11 @@ def test_chain_must_be_one_expiry():
     rows = chain() + [OptionSettle("ZB", "MAR27", "P", 100.0, 1.0, None, 0, 1)]
     with pytest.raises(ValueError):
         digital(rows, 103.0, F, DF)
+
+
+def test_equal_settlements_are_a_floor_and_give_a_bound():
+    # ZN puts from 98.5 to 100.5 all settled at 2/64 on 2026-10-16: a slope of 0 says only "≤ one tick"
+    rows = [OptionSettle("ZN", "DEC26", "P", k, 2 / 64, None, 0, 10) for k in (99.5, 100.0, 100.5)]
+    rows += [OptionSettle("ZN", "DEC26", "P", 101.0, 3 / 64, None, 0, 10)]
+    d = digital(rows, 100.09, 105.45, DF)
+    assert d.upper_bound and d.prob == pytest.approx(1 / 64 / 0.5 / DF)

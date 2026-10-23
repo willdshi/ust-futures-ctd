@@ -5,7 +5,7 @@
     ctd check [--from 2026-10-01] [--to 2026-10-16]
     ctd backfill
     ctd bookmarklet [--print]
-    ctd run --contract ZBZ6 --asof 2026-10-16      (not implemented yet)
+    ctd run --contract ZBZ6 [--asof 2026-10-16]
     ctd history --contract ZB --from ... --to ...  (not implemented yet)
 
 ``fetch`` and ``check`` exit 1 when there are gaps. ``fetch --notify`` also shows a desktop alert.
@@ -187,6 +187,73 @@ def _report(gaps) -> int:
     return 1 if gaps else 0
 
 
+def light_inputs(store, contract: str, asof: date):
+    """Everything the light model needs for ``contract`` on ``asof``, from the raw store only, and
+    the raw files read (source, unit, name, sha256)."""
+    from ctd.data import cme_bulletin, cme_settlements, cme_tcf, nyfed, refdata, td_prices
+    from ctd.model.light import LightInputs
+    from ctd.reference.contracts import MONTH_CODES, parse_contract
+    from ctd.reference.delivery import delivery_for
+    from ctd.reference.options import LABELS, expiry_for
+
+    product, month = parse_contract(contract, asof)
+    sifma = refdata.calendar("sifma")
+    cal = delivery_for(refdata.delivery_calendar(), product, month)
+    futures = cme_settlements.read_futures(store, asof, product)
+    if month not in futures:
+        raise ValueError(f"no {contract} settlement on {asof}")
+    prices, _ = td_prices.read(store, asof)
+    sofr_date, sofr = nyfed.read_latest(store, asof)
+    label = f"{LABELS[month.month - 1]}{month.year % 100:02d}"
+    expiry = expiry_for(refdata.option_expiries(), product, label)
+    assert expiry.underlying[-2] == MONTH_CODES[month.month - 1]
+    inputs = LightInputs(
+        contract, asof, sifma.add_business_days(asof, 1), cal.first_delivery, cal.last_delivery,
+        cme_tcf.read_basket(store, asof, product, month), prices, futures[month].settle, sofr, sofr_date,
+        expiry, cme_bulletin.read_options(store, asof), sifma)
+    read = [("td_prices", "securityprice", f"securityprice_{asof.isoformat()}.csv"),
+            ("cme_tcf", "csv", cme_tcf.file_name(asof, "csv")),
+            ("cme_fut", product, store.names(asof, "cme_fut", product)[0]),
+            *(("nyfed_rates", "sofr", n) for n in store.names(asof, "nyfed_rates", "sofr")),
+            ("cme_bulletin", "Section42", "Section42.pdf")]
+    files = [{"source": s, "unit": u, "name": n, "sha256": store.meta(asof, s, u, n)["sha256"]} for s, u, n in read]
+    return inputs, files
+
+
+def code_version() -> str | None:
+    """``git describe`` of the checkout this code runs from (``-dirty`` with uncommitted changes)."""
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "describe", "--always", "--dirty"], cwd=Path(__file__).parent,
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() or None
+
+
+def cmd_run(args) -> int:
+    from ctd.data.store import RawStore
+    from ctd.model import light
+    from ctd.report import results
+    from ctd.report.light import format_run
+
+    asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
+    try:
+        inputs, files = light_inputs(RawStore(args.data_root), args.contract, asof)
+        result = light.run(inputs)
+    except (FileNotFoundError, KeyError, ValueError) as e:
+        print(f"ctd run {args.contract} {asof}: {e}", file=sys.stderr)
+        return 1
+    print(format_run(result, all_bonds=args.all_bonds))
+    if not args.no_save:
+        path = results.write_light(args.data_root, results.light_record(result, files, code_version()))
+        print(f"\nsaved {path}")
+    return 0
+
+
 def cmd_not_implemented(args) -> int:
     print(f"ctd {args.command}: not implemented yet", file=sys.stderr)
     return 2
@@ -233,10 +300,12 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--to", dest="date_to", type=date.fromisoformat)
     c.set_defaults(func=cmd_check)
 
-    r = sub.add_parser("run", help="model one contract for one date (not implemented yet)")
-    r.add_argument("--contract")
-    r.add_argument("--asof", type=date.fromisoformat)
-    r.set_defaults(func=cmd_not_implemented)
+    r = sub.add_parser("run", help="light model (design 5.11) for one contract and date, from the store")
+    r.add_argument("--contract", required=True, help="e.g. ZBZ6")
+    asof_args(r)
+    r.add_argument("--no-save", action="store_true", help="print only; don't write data/results/light/...")
+    r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
+    r.set_defaults(func=cmd_run)
     h = sub.add_parser("history", help="historical mode (not implemented yet)")
     h.add_argument("--contract")
     h.add_argument("--from", dest="date_from", type=date.fromisoformat)

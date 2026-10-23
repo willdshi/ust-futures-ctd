@@ -14,7 +14,9 @@ A cabinet settlement (``OptionSettle.cabinet``) only says the option is worth le
 and a settlement at the minimum tick says little more once rounded, so a pair that includes either
 gives an upper bound, not a probability: each price is taken as an interval (exact if priced
 above one tick, 0 to one tick otherwise) and the bound is the widest slope those intervals allow.
-Two such strikes half a point apart give "≤ 3%" (1/64 over ½). A ``K`` beyond the listed strikes
+Two such strikes half a point apart give "≤ 3%" (1/64 over ½). So do two equal settlements, which
+wings often show (a floor: ZN puts from 98.5 to 100.5 all at 2/64 on 2026-10-16): once rounded
+they are at most one tick apart. A ``K`` beyond the listed strikes
 gets no value. Results are flagged where open interest is zero or the slope falls outside [0, 1].
 """
 
@@ -52,6 +54,8 @@ def _slope(a: OptionSettle, b: OptionSettle, right: str, tick: float, df: float)
     lo = lambda o: 0.0 if _below_tick(o, tick) else o.settle  # noqa: E731
     hi = lambda o: tick if _below_tick(o, tick) else o.settle  # noqa: E731
     gap = b.strike - a.strike
+    if not fuzzy and a.settle == b.settle:  # a floor: equal once rounded, so at most one tick apart
+        return tick / gap / df, True
     if right == "P":  # put rises with strike
         value = (hi(b) - lo(a)) if fuzzy else (b.settle - a.settle)
     else:  # call falls with strike

@@ -28,5 +28,10 @@ def test_ingest_refreshes_manifest(tmp_path):
     assert main(["--data-root", str(tmp_path), "check"]) == 1  # other units and sources still missing
 
 
-def test_model_commands_not_implemented():
-    assert main(["run", "--contract", "ZBZ6", "--asof", "2026-10-16"]) == 2
+def test_run_on_an_empty_store_reports_what_is_missing(tmp_path, capsys):
+    assert main(["--data-root", str(tmp_path), "run", "--contract", "ZBZ6", "--asof", "2026-10-21"]) == 1
+    assert "no ZB futures settlements stored for 2026-10-21" in capsys.readouterr().err
+
+
+def test_history_not_implemented():
+    assert main(["history", "--contract", "ZB"]) == 2

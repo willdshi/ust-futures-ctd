@@ -6,9 +6,9 @@ and its digital read there (``ctd.vol.digitals``): ``P(F < K_k)`` for a switch o
 bond beyond switch k gets ``D_k − D_{k+1}`` and the bond beyond the last switch its full tail
 ``D_n``; the current CTD gets the remainder, ``1 − D_1(sell-off) − D_1(rally)``.
 
-A digital that is only an upper bound (cabinet or minimum-tick settlements) is the interval
-[0, bound]; a missing one (beyond the listed strikes) is [0, the next digital inward], which
-holds if digitals fall with distance. Every probability is therefore an interval ``[lo, hi]``,
+A digital that is only an upper bound (cabinet, minimum-tick or floor settlements) is the
+interval [0, bound]; a missing one (beyond the listed strikes) is [0, the next digital inward].
+A bound is also capped at the digital inward; both hold if digitals fall with distance. Every probability is therefore an interval ``[lo, hi]``,
 a point when ``lo == hi``. Negative regions are clipped to 0, with a warning when digitals rise
 with distance or the probabilities no longer bracket 1.
 """
@@ -59,7 +59,7 @@ def strike(switch: Switch, f_market: float, e0: float) -> float:
 def _interval(d: Digital, inner_hi: float) -> tuple[float, float]:
     if d.prob is None:
         return 0.0, inner_hi
-    return (0.0, d.prob) if d.upper_bound else (d.prob, d.prob)
+    return (0.0, min(d.prob, inner_hi)) if d.upper_bound else (d.prob, d.prob)
 
 
 def _side(name: str, ctd: str, pairs: list[tuple[Switch, Digital]], warnings: list[str]) -> list[Region]:
