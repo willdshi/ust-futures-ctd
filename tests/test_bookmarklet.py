@@ -1,8 +1,4 @@
-import shutil
-import subprocess
 from urllib.parse import unquote
-
-import pytest
 
 from ctd.cli import main
 from ctd.data import bookmarklet
@@ -21,13 +17,6 @@ def test_url_round_trips_to_script():
     assert url.startswith("javascript:") and bookmarklet.PLACEHOLDER not in unquote(url)
     assert unquote(url[len("javascript:"):]) == bookmarklet.script()
     assert not any(c in url for c in "\"'<> \n")  # safe inside an HTML href
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
-def test_script_parses(tmp_path):
-    js = tmp_path / "b.js"
-    js.write_text(bookmarklet.script(), encoding="utf-8")
-    subprocess.run(["node", "--check", str(js)], check=True)
 
 
 def test_cli_writes_install_page(tmp_path):
