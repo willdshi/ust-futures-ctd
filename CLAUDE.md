@@ -17,9 +17,15 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 ```
 
 - To refresh `environment.yml`, run `conda env export -n ctd --from-history` (conda is at `%USERPROFILE%\miniconda3\Scripts\conda.exe`). Then remove the `prefix:` line and save the file as UTF-8. A PowerShell `>` redirect writes UTF-16.
-- Keep dependencies in sync in both `environment.yml` and `pyproject.toml`.
+  - `--from-history` omits pip installs. Keep the `pip:` section by hand; `conda list -n ctd` marks them with channel `pypi` (top-level ones now: `databento`, `QuantLib`).
+- Keep dependencies in sync in both `environment.yml` and `pyproject.toml`. Test-only packages (QuantLib) go in the `dev` extras.
 - pytest runs with `--strict-markers`, so register any new marker in `pyproject.toml`. Mark tests that touch external sources with `network`.
 - No linter or formatter is configured yet.
+- Tests never read the gitignored `/data/` store. When a test needs real files, save a small extract under `tests/data/` (e.g. `tcf_2026-10-21.csv`).
+
+## Current state
+
+Phase 1b (the light model, design §5.11) is in progress; the plan, definition of done and open questions are in design §10. Foundation items 1–3 are done: `bonds/schedule.py` (coupon dates, accrued), `bonds/pricing.py` (the single pricing function), `bonds/conversion.py` (CF formula). Next: item 4, the store readers.
 
 ## Architecture rules (from the design)
 
@@ -27,7 +33,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
   - `src/ctd/data/` is code: one fetcher module per source.
   - `/data/` at the repo root is the gitignored raw snapshot store.
   - Keep `.gitignore` anchored as `/data/*`.
-- **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. The model reads only from that store, never from the network directly, and re-running a past date must give the same answer.
+- **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. TreasuryDirect prices and CME settlements under an as-of date are that day's close (checked by hand for TreasuryDirect; data.md §5.1), but rates published the next morning (SOFR) aren't in that day's files yet. The model reads only from that store, never from the network directly, and re-running a past date must give the same answer.
 - **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
   - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
     - CME futures settlements for all six contracts, and their option settlements as the Daily Bulletin's Section 42 PDF (browser bookmarklet; cmegroup.com blocks scripts)
@@ -45,11 +51,13 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
     - `ctd fetch --asof 2026-10-16`
     - `ctd run --contract ZBZ6 --asof 2026-10-16`
     - `ctd history --contract ZB --from 2022-01-01 --to 2026-10-16`
-- **Bond math is hand-written (§5.1).** One street-convention pricing function is used for every price, yield and duration calculation. QuantLib is a test-only dependency, used as an independent check.
+- **Bond math is hand-written (§5.1).** One street-convention pricing function (`ctd.bonds.pricing`) is used for every price, yield and duration calculation. QuantLib is a test-only dependency, used as an independent check.
+  - Coupons and yields are decimals (0.045); prices are per 100 face. The price functions accept a numpy array of yields.
+  - Coupon dates are stepped back from maturity (month-end maturities pay month-end). Treasuries are dated on schedule, so there is no odd-first-coupon logic. A bond in its final coupon period raises rather than being priced (street convention's simple-interest period isn't implemented).
 - **Explicit conventions.** Settlement (T+1) and delivery dates are always passed in, never assumed. Accrual is actual/actual, compounding is semiannual, and days are business days for delivery calendars.
 - **Reference data is data, not code (§2).**
   - Contract grades, delivery calendars and option products live in `reference/` as records with effective-from dates, never as constants. Verify each against the current CBOT rulebook when encoding it.
-  - Conversion factors come from the 6% CF formula (maturity rounded down to the quarter for ZN, TN, ZB and UB) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data, and the formula is tested against them.
+  - Conversion factors come from the 6% CF formula (`ctd.bonds.conversion`; maturity rounded down to the quarter for ZN, TN, ZB and UB, the month for ZT and ZF, as `cf_round_months` in `cme_products.toml`) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data; the formula matches every stored TCF row. The light model (§5.11) reads CFs from TCF as a shortcut.
   - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against the TCF files.
   - Store delivery calendars per contract month; don't compute them ad hoc.
   - Basket eligibility, measured from the first day of the delivery month:
