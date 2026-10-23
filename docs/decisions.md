@@ -72,3 +72,11 @@ So hibernation delays collection rather than losing data, unless the PC is off f
 **How much it matters:** CTD switches depend on beta *differences* between candidate bonds. A crossover's sensitivity to a beta error is roughly its distance from the forward times the beta difference: for ZB, a 0.03 beta error on a 30bp crossover moves it by about 1bp. The interpolation choice matters less than the estimation window and whether sell-off-only betas are used (design §5.4).
 
 **Related: the ZB reference factor.** The 20-year CMT reflects the 20-year sector, which has historically traded with its own idiosyncrasies. If its regression residuals look noisy, consider using the average of the 10 and 30-year yields, or the 30-year alone, as ZB's reference, and let the betas do the rest.
+
+## Which TreasuryDirect price the model uses (design §5.1)
+
+Each FedInvest file has buy, sell and end-of-day columns; end of day is filled in about a day later (data.md §5.1).
+
+**Decision:** use end of day wherever it exists: all history, and every live date once the next evening's catch-up has completed its file. Only for a date still provisional (a same-evening run), fall back to the buy/sell midpoint (sell where there is no buy) and mark the result provisional.
+
+**To confirm:** that end of day is the snapshot closest to the 2pm CT futures settlement (phase 1b open question), and TreasuryDirect's own definition of the three columns.

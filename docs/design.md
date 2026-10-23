@@ -468,6 +468,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    - **Which yield to shift**: forward yields (consistent with the full model, 5.6) or today's yields. Proposed: forward yields.
    - **Recentring gap**: `F_market` settles at 2pm CT and TreasuryDirect prices are struck earlier, so `F_market − E(0)` also absorbs that timing difference. Log it daily; what size counts as inconsistent inputs?
    - **Saved results**: print only, or also write results per date (e.g. a results directory) so a series can be built and compared later?
+   - **Which TreasuryDirect snapshot matches the futures settlement**: the model uses end of day ([decisions.md](decisions.md)). Confirm it on a few dates: compare the CTD's gross basis from end of day and from buy/sell against the 2pm CT settlement (the snapshot taken at the same time shows the least correlation between basis changes and futures changes), and find TreasuryDirect's own definition of the columns.
    - **After December option expiry (about 2026-11-20)**: stop the light model on December contracts, or roll to March contracts and the January serial (with the expiry-after-horizon issue in section 11)?
 2. **Phase 2, one-factor model**: betas, vol calibration (single expiry, √T), probabilities, region-weighted DV01 and KRDs, scenarios and duration profile, comparison series and effective maturity, distance to switch, event flags, daily report with charts 1–3. First on ZN and ZB, then UB and TN once they pass the phase-2 checks.
 
