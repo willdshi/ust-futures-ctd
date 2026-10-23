@@ -186,9 +186,18 @@ CLAUDE.md
 
 - Python, numpy/scipy/pandas.
 - Pure functions in `bonds/`, `funding/`, `model/`, `risk/`; I/O only in `data/` and `report/`.
-- **Reading the store.** The raw store keeps its layout (one folder per as-of date, files as downloaded, a manifest per date); the model never touches paths or file formats directly.
-  - **Per-date readers** (`data/`, phase 1b): one function per source turns one as-of date's raw files into a clean table, e.g. TreasuryDirect prices as CUSIP, coupon, maturity, price. Enough for any single-date run.
-  - **Derived tables** (phase 2, when betas first need a time series): Parquet tables across dates, e.g. `data/derived/td_prices.parquet` with one row per date and CUSIP, built by running the per-date readers over the store (one parser per source). They are a cache: rebuilt with one command, never edited by hand, each recording the raw files it was built from. The raw store stays the source of truth, and a derived table never holds data the raw store lacks.
+- **Reading the store: three layers.** The model never touches paths, file formats or which source a number came from.
+
+  | Layer | Holds | Source-specific? |
+  |---|---|---|
+  | Raw store (`data/raw/`) | files exactly as downloaded: bulletin PDFs, Databento DBN, CME JSON, TreasuryDirect CSV | yes, one format per source |
+  | Readers (`parse`/`read` in each source's module in `data/`) | one source's raw file for one date, as standard records: `OptionSettle`, `FuturesSettle`, `BondPrice`, ... | yes, one reader per source |
+  | Derived tables (`data/derived/`, Parquet) | the standard records across all dates, one table per kind of data | no: one schema whatever the source |
+
+  - **Readers** (phase 1b) are enough for any single-date run: `ctd run` for one date calls them directly.
+  - **Derived tables** (phase 2) are for anything across dates: betas, history, the backtest. Each table is built from the raw store by one command (running the readers over every date), never edited by hand, and records the raw files it was built from. It is a cache: the raw store stays the source of truth, and a derived table never holds data the raw store lacks.
+  - **Every derived row has a `source` column, and a precedence rule per table says which source wins on a date where several exist** (e.g. options: Databento before 2026-10-16, the Section 42 bulletin from then on). Building the table also reports where the sources overlap and disagree, so the overlap days are an automatic cross-check. Changing the daily source (e.g. to Databento instead of the bulletin and settlement pages) changes the rule and a rebuild, not the model.
+  - Tables, built when a step first needs them: options settlements (one row per date, product, expiry, right and strike: settle, cabinet flag, delta, volume, open interest, source), futures settlements (CME pages, Databento), bond prices (TreasuryDirect), rates (NY Fed, FRED), par curve (Treasury, FRED).
 - Dates and conventions explicit everywhere: settlement date (T+1), delivery date, actual/actual accrual, semiannual compounding.
 
 ## 5. Model
@@ -470,6 +479,8 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    - **Which TreasuryDirect snapshot matches the futures settlement**: the model uses end of day ([decisions.md](decisions.md)). Confirm it on a few dates: compare the CTD's gross basis from end of day and from buy/sell against the 2pm CT settlement (the snapshot taken at the same time shows the least correlation between basis changes and futures changes), and find TreasuryDirect's own definition of the columns.
    - **After December option expiry (about 2026-11-20)**: stop the light model on December contracts, or roll to March contracts and the January serial (with the expiry-after-horizon issue in section 11)?
 2. **Phase 2, one-factor model**: betas, vol calibration (single expiry, √T), probabilities, region-weighted DV01 and KRDs, scenarios and duration profile, comparison series and effective maturity, distance to switch, event flags, daily report with charts 1–3. First on ZN and ZB, then UB and TN once they pass the phase-2 checks.
+
+   **Derived options table** (section 4), the first derived table: the schema above; a chunked Databento reader producing `OptionSettle` records for 2016 to 2026-10-19; the Section 42 reader for 2026-10-16 on; the precedence rule, with the overlap days reported as a cross-check; one build command (`ctd derive`), run after the daily fetch, alerting when a bulletin block fails its TOTAL check. Needed before any multi-date use of options (vol history, light-model backtest). The other derived tables follow when betas and history need them.
 
    **First milestone (before the late-November 2026 roll):** Tier 1 for ZN and ZB plus the December/March roll comparison ([outputs.md](outputs.md)). That needs phases 1 and 2 for ZN and ZB. Chart 3's time series needs history: until the historical runner (phase 4) exists, it covers only the dates since live runs began (section 11).
 3. **Phase 3, refinements**: total-variance vol interpolation; smile-implied distribution (SABR fit, digitals, envelope mapping, recentring, horizon convolution) with quantile-based grid window; slope adjustment by convolution; digital and ATM-normal diagnostics; horizon decision logic; stepped/stripped repo path. Per-crossover vols (5.5.2) only as a stopgap if the smile fit lags.
