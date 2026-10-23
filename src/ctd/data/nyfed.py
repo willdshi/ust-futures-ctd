@@ -36,6 +36,23 @@ def fetch_history(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
     yield _range_file(unit, HISTORY_START, asof, http)
 
 
+def parse(content: bytes) -> dict[date, float]:
+    """Effective date -> rate as a decimal (3.88% -> 0.0388)."""
+    return {date.fromisoformat(r["effectiveDate"]): r["percentRate"] / 100 for r in json.loads(content)["refRates"]}
+
+
+def read_latest(store, asof: date, rate: str = "sofr") -> tuple[date, float]:
+    """The latest ``rate`` known on the evening of ``asof``: usually the previous business day's,
+    since a rate for day D is published the next morning."""
+    rates = {}
+    for name in store.names(asof, "nyfed_rates", rate):
+        rates.update(parse(store.read(asof, "nyfed_rates", rate, name)))
+    known = [d for d in rates if d <= asof]
+    if not known:
+        raise ValueError(f"no {rate} stored for {asof}")
+    return max(known), rates[max(known)]
+
+
 SPECS = [
     SourceSpec("nyfed_rates", "NY Fed SOFR, TGCR, BGCR, EFFR (trailing two weeks)", Kind.DATED, "cme",
                units=lambda asof, cal: list(RATES), fetch=fetch),

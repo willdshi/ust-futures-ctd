@@ -7,9 +7,9 @@ date,name,cme_closed,sifma_closed,verified
 2026-07-03,Independence Day (observed),y,y,n
 2026-09-07,Labor Day,y,y,n
 2026-10-12,Columbus Day,n,y,n
-2026-11-11,Veterans Day,n,y,n
-2026-11-26,Thanksgiving Day,y,y,n
-2026-12-25,Christmas Day,y,y,n
+2026-11-11,Veterans Day,n,y,y
+2026-11-26,Thanksgiving Day,y,y,y
+2026-12-25,Christmas Day,y,y,y
 2027-01-01,New Year's Day,y,y,n
 2027-01-18,Martin Luther King Jr. Day,y,y,n
 2027-02-15,Presidents' Day,y,y,n

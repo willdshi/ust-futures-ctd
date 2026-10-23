@@ -8,7 +8,8 @@ body is stored as received either way. CME shows 5 trailing business days.
 
 import json
 from collections.abc import Iterator
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 
 from ctd.data import refdata
 from ctd.data.http import FetchError, Http
@@ -79,6 +80,47 @@ def fetch_options(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
         f = _get_json(http, f"{BASE}/Options/Settlements/{fut_id}/OOF", params)
         yield RawFile(f"{unit}_OOF_{opt_id}_{code}_{asof.isoformat()}.json", f.content, f.url, f.status,
                       f.content_type, params=params)
+
+
+@dataclass(frozen=True)
+class FuturesSettle:
+    settle: float  # decimal price, per 100 face
+    open_interest: int
+    volume: int
+
+
+def parse_price(s: str) -> float:
+    """CME's points-and-32nds: ``"105'17"`` = 105 + 17/32; with a third digit for fractions of a
+    32nd (0, 2, 5, 7 = 0, ¼, ½, ¾), ``"105'035"`` = 105 + 3.5/32. A trailing ``A``/``B`` (ask/bid) is dropped."""
+    whole, _, frac = s.rstrip("AB").partition("'")
+    if not frac:
+        return float(whole)
+    thirty_seconds = int(frac[:2]) + ({"0": 0, "2": 0.25, "5": 0.5, "7": 0.75}[frac[2]] if len(frac) == 3 else 0)
+    return int(whole or 0) + thirty_seconds / 32
+
+
+def parse_futures(content: bytes, asof: date) -> dict[date, FuturesSettle]:
+    """Contract month (first day) -> settlement, from one product's settlement JSON for ``asof``."""
+    doc = json.loads(content)
+    traded = datetime.strptime(doc["tradeDate"], "%m/%d/%Y").date()
+    if traded != asof:
+        raise ValueError(f"settlement file is for trade date {traded}, not {asof}")
+    out = {}
+    for row in doc["settlements"]:
+        if row["month"] == "Total" or row["settle"] in ("", "-"):
+            continue
+        month = datetime.strptime(row["month"], "%b %y").date()
+        out[month] = FuturesSettle(parse_price(row["settle"]), int(row["openInterest"].replace(",", "") or 0),
+                                   int(row["volume"].replace(",", "") or 0))
+    return out
+
+
+def read_futures(store, asof: date, product: str) -> dict[date, FuturesSettle]:
+    """``product``'s (``"ZB"``) settlements for ``asof``, from the bookmarklet or an automatic pull."""
+    names = store.names(asof, "cme_fut", product)
+    if not names:
+        raise FileNotFoundError(f"no {product} futures settlements stored for {asof}")
+    return parse_futures(store.read(asof, "cme_fut", product, names[0]), asof)
 
 
 SPECS = [
