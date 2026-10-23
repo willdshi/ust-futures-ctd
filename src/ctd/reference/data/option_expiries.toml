@@ -1,0 +1,201 @@
+# Expiries of standard (quarterly and serial) options on ZN, TN, ZB and UB futures.
+#
+# Generated from the CBOT rule in ctd.reference.options (rule_expiry) on the cme holiday list;
+# tests/test_options.py fails if a record and the rule disagree. Expiry dates were checked against
+# the last trade dates CME prints on page 1 of Section 42 (bulletin of 2026-10-21); DEC26 also by
+# hand on CME's calendar. Add the next expiries the same way before they're needed.
+#
+# label: option month as the bulletin prints it. expiry: last trading day. underlying: the
+# futures contract (a serial option is on the next quarterly futures). Weeklies aren't recorded.
+
+[[expiry]]
+product = "ZN"
+label = "NOV26"
+expiry = 2026-10-23
+underlying = "ZNZ6"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZN"
+label = "DEC26"
+expiry = 2026-11-20
+underlying = "ZNZ6"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZN"
+label = "JAN27"
+expiry = 2026-12-24
+underlying = "ZNH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZN"
+label = "FEB27"
+expiry = 2027-01-22
+underlying = "ZNH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZN"
+label = "MAR27"
+expiry = 2027-02-19
+underlying = "ZNH7"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZN"
+label = "JUN27"
+expiry = 2027-05-21
+underlying = "ZNM7"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "TN"
+label = "NOV26"
+expiry = 2026-10-23
+underlying = "TNZ6"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "TN"
+label = "DEC26"
+expiry = 2026-11-20
+underlying = "TNZ6"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "TN"
+label = "JAN27"
+expiry = 2026-12-24
+underlying = "TNH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "TN"
+label = "FEB27"
+expiry = 2027-01-22
+underlying = "TNH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "TN"
+label = "MAR27"
+expiry = 2027-02-19
+underlying = "TNH7"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "TN"
+label = "JUN27"
+expiry = 2027-05-21
+underlying = "TNM7"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZB"
+label = "NOV26"
+expiry = 2026-10-23
+underlying = "ZBZ6"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZB"
+label = "DEC26"
+expiry = 2026-11-20
+underlying = "ZBZ6"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZB"
+label = "JAN27"
+expiry = 2026-12-24
+underlying = "ZBH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZB"
+label = "FEB27"
+expiry = 2027-01-22
+underlying = "ZBH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZB"
+label = "MAR27"
+expiry = 2027-02-19
+underlying = "ZBH7"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "ZB"
+label = "JUN27"
+expiry = 2027-05-21
+underlying = "ZBM7"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "UB"
+label = "NOV26"
+expiry = 2026-10-23
+underlying = "UBZ6"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "UB"
+label = "DEC26"
+expiry = 2026-11-20
+underlying = "UBZ6"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "UB"
+label = "JAN27"
+expiry = 2026-12-24
+underlying = "UBH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "UB"
+label = "FEB27"
+expiry = 2027-01-22
+underlying = "UBH7"
+quarterly = false
+verified = ["expiry"]
+
+[[expiry]]
+product = "UB"
+label = "MAR27"
+expiry = 2027-02-19
+underlying = "UBH7"
+quarterly = true
+verified = ["expiry"]
+
+[[expiry]]
+product = "UB"
+label = "JUN27"
+expiry = 2027-05-21
+underlying = "UBM7"
+quarterly = true
+verified = ["expiry"]

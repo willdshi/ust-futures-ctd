@@ -9,6 +9,7 @@ from importlib.resources import files
 from ctd.reference.calendar import BusinessCalendar
 from ctd.reference.delivery import DeliveryDates
 from ctd.reference.grades import Grade
+from ctd.reference.options import OptionExpiry
 
 CALENDARS = ("cme", "sifma")
 
@@ -49,3 +50,11 @@ def delivery_calendar() -> list[DeliveryDates]:
     with _ref_file("delivery_calendar.toml").open("rb") as f:
         records = tomllib.load(f)["month"]
     return [DeliveryDates(**{**r, "verified": tuple(r.get("verified", ()))}) for r in records]
+
+
+@cache
+def option_expiries() -> list[OptionExpiry]:
+    """Standard option expiries from ``option_expiries.toml``."""
+    with _ref_file("option_expiries.toml").open("rb") as f:
+        records = tomllib.load(f)["expiry"]
+    return [OptionExpiry(**{**r, "verified": tuple(r.get("verified", ()))}) for r in records]

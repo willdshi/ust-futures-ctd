@@ -91,7 +91,7 @@ The figures above are a working summary. **Verify each against the current CBOT 
 | Bond prices by CUSIP | TreasuryDirect daily prices | Yes (the file stored under a date has that day's prices; end of day is filled in a day later, so the same-evening file is replaced once complete, data.md §5.1) | Yes, from 30 May 2008 (until about September 2008, CUSIP and prices only); stored from 2016 | Single price, rounded; timing against the futures settlement not yet checked; off-the-runs noisy |
 | Futures settlements (all six Treasury contracts, all listed months) | CME settlements | Yes | Front two contracts from 2016, paid one-off Databento backfill (data.md §5.11) | Used only for vol conversion (5.5) and open interest; collection may be manual; respect terms of use |
 | Futures daily bars, cross-check (six Treasury contracts) | Yahoo Finance chart endpoint | Yes | Listed contracts since listing; continuous front month from 2000 (2010 for UB, TN) | Closes equal CME settlements on dates checked; misses some listed months (e.g. June 2027 ZT, ZF, ZN, TN); continuous series rolls on the last trading day, unadjusted; unofficial endpoint, personal-use terms |
-| Futures option settlements by strike (section 3.1) | CME settlements | Yes | **No** (paid) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
+| Futures option settlements by strike (section 3.1) | CME settlements | Yes | From 2016, paid one-off Databento backfill to 2026-10-19 (data.md §5.12) | Discrete strikes; noisy far from the money; UB thinner than ZN/ZB |
 | Constant-maturity yields | Treasury par yield curve (CMT) and daily bill rates, FRED | Yes | Yes, decades | Smoothed curve, not bond-specific |
 | GC funding | NY Fed SOFR (also TGCR, BGCR) | Yes | Since 2018 | Overnight only |
 | 1-month and 3-month SOFR, 30-day fed funds futures | CME settlements | Yes | Front two contracts from 2016, Databento backfill as above | For stepped/stripped repo path |
@@ -278,7 +278,7 @@ If the smile fit isn't ready, read the implied vol at each crossover's futures s
 - **Monotonicity**: on each side of the forward, tail probabilities must decrease with distance; cap farther tails at the nearer one's value and log a warning.
 - **Density for durations**: build a piecewise density, using the ATM normal shape within each region rescaled so the region's mass equals its probability: `φ*(z) = φ_ATM(z) × π_i / P_ATM(region i)`.
 
-Historical mode: realised vol (EWMA of daily changes in the reference CMT yield) replaces implied vol (section 7), with a single normal width.
+Historical mode: implied vol from the Databento option history (section 7), as in live mode; realised vol (EWMA of daily changes in the reference CMT yield) is kept as a comparison and a fallback where options are too thin.
 
 ### 5.6 Pricing grid
 **Window.**
@@ -397,16 +397,16 @@ The published charts and their tiers are specified in [outputs.md](outputs.md). 
 
 ## 7. Historical mode
 
-Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts, from free data.
+Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts, from free data plus two paid one-off backfills (Databento futures and options settlements).
 
 **Start: 2016.** Historical mode goes back to the March 2016 contract month and no further, because earlier Treasury futures rule changes aren't handled. Rule changes since then (e.g. ZN's 8-year cap from September 2023) are dated reference records.
 
 - **Baskets**: rebuild per past contract from the issue list (including since-matured issues) and eligibility rules; compute CFs with the formula. Validate against any published past tables. This is the main effort.
 - **Prices**: past TreasuryDirect prices by CUSIP, stored from 2016 (available from May 2008). Before about September 2008 the files have no coupon or maturity columns; join on CUSIP to the security terms.
 - **Repo**: SOFR (from 2018); GC only.
-- **Vol**: realised EWMA vol of the reference CMT yield replaces implied vol.
+- **Vol**: implied from the option history below, as in live mode; realised EWMA vol of the reference CMT yield as a comparison and a fallback.
 - **Futures settlements**: front two contracts of each product from 2016, from a paid one-off Databento backfill (data.md §5.11), for open interest, the roll and the futures price. From 2026-10-14 the CME files are the record; on overlapping dates Databento cross-checks them and never fills their gaps.
-- **No option history** (paid), so historical mode drops option-implied probabilities. Probabilities are realised-vol based, not risk-neutral.
+- **Option settlements**: every standard (quarterly and serial) option on all six contracts from 2016, settlement and open interest by strike, from a paid one-off Databento backfill ending 2026-10-19 (data.md §5.12). Historical mode can therefore use option-implied probabilities, including the light model's digitals (5.11), and the backtest can score them. From 2026-10-16 the Section 42 bulletin is the record; on overlapping dates Databento cross-checks it and never fills its gaps. Reading ten years of options per run needs the derived Parquet tables (section 4).
 - Futures DV01/KRDs need no futures price: they are probability-weighted basket DV01s over conversion factors.
 - Runtime is trivial; data collection is the constraint.
 - Doubles as the backtest (section 8).
@@ -432,7 +432,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - UB options are thinner than ZN and ZB options; on some days UB vol will come from ZB through betas, or from realised vol.
 - Only ZN, TN, ZB and UB are modelled. Other contracts have collected data but need reference data and validation before use.
 - American exercise is ignored when inverting out-of-the-money option prices.
-- Historical mode uses realised vol and GC repo only.
+- Historical mode uses GC repo only, and its option-implied inputs end with the one-off backfill (2026-10-19); later dates rely on the daily bulletin.
 
 ## 10. Roadmap
 
@@ -450,9 +450,9 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    7. [x] Envelope and switch points (`model/envelope.py`): parallel shifts, cheapest converted price, exact root-finding of each switch.
 
    *B. Light-model pieces*
-   1. [ ] Option reference data for OZN and OZB: expiry rule and dates (checked against CME's calendar), strike interval, premium tick (64ths), underlying contract per expiry.
-   2. [ ] Section 42 parser (section 11 has the layout): quarterly and serial blocks only, weeklies skipped; per-block checks (strikes increasing, columns complete, TOTAL line, trade date = as-of); strikes and 64ths converted. Tested against the 2026-10-16 hand check.
-   3. [ ] Digitals: SOFR discount factor to expiry; strike pair bracketing each `K_k`, interpolating between neighbouring pairs; calls on the rally side; rules for missing, minimum-tick or zero-open-interest premiums; a switch beyond the listed strikes is flagged, not extrapolated.
+   1. [x] Option reference data (`reference/options.py`, `reference/data/option_expiries.toml`): expiry and underlying contract per standard expiry for ZN, TN, ZB and UB, NOV26 to JUN27, generated from the CBOT rule and checked against the last trade dates printed on page 1 of Section 42. Strike interval and premium tick are read from the chain, not stored.
+   2. [x] Section 42 parser (`cme_bulletin.parse_options`, section 11 has the layout): standard blocks for ZT, ZF, ZN, ZB and UB, weeklies and TN skipped; per-block checks (strikes increasing, volume and open interest equal to the TOTAL line, trade date = as-of); strike and premium codes decoded per product. Parses every stored bulletin (2026-10-16 to 10-22, about 1,700 settlements each) and reproduces the 2026-10-16 hand check.
+   3. [ ] Digitals: SOFR discount factor to expiry; strike pair bracketing each `K_k`, interpolating between neighbouring pairs; calls on the rally side; rules for missing, minimum-tick or zero-open-interest premiums; a switch beyond the listed strikes is flagged, not extrapolated. A cabinet settlement (`CAB` in the bulletin, 0.001 in Databento) only says the option is worth less than one tick, so a strike pair that includes one gives an upper bound, reported as such ("≤ 3%": 1/64 over the strike spacing), not a probability. Later refinement: tighten the bound with a priced strike further out.
    4. [ ] Probability assembly: regions on each side, remainder to the current CTD; checks that probabilities sum to 1 and fall with distance (warn otherwise).
    5. [ ] Output: `ctd run` prints a basket table and a crossover table (from → to bond, shift in bp, `K_k`, strikes used, digital, region probabilities, warnings) and the recentring gap `F_market − E(0)`.
    6. [ ] Run 2026-10-14 to date for ZNZ6 and ZBZ6, then daily after the fetch.
@@ -473,15 +473,15 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 
    **First milestone (before the late-November 2026 roll):** Tier 1 for ZN and ZB plus the December/March roll comparison ([outputs.md](outputs.md)). That needs phases 1 and 2 for ZN and ZB. Chart 3's time series needs history: until the historical runner (phase 4) exists, it covers only the dates since live runs began (section 11).
 3. **Phase 3, refinements**: total-variance vol interpolation; smile-implied distribution (SABR fit, digitals, envelope mapping, recentring, horizon convolution) with quantile-based grid window; slope adjustment by convolution; digital and ATM-normal diagnostics; horizon decision logic; stepped/stripped repo path. Per-crossover vols (5.5.2) only as a stopgap if the smile fit lags.
-4. **Phase 4, history and extensions**: basket rebuild, historical runner with realised vol, backtest scoring and reliability plot; Tier 2 outputs and the fragility dashboard (with its new sources, section 3); two-/three-factor PCA simulation with idiosyncratic noise; other contracts (ZT, ZF) if wanted. Far down the wishlist: infer slope vol from market futures prices.
+4. **Phase 4, history and extensions**: basket rebuild, historical runner (implied vol from the Databento option history, realised vol as a comparison), backtest scoring and reliability plot; Tier 2 outputs and the fragility dashboard (with its new sources, section 3); two-/three-factor PCA simulation with idiosyncratic noise; other contracts (ZT, ZF) if wanted. Far down the wishlist: infer slope vol from market futures prices.
 
 ## 11. Open questions
 
 - How to collect CME settlements reliably? cmegroup.com refuses scripted connections (bot protection), and CME's public FTP server carries only the TCF tables of what's needed. Until a paid feed is chosen, futures settlement JSONs and the options bulletin are downloaded in a browser with the `ctd bookmarklet` (one click a day). Which feed, if any (DataMine, Databento, Barchart OnDemand)? Databento is already used for the futures history before 2026-10-14 (front two contracts, one-off; data.md §5.11), which makes it the natural candidate for daily collection too.
-- Option settlements from the Section 42 PDF: tested on 2026-10-16 with pdfplumber and pypdf, and the text extracts cleanly (about 3,200 strike rows in 35 pages). Layout: a product and put/call header (e.g. "10Y NOTE CALL", or a weekly such as "HYO OPT WK THU"), then an expiry label ("DEC26"), then one row per strike: strike (1055 = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high and low, prices in 64ths. Each block ends in a TOTAL line. The header also states the trade date and FINAL. Check: the 100.5 ZN call in the November serial block (on December futures) settled at 4-61/64 with delta 1.000, against December futures at 105-14.5 (intrinsic 4.95); the December quarterly 100.5 call settled at 4-62/64. Open: write the parser (phase 1b, for the light model in 5.11), reading quarterly and serial blocks and skipping weeklies, and validating each block (strikes increasing, columns complete) because the layout can change without notice.
+- Option settlements from the Section 42 PDF: tested on 2026-10-16 with pdfplumber and pypdf, and the text extracts cleanly (about 3,200 strike rows in 35 pages). Layout: a product and put/call header (e.g. "10Y NOTE CALL", or a weekly such as "HYO OPT WK THU"), then an expiry label ("DEC26"), then one row per strike: strike (1055 = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high and low, prices in 64ths. Each block ends in a TOTAL line. The header also states the trade date and FINAL. Check: the 100.5 ZN call in the November serial block (on December futures) settled at 4-61/64 with delta 1.000, against December futures at 105-14.5 (intrinsic 4.95); the December quarterly 100.5 call settled at 4-62/64. Parser written (phase 1b item B2, `cme_bulletin.parse_options`). Found while writing it: strike and premium codes differ by product (ZN, ZF, ZB, UB strikes in quarter-point codes, ZT in eighths; ZN, ZB, UB premiums in 64ths, ZT and ZF in halves of 64ths); `CAB` marks a cabinet settlement below one tick (about 400 rows a day, stored as no price); page 1 prints CME's last trade dates per expiry, which check `option_expiries.toml`. Still open: TN options are in the bulletin's "ADDITIONAL" section with decimal premiums and a different layout, and aren't parsed yet (needed when TN is modelled).
 - How long does CME keep TCF files on its FTP server (December 2023 onwards as of October 2026)?
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?
-- Realised-vol window for historical mode, and how it compares with implied vol once live snapshots accumulate?
+- Realised-vol window for the comparison and fallback, and how realised compares with implied vol (testable over 2016–2026 with the option backfill)?
 - How to estimate betas between the par curve's published points (1, 2, 3, 5, 7, 10, 20 and 30 years) is worked through in [decisions.md](decisions.md). Starting point: regress at the published tenors and interpolate β linearly, which equals interpolating the curve. No basket needs extrapolation: ZN's bonds sit between the 5, 7 and 10-year points, ZB's between 10, 20 and 30, and UB's (25 to 30 years) between 20 and 30. Still open: whether pooled bond-level betas (possible now, with TreasuryDirect prices stored from 2016) beat node betas in the backtest, and whether ZB should use a reference other than the 20-year CMT.
 - Smile-implied distribution when the option expiry is after the horizon (5.5.1 step 5). A contract keeps trading for about a month after its own options expire (quarterly options expire in late November; December futures trade to mid-December and deliver to month-end), and its CTD question matters most then. Its vol then comes from the next contract's options (5.5 step 3).
   - **When it happens:** positive carry (horizon = last delivery day) usually still has two expiries bracketing the horizon, e.g. the January serial (~24 December) and the February serial (late January) for a 31 December horizon, so convolution from the January serial works. Negative carry (horizon = first delivery day) does not: after the December options expire, the first usable expiry is the January serial, three weeks after a 1 December horizon. The ATM path is unaffected, since the √T fallback in 5.5 step 3 already scales down.

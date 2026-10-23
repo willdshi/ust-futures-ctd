@@ -10,6 +10,7 @@ reads the trade date and FINAL flag printed on page 1 and rejects a bulletin tha
 import io
 import re
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from ctd.data import refdata
@@ -59,6 +60,146 @@ def fetch(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
     if reason:
         raise FetchError(reason)
     yield RawFile(f"{unit}.pdf", r.content, r.url, r.status, r.content_type)
+
+
+# --- Reading Section 42: standard option settlements -------------------------------------------
+#
+# Layout (one block per product, right and expiry; blocks run across page breaks):
+#   10Y NOTE CALL                    product line (standard products only)
+#   NOV26 10Y NOTE CALL              first expiry label, repeating the product
+#   1045 61 103 39A ---- 42 - 12 .896 ---- 8366 65200 - 3156 457B 130A
+#   ...                              strike, open, high, low, close, settle, change, delta,
+#   TOTAL 85702 1236385 - 11839      exercises, volume, open interest, OI change, contract high/low
+#   DEC26                            next expiry of the same product
+# Weeklies ("10Y WK1 NOTE C"), TN and the other products in the "ADDITIONAL" section use other
+# layouts and are skipped; so is everything after "OPTIONS EOO'S" (blocks and exercises).
+
+_STANDARD = {"10Y NOTE": "ZN", "5Y NOTE": "ZF", "2Y NOTE": "ZT", "30Y BOND": "ZB", "ULTRA T-BND": "UB"}
+_PRODUCT_LINE = re.compile(r"^(10Y NOTE|5Y NOTE|2Y NOTE|30Y BOND|ULTRA T-BND) (CALL|PUT|C|P)$")
+_EXPIRY_LINE = re.compile(r"^((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2})(?: (.+))?$")
+_ROW = re.compile(r"^\d{3,4} (?:-{4}|\d)")  # not "2026 DAILY INFORMATION BULLETIN"
+_TOTAL = re.compile(r"^TOTAL (\S+) (\S+)")
+_QUARTERS = {"0": 0.0, "2": 0.25, "5": 0.5, "7": 0.75}
+_EIGHTHS = {"0": 0, "1": 1, "2": 2, "3": 3, "5": 4, "6": 5, "7": 6, "8": 7}
+_HALF_64THS = ("ZT", "ZF")  # premiums in halves of 64ths ("6035" = 6-03.5); others in 64ths ("508" = 5-08)
+
+
+@dataclass(frozen=True)
+class OptionSettle:
+    product: str  # futures product: "ZN"
+    label: str  # option month: "DEC26"
+    right: str  # "C" or "P"
+    strike: float
+    settle: float | None  # None for a cabinet (below one tick) settlement
+    delta: float | None
+    volume: int
+    open_interest: int
+
+    @property
+    def cabinet(self) -> bool:
+        return self.settle is None
+
+
+def _int(token: str) -> int:
+    return 0 if token.startswith("-") else int(token.rstrip("ABNPR#*").replace(",", ""))
+
+
+def decode_strike(product: str, code: str) -> float:
+    """``1047`` → 104.75 (ZN, ZF, ZB, UB: last digit 0/2/5/7 is the quarter); ZT ``1013`` → 101.375 (eighths)."""
+    if product == "ZT":
+        return int(code[:-1]) + _EIGHTHS[code[-1]] / 8
+    return int(code[:-1]) + _QUARTERS[code[-1]]
+
+
+def decode_premium(product: str, code: str) -> float:
+    """Points and 64ths: ``508`` → 5 + 8/64; ZT and ZF in halves, ``6035`` → 6 + 3.5/64."""
+    digits = code.rstrip("ABNPR#*")
+    if product in _HALF_64THS:
+        return int(digits[:-3] or 0) + int(digits[-3:]) / 640
+    return int(digits[:-2] or 0) + int(digits[-2:]) / 64
+
+
+def _row(product: str, label: str, right: str, line: str) -> OptionSettle:
+    t = line.split()
+    i = 6 + (2 if t[6] in "+-" else 1)  # change: "- 13", "+ NEW", "UNCH" or "----"
+    delta, volume, oi = t[i], t[i + 2], t[i + 3]
+    settle = None if t[5] == "CAB" else decode_premium(product, t[5])
+    return OptionSettle(product, label, right, decode_strike(product, t[0]), settle,
+                        None if delta.startswith("-") else float(delta), _int(volume), _int(oi))
+
+
+def parse_options(text: str) -> list[OptionSettle]:
+    """Every standard (quarterly and serial) option settlement in Section 42's extracted text.
+
+    Each block is checked: strikes strictly increasing, and its volume and open interest equal its
+    TOTAL line. A block that fails raises ValueError (the layout may have changed).
+    """
+    out: list[OptionSettle] = []
+    product = right = label = header = None
+    block: list[OptionSettle] = []
+    for line in (s.strip() for s in text.splitlines()):
+        if line.startswith("OPTIONS EOO'S"):
+            break
+        if line.endswith(("CALLS", "PUTS", "OPTIONS")):  # section title: a new product follows
+            product = label = None
+        elif m := _PRODUCT_LINE.match(line):
+            product, right, header, label = _STANDARD[m[1]], m[2][0], line, None
+        elif m := _EXPIRY_LINE.match(line):
+            if m[2] and m[2] != header:  # an expiry of something else (weekly, TN, ...)
+                product = None
+            label, block = m[1], []
+        elif _ROW.match(line) and product and label:
+            row = _row(product, label, right, line)
+            if block and row.strike <= block[-1].strike:
+                raise ValueError(f"{product} {label} {right}: strikes not increasing at {line!r}")
+            block.append(row)
+        elif (m := _TOTAL.match(line)) and product and label:
+            volume, oi = _int(m[1]), _int(m[2])
+            if (sum(r.volume for r in block), sum(r.open_interest for r in block)) != (volume, oi):
+                raise ValueError(f"{product} {label} {right}: rows don't add up to {line!r}")
+            out += block
+            label, block = None, []
+    return out
+
+
+_LAST_TRADE = {"10YR NOTE OPT": "ZN", "5YR NOTE OPT": "ZF", "2YR NOTE OPT": "ZT", "30YR BOND OPT": "ZB",
+               "ULTRA T-BOND OPT": "UB"}
+
+
+def last_trade_dates(text: str) -> dict[tuple[str, str], date]:
+    """``(product, label) -> last trade date`` from the table CME prints on page 1."""
+    out = {}
+    labels: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("EXPIRATION:"):
+            labels = line.split()[1:]
+            continue
+        for name, product in _LAST_TRADE.items():
+            if line.startswith(name + " ") and labels:
+                for label, mmdd in zip(labels, line[len(name):].split()):
+                    month, day = int(mmdd[:2]), int(mmdd[3:])
+                    year = 2000 + int(label[3:]) - (month > _MONTHS.index(label[:3]) + 1)
+                    out[(product, label)] = date(year, month, day)
+    return out
+
+
+_MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+
+
+def text(content: bytes) -> str:
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(content)) as pdf:
+        return "\n".join(p.extract_text() or "" for p in pdf.pages)
+
+
+def read_options(store, asof: date) -> list[OptionSettle]:
+    """``asof``'s standard option settlements from the stored Section 42 bulletin."""
+    content = store.read(asof, "cme_bulletin", "Section42", "Section42.pdf")
+    _, printed, _ = bulletin_header(content)
+    if printed != asof:
+        raise ValueError(f"stored Section 42 is for {printed}, not {asof}")
+    return parse_options(text(content))
 
 
 SPECS = [
