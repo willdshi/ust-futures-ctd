@@ -447,7 +447,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    4. [x] Store readers (`parse`/`read` in each source's module in `data/`, no network): TreasuryDirect prices with coupon and maturity (end of day, or the buy/sell midpoint for a provisional date, [decisions.md](decisions.md)); TCF basket and CFs per contract; CME futures settlements (`F_market`); SOFR from the NY Fed.
    5. [x] Delivery calendar per contract month (first and last delivery days, last trading day), stored as reference data (`reference/data/delivery_calendar.toml`, section 2): Z6 verified, H7 generated.
    6. [x] Flat-SOFR term repo (`funding/repo.py`) and forward clean price and yield with coupons before delivery (`bonds/forward.py`, 5.3); delivery date by the light-model rule (`model/horizon.py`).
-   7. [ ] Envelope and switch points (`model/`): parallel shifts, cheapest converted price, exact root-finding of each switch.
+   7. [x] Envelope and switch points (`model/envelope.py`): parallel shifts, cheapest converted price, exact root-finding of each switch.
 
    *B. Light-model pieces*
    1. [ ] Option reference data for OZN and OZB: expiry rule and dates (checked against CME's calendar), strike interval, premium tick (64ths), underlying contract per expiry.
@@ -459,7 +459,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 
    *C. Definition of done*
    - [ ] Section 8 unit tests for the pieces built: accrued, price/yield round trip, CF formula vs TCF, forward price across a coupon, synthetic two-bond crossover, term repo compounding; plus the parser on a stored bulletin.
-   - [ ] Sanity: flat 6% curve gives converted prices ≈ 100.
+   - [x] Sanity: flat 6% curve gives converted prices ≈ 100.
    - [ ] ZBZ6 and ZNZ6 on 2026-10-21: plausible switch points and CTD, probabilities summing to 1 and falling with distance, results reproducible from the store.
    - [ ] A series from 2026-10-14 that runs daily.
 
