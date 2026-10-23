@@ -1,0 +1,73 @@
+# Delivery calendars per contract month (design section 2): ZN, TN, ZB and UB.
+#
+# Generated from the CBOT rule in ctd.reference.delivery (rule_dates) on the cme holiday list,
+# then checked by hand; tests/test_delivery.py fails if a record and the rule disagree. Add the
+# next contract month the same way before it's needed (one record per contract and month).
+#
+# first_delivery: first business day of the month. last_trading: seventh business day before
+# the last business day. last_delivery: last business day of the month. `verified` lists dates
+# confirmed against CME's published calendar.
+
+[[month]]
+contract = "ZN"
+month = "2026-12"
+first_delivery = 2026-12-01
+last_trading = 2026-12-21
+last_delivery = 2026-12-31
+verified = ["first_delivery", "last_trading", "last_delivery"]  # checked against CME's calendar, 2026-10-22
+
+[[month]]
+contract = "TN"
+month = "2026-12"
+first_delivery = 2026-12-01
+last_trading = 2026-12-21
+last_delivery = 2026-12-31
+verified = ["first_delivery", "last_trading", "last_delivery"]  # checked against CME's calendar, 2026-10-22
+
+[[month]]
+contract = "ZB"
+month = "2026-12"
+first_delivery = 2026-12-01
+last_trading = 2026-12-21
+last_delivery = 2026-12-31
+verified = ["first_delivery", "last_trading", "last_delivery"]  # checked against CME's calendar, 2026-10-22
+
+[[month]]
+contract = "UB"
+month = "2026-12"
+first_delivery = 2026-12-01
+last_trading = 2026-12-21
+last_delivery = 2026-12-31
+verified = ["first_delivery", "last_trading", "last_delivery"]  # checked against CME's calendar, 2026-10-22
+
+[[month]]
+contract = "ZN"
+month = "2027-03"
+first_delivery = 2027-03-01
+last_trading = 2027-03-19
+last_delivery = 2027-03-31
+verified = []  # 2027 holidays unverified
+
+[[month]]
+contract = "TN"
+month = "2027-03"
+first_delivery = 2027-03-01
+last_trading = 2027-03-19
+last_delivery = 2027-03-31
+verified = []  # 2027 holidays unverified
+
+[[month]]
+contract = "ZB"
+month = "2027-03"
+first_delivery = 2027-03-01
+last_trading = 2027-03-19
+last_delivery = 2027-03-31
+verified = []  # 2027 holidays unverified
+
+[[month]]
+contract = "UB"
+month = "2027-03"
+first_delivery = 2027-03-01
+last_trading = 2027-03-19
+last_delivery = 2027-03-31
+verified = []  # 2027 holidays unverified

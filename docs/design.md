@@ -445,7 +445,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    2. [x] The single pricing function (`bonds/pricing.py`, 5.1): dirty price from yield, clean = dirty − accrued, yield from price by root-finding, DV01/duration from the same function.
    3. [x] CF formula (`bonds/conversionfactor.py`), tested against the stored TCF files: matches every row from December 2023 (the light model reads CFs from TCF, but the test checks the date code).
    4. [x] Store readers (`parse`/`read` in each source's module in `data/`, no network): TreasuryDirect prices with coupon and maturity (end of day, or the buy/sell midpoint for a provisional date, [decisions.md](decisions.md)); TCF basket and CFs per contract; CME futures settlements (`F_market`); SOFR from the NY Fed.
-   5. [ ] Delivery calendar per contract month (first and last delivery days), stored as reference data (section 2).
+   5. [x] Delivery calendar per contract month (first and last delivery days, last trading day), stored as reference data (`reference/data/delivery_calendar.toml`, section 2): Z6 verified, H7 generated.
    6. [ ] Flat-SOFR term repo and forward clean price with coupons before delivery (5.3).
    7. [ ] Envelope and switch points (`model/`): parallel shifts, cheapest converted price, exact root-finding of each switch.
 
