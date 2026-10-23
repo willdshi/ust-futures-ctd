@@ -16,3 +16,4 @@ dependencies:
   - pip
   - pip:
       - databento  # not on the defaults channel
+      - QuantLib  # test-only independent check of the bond math (design 5.1)

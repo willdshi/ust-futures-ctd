@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ipykernel"]
+dev = ["pytest", "ipykernel", "QuantLib"]
 
 [project.scripts]
 ctd = "ctd.cli:main"

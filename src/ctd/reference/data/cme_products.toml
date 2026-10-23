@@ -11,6 +11,10 @@
 # TCF conversion factor files (cme_tcf). Matched to each contract from the
 # remaining maturities of its deliverables in TCF_20261019.csv.
 #
+# cf_round_months is how the conversion factor formula rounds remaining term down
+# (ctd.bonds.conversion): whole months for ZT and ZF, quarters for the others.
+# Checked against every stored TCF file, December 2023 to October 2026.
+#
 # Option series are not listed here: for each Treasury future, the collector
 # reads CME's list of option expiries (quarterly, serial and every weekly
 # series) and pulls all of them.
@@ -18,6 +22,7 @@
 [[treasury]]
 code = "ZT"
 clearing_code = "26"
+cf_round_months = 1
 name = "2-Year T-Note"
 product_id = 303
 verified = true
@@ -25,6 +30,7 @@ verified = true
 [[treasury]]
 code = "ZF"
 clearing_code = "25"
+cf_round_months = 1
 name = "5-Year T-Note"
 product_id = 329
 verified = true
@@ -32,6 +38,7 @@ verified = true
 [[treasury]]
 code = "ZN"
 clearing_code = "21"
+cf_round_months = 3
 name = "10-Year T-Note"
 product_id = 316
 verified = true
@@ -39,6 +46,7 @@ verified = true
 [[treasury]]
 code = "TN"
 clearing_code = "TN"
+cf_round_months = 3
 name = "Ultra 10-Year T-Note"
 product_id = 7978
 verified = true
@@ -46,6 +54,7 @@ verified = true
 [[treasury]]
 code = "ZB"
 clearing_code = "17"
+cf_round_months = 3
 name = "U.S. Treasury Bond"
 product_id = 307
 verified = true
@@ -53,6 +62,7 @@ verified = true
 [[treasury]]
 code = "UB"
 clearing_code = "UBE"
+cf_round_months = 3
 name = "Ultra U.S. Treasury Bond"
 product_id = 3141
 verified = true
