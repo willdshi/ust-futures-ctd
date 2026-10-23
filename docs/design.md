@@ -329,6 +329,39 @@ See section 1. No model futures price, no comparison with market settlement, no 
 ### 5.10 End-of-month option: out of scope
 Affects futures value, not durations or the probability of a major switch materially. Not modelled (section 1).
 
+### 5.11 Light model (first build)
+The lightest version skips the factor model, the betas and the vol fitting: find the futures price at which each switch happens, then read the probability of the futures finishing below it from the put settlements. One basket, one option chain, a loop over shifts. It is the same calculation as the raw put-spread digital diagnostic (5.5.1, 5.7), so the work carries over to the full model.
+
+1. **Basket and converted prices.**
+   - Basket and conversion factors from CME's TCF file for the contract (a shortcut: the full model rebuilds the basket and uses the CF formula, section 2); clean prices from TreasuryDirect.
+   - Forward clean price of each bond at the delivery date with flat SOFR (5.3, path 1), divided by its CF.
+   - Lighter still: skip carry and use today's converted prices. The ranking near a crossover can then be off by a few ticks, a basis point or two.
+2. **Switch points as futures prices.**
+   - Shift every bond's yield in parallel (β = 1) in 1bp steps, about −100 to +150bp. Reprice each bond and take the cheapest converted price at each shift, `E(z) = min_i C_i(z)`.
+   - Record each shift `z_k` where the cheapest bond changes, and the envelope value there, `E(z_k)`.
+   - Recentre onto the market futures settlement, which won't match the envelope exactly:
+     `K_k = F_market + (E(z_k) − E(0))`
+3. **Digitals from the put settlements.**
+   - Use the expiry closest to delivery: the quarterly on the same contract (the December quarterly for the December contract).
+   - For each `K_k`, take the listed strikes either side, `K_lo < K_k < K_hi`:
+     `P(F < K_k) ≈ [Put(K_hi) − Put(K_lo)] / (K_hi − K_lo) / DF`
+     with DF the SOFR discount factor to expiry.
+   - If neighbouring strike pairs give different slopes, interpolate linearly between them.
+   - For a crossover on the rally side, use calls, `P(F > K_k) ≈ −[Call(K_hi) − Call(K_lo)] / (K_hi − K_lo) / DF`, or 1 − the put digital.
+4. **Probabilities.**
+   - Sell-off side: the probability beyond the first switch is `P(F < K_1)`. The bond between the first and second switches gets `P(F < K_1) − P(F < K_2)`, and so on outward; the bond beyond the last switch keeps its full tail `P(F < K_n)`.
+   - Rally side: the same with `P(F > K_k)`.
+   - The current CTD gets the remainder.
+
+**What it gives up:**
+- **Horizon**: it gives the probability of crossing by option expiry (late November for December), not by delivery. Somewhat low if the CTD is delivered at month-end.
+- **Parallel shifts**: any steepening tendency the betas would capture is missing, so ZB's switch points could be off by a few basis points.
+- **Noisy strikes**: a single put spread inherits settlement rounding (64ths), so treat results as ± a couple of percentage points. Check that probabilities fall as switches get further away.
+- **Remaining switch value**: at expiry the futures still include some switch value, which biases the tail probabilities slightly upward (as in 5.5.1 step 3).
+- **Outputs**: switch points and CTD probabilities only; no DV01, KRDs or duration profile.
+
+For a snapshot of where the market prices the switch today, that's a reasonable trade-off.
+
 ## 6. Outputs (daily, per contract)
 
 The published charts and their tiers are specified in [outputs.md](outputs.md). The headline is duration (chart 1: duration profile with key-rate shape; chart 2: diverging key-rate change bars; chart 3: DV01 time series with effective maturity). The model computes, per contract and date:
@@ -401,6 +434,8 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 ## 10. Roadmap
 
 1. **Phase 1, deterministic core** (ZN, ZB): raw data store and fetchers, bond math with tests, CF formula (tested against saved CME tables), term GC repo (flat), forward prices, parallel-shift grid and crossovers (no probabilities). Check against published switch levels. **Before anything else, start the scheduled daily collection in section 3.2 (all six contracts, full options chains, SOFR and fed funds futures, TreasuryDirect prices), with manifests and gap alerts.** Reference data (grades, calendars, option products) for ZN, ZB and UB.
+
+   **Phase 1b, light model (5.11)**: switch points as futures prices and CTD probabilities from put-spread digitals, for ZN and ZB. Needs the Section 42 options parser (section 11) brought forward from phase 2.
 2. **Phase 2, one-factor model**: betas, vol calibration (single expiry, √T), probabilities, region-weighted DV01 and KRDs, scenarios and duration profile, comparison series and effective maturity, distance to switch, event flags, daily report with charts 1–3. First on ZN and ZB, then UB and TN once they pass the phase-2 checks.
 
    **First milestone (before the late-November 2026 roll):** Tier 1 for ZN and ZB plus the December/March roll comparison ([outputs.md](outputs.md)). That needs phases 1 and 2 for ZN and ZB. Chart 3's time series needs history: until the historical runner (phase 4) exists, it covers only the dates since live runs began (section 11).
@@ -410,7 +445,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 ## 11. Open questions
 
 - How to collect CME settlements reliably? cmegroup.com refuses scripted connections (bot protection), and CME's public FTP server carries only the TCF tables of what's needed. Until a paid feed is chosen, futures settlement JSONs and the options bulletin are downloaded in a browser with the `ctd bookmarklet` (one click a day). Which feed, if any (DataMine, Databento, Barchart OnDemand)? Databento is already used for the futures history before 2026-10-14 (front two contracts, one-off; data.md §5.11), which makes it the natural candidate for daily collection too.
-- Option settlements from the Section 42 PDF: tested on 2026-10-16 with pdfplumber and pypdf, and the text extracts cleanly (about 3,200 strike rows in 35 pages). Layout: a product and put/call header (e.g. "10Y NOTE CALL", or a weekly such as "HYO OPT WK THU"), then an expiry label ("DEC26"), then one row per strike: strike (1055 = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high and low, prices in 64ths. Each block ends in a TOTAL line. The header also states the trade date and FINAL. Check: the 100.5 ZN call in the November serial block (on December futures) settled at 4-61/64 with delta 1.000, against December futures at 105-14.5 (intrinsic 4.95); the December quarterly 100.5 call settled at 4-62/64. Open: write the parser (phase 2), reading quarterly and serial blocks and skipping weeklies, and validating each block (strikes increasing, columns complete) because the layout can change without notice.
+- Option settlements from the Section 42 PDF: tested on 2026-10-16 with pdfplumber and pypdf, and the text extracts cleanly (about 3,200 strike rows in 35 pages). Layout: a product and put/call header (e.g. "10Y NOTE CALL", or a weekly such as "HYO OPT WK THU"), then an expiry label ("DEC26"), then one row per strike: strike (1055 = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high and low, prices in 64ths. Each block ends in a TOTAL line. The header also states the trade date and FINAL. Check: the 100.5 ZN call in the November serial block (on December futures) settled at 4-61/64 with delta 1.000, against December futures at 105-14.5 (intrinsic 4.95); the December quarterly 100.5 call settled at 4-62/64. Open: write the parser (phase 1b, for the light model in 5.11), reading quarterly and serial blocks and skipping weeklies, and validating each block (strikes increasing, columns complete) because the layout can change without notice.
 - How long does CME keep TCF files on its FTP server (December 2023 onwards as of October 2026)?
 - Which beta window and decay best predicts realised basket moves (settle by backtest)?
 - Realised-vol window for historical mode, and how it compares with implied vol once live snapshots accumulate?
