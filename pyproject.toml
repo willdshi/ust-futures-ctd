@@ -17,6 +17,7 @@ dependencies = [
     "openpyxl",
     "matplotlib",
     "pdfplumber",
+    "databento",
 ]
 
 [project.optional-dependencies]

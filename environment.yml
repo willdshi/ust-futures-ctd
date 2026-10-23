@@ -13,3 +13,6 @@ dependencies:
   - numpy
   - matplotlib
   - pdfplumber
+  - pip
+  - pip:
+      - databento  # not on the defaults channel

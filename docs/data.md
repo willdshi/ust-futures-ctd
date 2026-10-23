@@ -20,8 +20,9 @@ Every business day, `ctd fetch` snapshots each source into a local raw store und
 | `cme_stir` | Futures settlements: SR1, SR3, ZQ | cmegroup.com | bookmarklet | daily | 2026-10-14 → |
 | `cme_bulletin` | Daily Bulletin Section 42: options on the six Treasury futures | cmegroup.com | bookmarklet | daily | 2026-10-16 → |
 | `cme_opt` | Per-product option settlement files | cmegroup.com | auto if CME allowed | occasional | none |
+| `databento_fut_backfill` | Futures settlements and open interest, front two contracts of the nine CME futures | Databento (paid) | script | backfill | 2016-01-01 → 2026-10-21; ZT stored, others in progress |
 
-Backfill-only source ids (`par_curve_backfill`, `nyfed_rates_backfill`, `yahoo_fut_backfill`) hold the one-off history pulls; see §4.
+Backfill-only source ids (`par_curve_backfill`, `nyfed_rates_backfill`, `yahoo_fut_backfill`, `databento_fut_backfill`) hold the one-off history pulls; see §4. `databento_fut_backfill` is the only paid source, and it's written by a standalone script rather than `ctd backfill` (§5.11).
 
 The six Treasury futures in scope are ZT, ZF, ZN, TN, ZB and UB. The model reads ZN and ZB first, then UB and TN as stable-duration comparisons (design §1); ZT and ZF are collected so they can be added later. What the model publishes is in [outputs.md](outputs.md).
 
@@ -226,7 +227,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 - **How:** the bookmarklet uses the Section 42 link on CME's Daily Bulletin page (fallback URL in `cme_products.toml`). **CME's link always serves the latest bulletin.** Run the bookmarklet the morning after the trade date; a bulletin for an earlier date can't be downloaded this way. Ingest checks the trade date printed on page 1 against the as-of date and rejects a mismatch (§2.4); the automated fetch, if CME ever allows it, applies the same check.
 - **Files:** `Section42/Section42.pdf`.
 - **Layout** (extracts cleanly with pdfplumber or pypdf): the page header gives the bulletin number, trade date and `FINAL` (`PG42 BULLETIN # 201@ ... Mon, Oct 19, 2026`). Each block has a product and put/call header (`10Y NOTE CALL`, or a weekly such as `HYO OPT WK THU`), an expiry label (`DEC26`), one row per strike, then a `TOTAL` line. Strike rows: strike (`1055` = 105.5), open, high, low, close, settlement, change, delta, exercises, volume, open interest, OI change, contract high, contract low. ZN option prices are in 64ths (`461` = 4 61/64). The parser is phase 2 work. It reads quarterly and serial blocks only; weekly blocks stay in the stored PDF but the model doesn't use them (design §2).
-- **Check:** the 2026-10-16 bulletin has the 100.5 December ZN call at 4-61/64 with delta 1.000, against futures at 105-14.5.
+- **Check:** the 2026-10-16 bulletin has the 100.5 ZN calls at 4-61/64 with delta 1.000 for the November serial (`NOV26`, on December futures, expiring 2026-10-23) and 4-62/64 with delta .972 for the December quarterly (`DEC26`), against December futures at 105-14.5. Databento matches both.
 
 ### 5.10 `yahoo_fut`: Yahoo Finance daily bars
 
@@ -254,7 +255,24 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
   - a bar for the current session is live until the close; the fetch's default as-of date avoids capturing one;
   - SR1, SR3 and long-dated ZQ have no usable Yahoo data, so they aren't collected.
 
-### 5.11 Occasional and legacy
+### 5.11 `databento_fut_backfill`: historical futures settlements (paid, one-off)
+
+- **What:** daily settlement price, open interest and cleared volume for the front two contracts of ZT, ZF, ZN, TN, ZB, UB, SR1, SR3 and ZQ, 2016-01-01 to 2026-10-21. It's the futures history `cme_fut` and `cme_stir` can't provide (they start 2026-10-14). Historical mode reads it for open interest, the roll, and the futures price in vol conversion (design §7).
+- **How:** `scratch/databento_fut_backfill.py`, on dataset `GLBX.MDP3` with symbols `<product>.c.0` and `<product>.c.1` (`stype_in=continuous`, calendar roll), in three steps: `quote` (free cost estimate), `submit` (one batch job per product, which spends credit; job ids are kept in `data/databento_jobs.json` so nothing is submitted twice) and `collect` (stores finished jobs and the symbology; re-run until nothing is pending). Every step skips what's already stored. It needs `DATABENTO_API_KEY`; the `databento` package is a project dependency (pip-installed in the conda env), also used to read the stored files. It's not registered in `sources.py`, so `ctd fetch` and `ctd check` don't know about it.
+- **Why batch jobs:** a streaming request (`timeseries.get_range`) took 27 minutes for ZT statistics, and ZT's `definition` request had sent 40 KB after an hour, because the server scans the whole ten years either way. ZT statistics was stored from that streaming run; the other products go through batch jobs, and `definition` was dropped in favour of the free symbology lookup.
+- **Contents:**
+  - `statistics`: one record per published statistic, keyed by `instrument_id`. `stat_type` says which (3 settlement price, 9 open interest, 6 cleared volume, ...), and `ts_ref` gives the trading date it refers to. Each day has a preliminary and a final settlement (`stat_flags` 2 and 3). Open interest for day D is published the next morning, so the last day has settlements but no open interest. ZT has 150 settlement records with no `ts_ref`, still to be explained.
+  - Symbology (`symbology.resolve`, free): continuous symbol to `instrument_id` by date, then `instrument_id` to contract symbol (`ZTZ6`) by date. Expiries come from the delivery calendars in `reference/`, not from Databento.
+- **Files** under `raw/2026-10-22/databento_fut_backfill/<product>/`, with `<end>` exclusive:
+  - `<product>_statistics_2016-01-01_2026-10-22.dbn.zst`: the DBN file exactly as received (the batch output file; ZT's is the streamed response). Read with `databento.DBNStore.from_bytes(store.read(...))`. Its header also holds the continuous-symbol to `instrument_id` mapping.
+  - `<product>_symbology_continuous_2016-01-01_2026-10-22.json` and `<product>_symbology_raw_symbol_2016-01-01_2026-10-22.json`: the two lookups. These are the client's parsed responses re-serialised as JSON, not the HTTP bytes.
+  - The meta sidecar records the request (`params`), the client version and, for statistics, `cost_usd` and the batch `job_id`.
+- **Check:** ZT on 2026-10-21 matches `cme_fut` exactly (December 101.816406 = 101'261, March 101.644531 = 101'206).
+- **Coverage:** `c.0` stays on a contract until it expires, so `c.0` and `c.1` cover the expiring contract through its last trading day plus the next one. The third listed month (which `cme_fut` stores) isn't included. For SR1, SR3 and ZQ, the front two are the two nearest expiries, serials included.
+- **History-type file:** it holds every date up to the pull, so code reading it for a past as-of date must filter to trading dates on or before it (§3).
+- **Overlap with CME:** from 2026-10-14 `cme_fut` and `cme_stir` are the record. On overlapping dates, use Databento to cross-check them, not to fill their gaps (design §3.2).
+
+### 5.12 Occasional and legacy
 
 - **`cme_opt`:** CME's per-product option settlement files (an expiry list plus one JSON per option series). Only used if automated CME access ever works; the bulletin replaces it.
 - **`cme_cf`** (2026-10-16 only): the conversion factor spreadsheet downloaded by hand before the FTP source existed. The source no longer exists; the FTP file for that date is under `cme_tcf`.
@@ -356,4 +374,4 @@ For a reproducible run on a past date:
   - CME Pace of the Roll (confirm what it publishes and whether past rolls can be retrieved).
 
   All but Pace of the Roll have free history, so they can be added and backfilled when the dashboard is built (design §3.2).
-- **CME automation:** cmegroup.com blocks scripts, so settlements and the bulletin depend on the daily bookmarklet click. A paid feed (DataMine, Databento, Barchart OnDemand) is the alternative (design §11).
+- **CME automation:** cmegroup.com blocks scripts, so settlements and the bulletin depend on the daily bookmarklet click. A paid feed (DataMine, Databento, Barchart OnDemand) is the alternative for daily collection (design §11); Databento is used for the history before 2026-10-14 (§5.11).

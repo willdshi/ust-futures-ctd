@@ -42,3 +42,6 @@ Desktop.ini
 
 # Report output
 /output/
+
+# Local scratch space: notebooks, one-off scripts, downloads. Never committed.
+/scratch/
