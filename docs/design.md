@@ -464,13 +464,13 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    3. [ ] Digitals: SOFR discount factor to expiry; strike pair bracketing each `K_k`, interpolating between neighbouring pairs; calls on the rally side; rules for missing, minimum-tick or zero-open-interest premiums; a switch beyond the listed strikes is flagged, not extrapolated. A cabinet settlement (`CAB` in the bulletin, 0.001 in Databento) only says the option is worth less than one tick, so a strike pair that includes one gives an upper bound, reported as such ("≤ 3%": 1/64 over the strike spacing), not a probability. Later refinement: tighten the bound with a priced strike further out.
    4. [ ] Probability assembly: regions on each side, remainder to the current CTD; checks that probabilities sum to 1 and fall with distance (warn otherwise).
    5. [ ] Output: `ctd run` prints a basket table and a crossover table (from → to bond, shift in bp, `K_k`, strikes used, digital, region probabilities, warnings) and the recentring gap `F_market − E(0)`.
-   6. [ ] Run 2026-10-14 to date for ZNZ6 and ZBZ6, then daily after the fetch.
+   6. [ ] Run 2026-10-16 to date for ZNZ6 and ZBZ6, then daily after the fetch. The series starts 2026-10-16, the first stored Section 42 bulletin (futures settlements start 2026-10-14, but the light model needs option settlements).
 
    *C. Definition of done*
    - [ ] Section 8 unit tests for the pieces built: accrued, price/yield round trip, CF formula vs TCF, forward price across a coupon, synthetic two-bond crossover, term repo compounding; plus the parser on a stored bulletin.
    - [x] Sanity: flat 6% curve gives converted prices ≈ 100.
    - [ ] ZBZ6 and ZNZ6 on 2026-10-21: plausible switch points and CTD, probabilities summing to 1 and falling with distance, results reproducible from the store.
-   - [ ] A series from 2026-10-14 that runs daily.
+   - [ ] A series from 2026-10-16 that runs daily.
 
    *D. Open questions for phase 1b*
    - **Which yield to shift**: forward yields (consistent with the full model, 5.6) or today's yields. Proposed: forward yields.
