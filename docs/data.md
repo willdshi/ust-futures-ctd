@@ -136,6 +136,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 - **What:** one price file per business day covering every marketable Treasury (bills, notes, bonds, TIPS, FRNs), about 460 securities today. TreasuryDirect's single end-of-day price, rounded and struck before the futures settlement; clean prices (design §5.1).
 - **How:** a three-step form flow, each step handing out a CSRF token: GET the date form, POST the date, POST for the CSV. Calendar `sifma`.
+- **Date alignment:** the as-of date is the price date requested from FedInvest, and the file holds that day's end-of-day prices: `raw/2026-10-21/` has the prices for the close of 2026-10-21, the same trade date as the CME settlements stored there (checked by hand on the FedInvest site, 2026-10-22). No one-day shift is needed when pairing them with futures.
 - **File:** `td_prices/securityprice/securityprice_<asof>.csv`. No header row. Columns:
 
 | # | Column | Example |
