@@ -337,7 +337,7 @@ The lightest version skips the factor model, the betas and the vol fitting: find
 
 1. **Basket and converted prices.**
    - Basket and conversion factors from CME's TCF file for the contract (a shortcut: the full model rebuilds the basket and uses the CF formula, section 2); clean prices from TreasuryDirect.
-   - Forward clean price of each bond at the delivery date with flat SOFR (5.3, path 1), divided by its CF.
+   - Forward clean price of each bond at the delivery date with flat SOFR (5.3, path 1), divided by its CF. Delivery date: the last delivery day if the CTD's carry is positive, the first if negative ([decisions.md](decisions.md)).
    - Lighter still: skip carry and use today's converted prices. The ranking near a crossover can then be off by a few ticks, a basis point or two.
 2. **Switch points as futures prices.**
    - Shift every bond's yield in parallel (β = 1) in 1bp steps, about −100 to +150bp. Reprice each bond and take the cheapest converted price at each shift, `E(z) = min_i C_i(z)`.
@@ -446,7 +446,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    3. [x] CF formula (`bonds/conversionfactor.py`), tested against the stored TCF files: matches every row from December 2023 (the light model reads CFs from TCF, but the test checks the date code).
    4. [x] Store readers (`parse`/`read` in each source's module in `data/`, no network): TreasuryDirect prices with coupon and maturity (end of day, or the buy/sell midpoint for a provisional date, [decisions.md](decisions.md)); TCF basket and CFs per contract; CME futures settlements (`F_market`); SOFR from the NY Fed.
    5. [x] Delivery calendar per contract month (first and last delivery days, last trading day), stored as reference data (`reference/data/delivery_calendar.toml`, section 2): Z6 verified, H7 generated.
-   6. [ ] Flat-SOFR term repo and forward clean price with coupons before delivery (5.3).
+   6. [x] Flat-SOFR term repo (`funding/repo.py`) and forward clean price and yield with coupons before delivery (`bonds/forward.py`, 5.3); delivery date by the light-model rule (`model/horizon.py`).
    7. [ ] Envelope and switch points (`model/`): parallel shifts, cheapest converted price, exact root-finding of each switch.
 
    *B. Light-model pieces*
@@ -464,7 +464,6 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    - [ ] A series from 2026-10-14 that runs daily.
 
    *D. Open questions for phase 1b*
-   - **Delivery date for the forward**: the light model has no horizon logic (5.2). Proposed default: last delivery day if the CTD's carry is positive, first if negative.
    - **Which yield to shift**: forward yields (consistent with the full model, 5.6) or today's yields. Proposed: forward yields.
    - **Recentring gap**: `F_market` settles at 2pm CT and TreasuryDirect prices are struck earlier, so `F_market − E(0)` also absorbs that timing difference. Log it daily; what size counts as inconsistent inputs?
    - **Saved results**: print only, or also write results per date (e.g. a results directory) so a series can be built and compared later?

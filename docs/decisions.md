@@ -80,3 +80,9 @@ Each FedInvest file has buy, sell and end-of-day columns; end of day is filled i
 **Decision:** use end of day wherever it exists: all history, and every live date once the next evening's catch-up has completed its file. Only for a date still provisional (a same-evening run), fall back to the buy/sell midpoint (sell where there is no buy) and mark the result provisional.
 
 **To confirm:** that end of day is the snapshot closest to the 2pm CT futures settlement (phase 1b open question), and TreasuryDirect's own definition of the three columns.
+
+## Delivery date for the light model's forward prices (design §5.11)
+
+The light model has no horizon logic (§5.2 runs both dates when carry is near zero), so it needs a fixed rule.
+
+**Decision:** take forwards to the last delivery day if the CTD's carry is positive, the first delivery day if negative. Carry is measured directly: the CTD (cheapest converted forward at the last delivery day) has positive carry when its forward clean price at the last delivery day is below the one at the first. One date for the whole basket, as in §5.2. Settled 2026-10-22, replacing a phase 1b open question.
