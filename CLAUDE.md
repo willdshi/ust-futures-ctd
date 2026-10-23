@@ -25,7 +25,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 
 ## Current state
 
-Phase 1b (the light model, design §5.11) is in progress; the plan, definition of done and open questions are in design §10. Foundation items 1–3 are done: `bonds/schedule.py` (coupon dates, accrued), `bonds/pricing.py` (the single pricing function), `bonds/conversion.py` (CF formula). Next: item 4, the store readers.
+Phase 1b (the light model, design §5.11) is in progress; the plan, definition of done and open questions are in design §10. Foundation items 1–3 are done: `bonds/schedule.py` (coupon dates, accrued), `bonds/pricing.py` (the single pricing function), `bonds/conversionfactor.py` (CF formula). Next: item 4, the store readers.
 
 ## Architecture rules (from the design)
 
@@ -57,7 +57,7 @@ Phase 1b (the light model, design §5.11) is in progress; the plan, definition o
 - **Explicit conventions.** Settlement (T+1) and delivery dates are always passed in, never assumed. Accrual is actual/actual, compounding is semiannual, and days are business days for delivery calendars.
 - **Reference data is data, not code (§2).**
   - Contract grades, delivery calendars and option products live in `reference/` as records with effective-from dates, never as constants. Verify each against the current CBOT rulebook when encoding it.
-  - Conversion factors come from the 6% CF formula (`ctd.bonds.conversion`; maturity rounded down to the quarter for ZN, TN, ZB and UB, the month for ZT and ZF, as `cf_round_months` in `cme_products.toml`) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data; the formula matches every stored TCF row. The light model (§5.11) reads CFs from TCF as a shortcut.
+  - Conversion factors come from the 6% CF formula (`ctd.bonds.conversionfactor`; maturity rounded down to the quarter for ZN, TN, ZB and UB, the month for ZT and ZF, as `cf_round_months` in `cme_products.toml`) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data; the formula matches every stored TCF row. The light model (§5.11) reads CFs from TCF as a shortcut.
   - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against the TCF files.
   - Store delivery calendars per contract month; don't compute them ad hoc.
   - Basket eligibility, measured from the first day of the delivery month:

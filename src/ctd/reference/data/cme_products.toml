@@ -12,7 +12,7 @@
 # remaining maturities of its deliverables in TCF_20261019.csv.
 #
 # cf_round_months is how the conversion factor formula rounds remaining term down
-# (ctd.bonds.conversion): whole months for ZT and ZF, quarters for the others.
+# (ctd.bonds.conversionfactor): whole months for ZT and ZF, quarters for the others.
 # Checked against every stored TCF file, December 2023 to October 2026.
 #
 # Option series are not listed here: for each Treasury future, the collector

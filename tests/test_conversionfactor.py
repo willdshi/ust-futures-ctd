@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ctd.bonds.conversion import conversion_factor
+from ctd.bonds.conversionfactor import conversion_factor
 from ctd.data import refdata
 
 # TCF_20261021.csv rows for the six Treasury contracts, with coupon and maturity joined from that
