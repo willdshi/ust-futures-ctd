@@ -25,7 +25,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 
 ## Current state
 
-Phase 1b (the light model, design §5.11) is in progress; the plan, definition of done and open questions are in design §10. Foundation items 1–3 are done: `bonds/schedule.py` (coupon dates, accrued), `bonds/pricing.py` (the single pricing function), `bonds/conversionfactor.py` (CF formula). Next: item 4, the store readers.
+Phase 1b (the light model, design §5.11) is in progress. Status is tracked as checkboxes in the phase 1b plan in design §10; tick items there in the commit that finishes them, not here.
 
 ## Architecture rules (from the design)
 

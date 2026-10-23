@@ -438,30 +438,30 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 
 1. **Phase 1, deterministic core** (ZN, ZB): raw data store and fetchers, bond math with tests, CF formula (tested against saved CME tables), term GC repo (flat), forward prices, parallel-shift grid and crossovers (no probabilities). Check against published switch levels. **Before anything else, start the scheduled daily collection in section 3.2 (all six contracts, full options chains, SOFR and fed funds futures, TreasuryDirect prices), with manifests and gap alerts.** Reference data (grades, calendars, option products) for ZN, ZB and UB.
 
-   **Phase 1b, light model (5.11)**: switch points as futures prices and CTD probabilities from put-spread digitals, for ZNZ6 and ZBZ6, built one date at a time starting with 2026-10-21 (a complete snapshot in the store). Every run is `ctd run --contract ZBZ6 --asof D`, reading only from the store, so later dates are a loop.
+   **Phase 1b, light model (5.11)**: switch points as futures prices and CTD probabilities from put-spread digitals, for ZNZ6 and ZBZ6, built one date at a time starting with 2026-10-21 (a complete snapshot in the store). Every run is `ctd run --contract ZBZ6 --asof D`, reading only from the store, so later dates are a loop. Progress is tracked by the checkboxes below; tick an item in the commit that finishes it.
 
    *A. Foundation (phase 1 items the light model needs)*
-   1. Dates and conventions (`bonds/`): coupon schedule from maturity (scheduled, unadjusted; end-of-month maturities), actual/actual accrued, previous/next coupon, T+1 settlement on the `sifma` calendar.
-   2. The single pricing function (5.1): dirty price from yield, clean = dirty − accrued, yield from price by root-finding, DV01/duration from the same function.
-   3. CF formula, tested against the stored TCF file (the light model reads CFs from TCF, but the test checks the date code).
-   4. Store readers (`data/`, no network): TreasuryDirect prices joined to security terms; TCF basket and CFs per contract; CME futures settlements (`F_market`); SOFR from the NY Fed.
-   5. Delivery calendar per contract month (first and last delivery days), stored as reference data (section 2).
-   6. Flat-SOFR term repo and forward clean price with coupons before delivery (5.3).
-   7. Envelope and switch points (`model/`): parallel shifts, cheapest converted price, exact root-finding of each switch.
+   1. [x] Dates and conventions (`bonds/schedule.py`): coupon schedule from maturity (scheduled, unadjusted; end-of-month maturities), actual/actual accrued, previous/next coupon, T+1 settlement on the `sifma` calendar.
+   2. [x] The single pricing function (`bonds/pricing.py`, 5.1): dirty price from yield, clean = dirty − accrued, yield from price by root-finding, DV01/duration from the same function.
+   3. [x] CF formula (`bonds/conversionfactor.py`), tested against the stored TCF files: matches every row from December 2023 (the light model reads CFs from TCF, but the test checks the date code).
+   4. [ ] Store readers (`data/`, no network): TreasuryDirect prices with coupon and maturity (end of day, or the buy/sell midpoint for a provisional date, [decisions.md](decisions.md)); TCF basket and CFs per contract; CME futures settlements (`F_market`); SOFR from the NY Fed.
+   5. [ ] Delivery calendar per contract month (first and last delivery days), stored as reference data (section 2).
+   6. [ ] Flat-SOFR term repo and forward clean price with coupons before delivery (5.3).
+   7. [ ] Envelope and switch points (`model/`): parallel shifts, cheapest converted price, exact root-finding of each switch.
 
    *B. Light-model pieces*
-   1. Option reference data for OZN and OZB: expiry rule and dates (checked against CME's calendar), strike interval, premium tick (64ths), underlying contract per expiry.
-   2. Section 42 parser (section 11 has the layout): quarterly and serial blocks only, weeklies skipped; per-block checks (strikes increasing, columns complete, TOTAL line, trade date = as-of); strikes and 64ths converted. Tested against the 2026-10-16 hand check.
-   3. Digitals: SOFR discount factor to expiry; strike pair bracketing each `K_k`, interpolating between neighbouring pairs; calls on the rally side; rules for missing, minimum-tick or zero-open-interest premiums; a switch beyond the listed strikes is flagged, not extrapolated.
-   4. Probability assembly: regions on each side, remainder to the current CTD; checks that probabilities sum to 1 and fall with distance (warn otherwise).
-   5. Output: `ctd run` prints a basket table and a crossover table (from → to bond, shift in bp, `K_k`, strikes used, digital, region probabilities, warnings) and the recentring gap `F_market − E(0)`.
-   6. Run 2026-10-14 to date for ZNZ6 and ZBZ6, then daily after the fetch.
+   1. [ ] Option reference data for OZN and OZB: expiry rule and dates (checked against CME's calendar), strike interval, premium tick (64ths), underlying contract per expiry.
+   2. [ ] Section 42 parser (section 11 has the layout): quarterly and serial blocks only, weeklies skipped; per-block checks (strikes increasing, columns complete, TOTAL line, trade date = as-of); strikes and 64ths converted. Tested against the 2026-10-16 hand check.
+   3. [ ] Digitals: SOFR discount factor to expiry; strike pair bracketing each `K_k`, interpolating between neighbouring pairs; calls on the rally side; rules for missing, minimum-tick or zero-open-interest premiums; a switch beyond the listed strikes is flagged, not extrapolated.
+   4. [ ] Probability assembly: regions on each side, remainder to the current CTD; checks that probabilities sum to 1 and fall with distance (warn otherwise).
+   5. [ ] Output: `ctd run` prints a basket table and a crossover table (from → to bond, shift in bp, `K_k`, strikes used, digital, region probabilities, warnings) and the recentring gap `F_market − E(0)`.
+   6. [ ] Run 2026-10-14 to date for ZNZ6 and ZBZ6, then daily after the fetch.
 
    *C. Definition of done*
-   - Section 8 unit tests for the pieces built: accrued, price/yield round trip, CF formula vs TCF, forward price across a coupon, synthetic two-bond crossover, term repo compounding; plus the parser on a stored bulletin.
-   - Sanity: flat 6% curve gives converted prices ≈ 100.
-   - ZBZ6 and ZNZ6 on 2026-10-21: plausible switch points and CTD, probabilities summing to 1 and falling with distance, results reproducible from the store.
-   - A series from 2026-10-14 that runs daily.
+   - [ ] Section 8 unit tests for the pieces built: accrued, price/yield round trip, CF formula vs TCF, forward price across a coupon, synthetic two-bond crossover, term repo compounding; plus the parser on a stored bulletin.
+   - [ ] Sanity: flat 6% curve gives converted prices ≈ 100.
+   - [ ] ZBZ6 and ZNZ6 on 2026-10-21: plausible switch points and CTD, probabilities summing to 1 and falling with distance, results reproducible from the store.
+   - [ ] A series from 2026-10-14 that runs daily.
 
    *D. Open questions for phase 1b*
    - **Delivery date for the forward**: the light model has no horizon logic (5.2). Proposed default: last delivery day if the CTD's carry is positive, first if negative.
