@@ -23,7 +23,8 @@ A **duration-drift monitor for Treasury futures users**: how stable is the durat
 | Comparison measure | CTD-label DV01 (what many vendor and internal systems report) |
 | Factor shifts | Shown in both bp and percentiles of the move-to-delivery distribution (σ√T) |
 | Scenario recompute | Full model recompute at each shifted state, with the same remaining vol. Never read off the CTD at the shifted yield. |
-| Key-rate grid | 2, 5, 7, 10, 15, 20, 25, 30. Long-end resolution is needed so a ZB switch (about 15y to about 25y) is visible. Tent interpolation. Fix and document. |
+| Key-rate grid | 2, 5, 7, 10, 15, 20, 25, 30. Long-end resolution is needed so a ZB switch (about 15y to about 25y) is visible. Tent bumps to the Treasury par curve (linear between published tenors), scaled to each bond's DV01. Fixed ([decisions.md](decisions.md)). |
+| Negative KRDs (published note) | Key-rate exposures are measured against the Treasury par curve: each bucket is how much of a par bond at that tenor would hedge the position. For low-coupon bonds, the hedge is more than 100% at the bond's own maturity and slightly short at earlier tenors, so short-tenor buckets can be negative, and effective maturity can exceed the bond's maturity. |
 | Delivery timing | Last delivery day if carry is positive, first if negative (documented rule) |
 | Parameter estimation | Daily EWMA or rolling vol and betas, to avoid artificial steps |
 
@@ -64,10 +65,10 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 **Companion panel: DV01-weighted effective maturity**, i.e. Σₖ KRDₖ × Tₖ / Σₖ KRDₖ. Default view for ZB and for cross-contract comparison.
 - Answers "where on the curve" rather than "how much". Two exposures with the same DV01 can sit at 18y or 27y and hedge or track very differently.
 - It is a cleaner switch signal than duration because it barely moves for the non-switch reasons above.
-- Needs one sentence of explanation for less sophisticated readers, and depends on the key-rate grid and tent interpolation.
+- Needs one sentence of explanation for less sophisticated readers, and depends on the key-rate grid and the par-curve tent bumps.
 
 **How the effective-maturity line behaves:**
-- Baseline: a steady downward drift of about one day per day as each bond's key-rate profile slides shorter. Tent interpolation keeps it smooth as bonds cross nodes.
+- Baseline: a steady downward drift of about one day per day as each bond's key-rate profile slides shorter. Tent bumps keep it smooth as bonds cross nodes.
 - It rises only when DV01 shifts toward longer tenors, which happens through:
   1. **Probability moving to a longer bond** (the switch effect; below 6%, as yields rise).
   2. **Basket or contract changes:** a longer bond entering with meaningful probability, or the roll moving to a contract whose likely CTD is longer.

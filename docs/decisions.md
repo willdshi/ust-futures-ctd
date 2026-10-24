@@ -38,11 +38,28 @@ So hibernation delays collection rather than losing data, unless the PC is off f
 
 **Status:** adopted (2026-10-22), from [outputs.md](outputs.md) Conventions.
 
-**Decision:** key rates at **2, 5, 7, 10, 15, 20, 25 and 30 years**, with cash flows bucketed by triangular (tent) weights between neighbouring nodes. The grid is fixed; changing it changes every published KRD and the effective-maturity series, so record any change here with its date.
+**Decision:** key rates at **2, 5, 7, 10, 15, 20, 25 and 30 years**, each a triangular (tent) bump to the par curve between neighbouring nodes (method in the next entry; until 2026-10-24 the tents bucketed cash flows). The grid is fixed; changing it changes every published KRD and the effective-maturity series, so record any change here with its date.
 
 **Why these nodes:**
-- 15 and 25 years aren't par-curve points, but KRDs bucket cash flows and need no market yield at the node. Without them, a ZB switch (about 15y to about 25y) would be split across the 10, 20 and 30-year buckets and barely show.
-- Tent weights keep KRDs and effective maturity smooth as a bond's cash flows roll past a node; a step scheme would add artificial jumps to the time series.
+- 15 and 25 years aren't published par-curve points; their par yields are interpolated (next entry). Without them, a ZB switch (about 15y to about 25y) would be split across the 10, 20 and 30-year buckets and barely show.
+- Tent bumps keep KRDs and effective maturity smooth as a bond rolls past a node; a step scheme would add artificial jumps to the time series.
+
+## How KRDs are computed (design §5.9)
+
+**Status:** adopted (2026-10-24), replacing cash-flow bucketing ("curve-based later if needed").
+
+**Decision:** par-curve key-rate bumps, scaled to the pricing function's DV01.
+1. **Curve:** the Treasury par curve stored for the as-of date, par yields interpolated **linearly** between the published tenors onto a semiannual grid, and discount factors bootstrapped from it (each grid point a par bond paying semiannually; log discount factors interpolated linearly between grid points).
+2. **Bumps:** for each node, add 1bp × its tent weight to the par yields, re-bootstrap and reprice the bond's cash flows after the horizon (times measured from the horizon; today's curve, not a forward curve). The bond's KRD at that node is the price fall.
+3. **Scaling:** the bumps give only the shape (each node's share). The shares are scaled to the bond's DV01 at its forward yield from `ctd.bonds.pricing`, so one pricing function sets every duration number (§5.1) and the KRDs sum to the DV01 series exactly. The curve need not reprice an off-the-run bond; a 10bp yield difference moves duration about 0.02y.
+
+**Why par bumps, not cash-flow bucketing:**
+- A par-curve KRD is the hedge in par bonds at each tenor, which is how the audience hedges, and what vendor KRDs report. Cash-flow bucketing describes where a bond's coupons fall (a STRIPS hedge).
+- The two agree on total DV01 but not on shape, and disagree most on the ZB switch, where the CTD is a high-coupon bond near par and the sell-off contenders are deep-discount low coupons. Flat curve at forward yields on 2026-10-21, from the 31 Dec horizon: the 5% May-45 CTD has effective maturity 15.5y bucketed and 18.6y bumped; the 1⅜% Aug-50 21.6y and 27.9y. A switch between them moves effective maturity +6.1y bucketed and +9.3y bumped. ZN barely differs (4½% Aug-33: 6.3y and 6.7y).
+
+**Why linear interpolation is enough:** on the 2026-10-21 par curve (humped: 20y 5.47%, 30y 5.42%), linear, PCHIP and a natural cubic spline agree to within 0.07y in duration, 0.06y in effective maturity and 0.6 points in any bucket's share, across the ZB contenders and the ZN CTD. The tolerance is 0.1y. KRDs depend on where cash flows sit relative to the nodes, not on fine curve shape.
+
+**Consequence, explained in the published notes ([outputs.md](outputs.md) Conventions):** a low-coupon bond equals a par bond less a stream of coupons, so its hedge is more than 100% at its own maturity and short at earlier tenors. Its short-tenor KRDs are negative (the 2¼% Aug-46: −7% at 10y, +117% at 20y), and its effective maturity can exceed its maturity (21.7y for 19.6y left). Chart 1's bucket-share panel must allow negative shares.
 
 ## Estimating betas for the deliverable basket (design §5.4)
 
