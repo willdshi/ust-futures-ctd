@@ -26,6 +26,9 @@ A **duration-drift monitor for Treasury futures users**: how stable is the durat
 | Key-rate grid | 2, 5, 7, 10, 15, 20, 25, 30. Long-end resolution is needed so a ZB switch (about 15y to about 25y) is visible. Tent bumps to the Treasury par curve (linear between published tenors), scaled to each bond's DV01. Fixed ([decisions.md](decisions.md)). |
 | Negative KRDs (published note) | Key-rate exposures are measured against the Treasury par curve: each bucket is how much of a par bond at that tenor would hedge the position. For low-coupon bonds, the hedge is more than 100% at the bond's own maturity and slightly short at earlier tenors, so short-tenor buckets can be negative, and effective maturity can exceed the bond's maturity. |
 | Delivery timing | Last delivery day if carry is positive, first if negative (documented rule) |
+| Contract in the series | The contract whose quarterly options are the nearest not yet expired: roll at option expiry (December to March on 2026-11-20). See [decisions.md](decisions.md). |
+| Probabilities in charts (first milestone) | Normal factor with ATM vol and β = 1, so they can be recomputed at shifted states; the option-implied (light model) probabilities are shown alongside as a cross-check. No skew until the smile-implied distribution (phase 3). |
+| Rendering | matplotlib PNGs embedded in one self-contained HTML page per date ([decisions.md](decisions.md)) |
 | Parameter estimation | Daily EWMA or rolling vol and betas, to avoid artificial steps |
 
 ---
@@ -125,7 +128,7 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 
 | Output | Data |
 |---|---|
-| Charts 1–3, distance to switch, probabilities | Security reference (Fiscal Data auctions), TreasuryDirect daily prices, conversion factors (computed, checked against CME), SOFR, Treasury par curve, CME basket rules and calendar |
+| Charts 1–3, distance to switch, probabilities | Security reference (Fiscal Data auctions), TreasuryDirect daily prices, conversion factors (computed, checked against CME), SOFR, Treasury par curve, CME basket rules and calendar, CME futures settlements, CME option settlements (Section 42 bulletin: ATM vol and the light model's digitals) |
 | Roll | Same, plus CME Pace of the Roll for month-level OI |
 | Calibration | Realised CTD computed from own prices at delivery |
 | Asset-manager duration via futures | CFTC TFF futures-only (`gpe5-46if`) |

@@ -103,3 +103,30 @@ Each FedInvest file has buy, sell and end-of-day columns; end of day is filled i
 The light model has no horizon logic (§5.2 runs both dates when carry is near zero), so it needs a fixed rule.
 
 **Decision:** take forwards to the last delivery day if the CTD's carry is positive, the first delivery day if negative. Carry is measured directly: the CTD (cheapest converted forward at the last delivery day) has positive carry when its forward clean price at the last delivery day is below the one at the first. One date for the whole basket, as in §5.2. Settled 2026-10-22, replacing a phase 1b open question.
+
+## Probabilities in the published charts, first milestone (design §5.6, §5.11)
+
+**Status:** adopted (2026-10-24).
+
+**Decision:** charts 1 and 2 and the distance to switch use a normal factor, `z ~ N(c, σ√T)` with β = 1 and σ from the ATM implied vol (phase 1c, design §10). The light model's option digitals are published alongside as a cross-check, not fed into the charts.
+
+**Why:** the charts need probabilities at shifted states (each centre `c` from −100 to +100bp, ±1σ and ±2σ). The light model's digitals are today's option prices and can't be moved to another state; the normal factor can, using the same envelope. Its cost is no skew, so at `c = 0` it won't match the digitals. The gap is reported, and the smile-implied distribution (phase 3) is the fix if it is material.
+
+## Chart rendering (design §6, outputs.md)
+
+**Status:** adopted (2026-10-24).
+
+**Decision:** matplotlib PNGs, embedded (base64) in one self-contained HTML page per as-of date under the gitignored `/output/`, written by `report/` from saved results. Plain string formatting for the HTML; no template engine.
+
+**Why:**
+- matplotlib is already a dependency and covers every chart feature: two panels on a shared x-axis, a secondary x-axis in percentiles (`secondary_xaxis` with bp↔percentile functions), a staircase overlay, diverging bars in small multiples, and the bucket-share panel with negative shares (positives stacked above zero, negatives below, or a heatmap).
+- Static PNGs are what a rates note, email or post takes, and the same result file always draws the same chart (reproducibility).
+- Plotly's static export needs `kaleido` (often flaky on Windows) and makes the dual bp/percentile axis awkward; interactivity isn't what readers need. Altair has the same export problem and handles shared-axis panels poorly. An interactive view can be added later for exploration.
+
+## When December options expire (design §5.11, §10)
+
+**Status:** adopted (2026-10-24), replacing a phase 1b open question.
+
+**Decision:** roll at option expiry. Each contract's series runs on the contract whose quarterly options are the nearest not yet expired: ZBZ6 and ZNZ6 through 2026-11-19, ZBH7 and ZNH7 (with MAR27 options) from the December options' expiry, 2026-11-20. The light model already stops a contract once its options have expired. The March contracts are also run alongside from now, for the roll comparison (outputs.md Tier 2). Phase 1c follows the same rule.
+
+**Given up:** the December contract after 2026-11-20, which still trades to mid-December and delivers to month-end, when its CTD question matters most. Covering it needs vol from the next expiry (§5.5 step 3; the expiry-after-horizon issue in §11) and is left for phase 2.
