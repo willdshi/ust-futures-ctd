@@ -11,6 +11,9 @@
 # TCF conversion factor files (cme_tcf). Matched to each contract from the
 # remaining maturities of its deliverables in TCF_20261019.csv.
 #
+# face is the contract unit: face value of Treasuries per contract ($), for DV01
+# per contract. $200,000 for ZT, $100,000 for the others.
+#
 # cf_round_months is how the conversion factor formula rounds remaining term down
 # (ctd.bonds.conversionfactor): whole months for ZT and ZF, quarters for the others.
 # Checked against every stored TCF file, December 2023 to October 2026.
@@ -22,6 +25,7 @@
 [[treasury]]
 code = "ZT"
 clearing_code = "26"
+face = 200000
 cf_round_months = 1
 name = "2-Year T-Note"
 product_id = 303
@@ -30,6 +34,7 @@ verified = true
 [[treasury]]
 code = "ZF"
 clearing_code = "25"
+face = 100000
 cf_round_months = 1
 name = "5-Year T-Note"
 product_id = 329
@@ -38,6 +43,7 @@ verified = true
 [[treasury]]
 code = "ZN"
 clearing_code = "21"
+face = 100000
 cf_round_months = 3
 name = "10-Year T-Note"
 product_id = 316
@@ -46,6 +52,7 @@ verified = true
 [[treasury]]
 code = "TN"
 clearing_code = "TN"
+face = 100000
 cf_round_months = 3
 name = "Ultra 10-Year T-Note"
 product_id = 7978
@@ -54,6 +61,7 @@ verified = true
 [[treasury]]
 code = "ZB"
 clearing_code = "17"
+face = 100000
 cf_round_months = 3
 name = "U.S. Treasury Bond"
 product_id = 307
@@ -62,6 +70,7 @@ verified = true
 [[treasury]]
 code = "UB"
 clearing_code = "UBE"
+face = 100000
 cf_round_months = 3
 name = "Ultra U.S. Treasury Bond"
 product_id = 3141

@@ -11,6 +11,7 @@ prices, the futures settlement, the latest SOFR and the contract's quarterly opt
 3. A digital at each ``K_k`` from the options (``vol.digitals``), discounted at flat SOFR from
    settlement to expiry.
 4. Probabilities per bond (``model.probabilities``).
+5. Futures DV01 at z = 0, probability-weighted and CTD-label (``risk.dv01``).
 
 ``F_market − E(0)`` is reported as the recentring gap: the net basis the model holds constant
 (delivery options, specialness, the timing of the price snapshots).
@@ -28,6 +29,7 @@ from ctd.model.horizon import light_horizon
 from ctd.model.probabilities import Probabilities, assemble, strike
 from ctd.reference.calendar import BusinessCalendar
 from ctd.reference.options import OptionExpiry
+from ctd.risk import dv01
 from ctd.vol.digitals import Digital, digital
 
 
@@ -46,6 +48,7 @@ class LightInputs:
     expiry: OptionExpiry  # the quarterly option on the contract
     chain: list[OptionSettle]  # its settlements, both rights
     repo_cal: BusinessCalendar  # sifma
+    face: float  # contract unit, $ face per contract
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,7 @@ class BasketRow:
     fwd: float  # forward clean at the horizon
     fwd_yield: float
     converted: float  # fwd / cf
+    dv01_cf: float  # forward DV01 / CF: price points per bp per 100 face of futures
 
     @property
     def carry(self) -> float:
@@ -89,6 +93,9 @@ class LightResult:
     basket: tuple[BasketRow, ...]  # by maturity
     crossovers: tuple[Crossover, ...]  # in increasing z
     probabilities: Probabilities
+    dv01: tuple[float, float]  # probability-weighted, per 100 face of futures (lo, hi)
+    ctd_dv01: float  # CTD-label, per 100 face of futures
+    face: float  # contract unit
     warnings: tuple[str, ...]
 
     @property
@@ -130,7 +137,8 @@ def run(x: LightInputs) -> LightResult:
         p = x.prices[c]
         f = last[c] if horizon == x.last_delivery else fwd(c, horizon)
         y = forward_yield(p.price, p.coupon, p.maturity, x.settle, horizon, g)
-        rows.append(BasketRow(c, p.coupon, p.maturity, x.cfs[c], p.price, p.price_from, f, y, f / x.cfs[c]))
+        rows.append(BasketRow(c, p.coupon, p.maturity, x.cfs[c], p.price, p.price_from, f, y, f / x.cfs[c],
+                              dv01.per_futures(p.coupon, p.maturity, horizon, y, x.cfs[c])))
     bonds = [BasketBond(r.cusip, r.coupon, r.maturity, r.cf, r.fwd_yield) for r in rows]
 
     e, ctd = envelope(bonds, horizon, 0)
@@ -148,5 +156,7 @@ def run(x: LightInputs) -> LightResult:
         warnings += [f"switch at {sw.z_bp:+.1f}bp (K {k:.3f}): {f}" for f in d.flags]
     probs = assemble(ctd0, sws, [c.digital for c in crossovers])
     warnings += probs.warnings
+    per = {r.cusip: r.dv01_cf for r in rows}
     return LightResult(x.contract, x.asof, x.settle, horizon, reason, x.sofr, x.sofr_date, x.f_market, e0,
-                       x.expiry, df, tuple(rows), tuple(crossovers), probs, tuple(warnings))
+                       x.expiry, df, tuple(rows), tuple(crossovers), probs,
+                       dv01.weighted(per, probs.by_bond()), per[ctd0], x.face, tuple(warnings))

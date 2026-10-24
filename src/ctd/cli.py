@@ -210,7 +210,8 @@ def light_inputs(store, contract: str, asof: date):
     inputs = LightInputs(
         contract, asof, sifma.add_business_days(asof, 1), cal.first_delivery, cal.last_delivery,
         cme_tcf.read_basket(store, asof, product, month), prices, futures[month].settle, sofr, sofr_date,
-        expiry, cme_bulletin.read_options(store, asof), sifma)
+        expiry, cme_bulletin.read_options(store, asof), sifma,
+        {p["code"]: p["face"] for p in refdata.cme_products()["treasury"]}[product])
     read = [("td_prices", "securityprice", f"securityprice_{asof.isoformat()}.csv"),
             ("cme_tcf", "csv", cme_tcf.file_name(asof, "csv")),
             ("cme_fut", product, store.names(asof, "cme_fut", product)[0]),

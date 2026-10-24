@@ -1,6 +1,7 @@
 """Text output of a light-model run (design 5.11, phase 1b B5): the basket and crossover tables."""
 
 from ctd.model.light import LightResult
+from ctd.risk.dv01 import dollars
 
 
 def prob(lo: float, hi: float) -> str:
@@ -10,6 +11,15 @@ def prob(lo: float, hi: float) -> str:
     if lo < 5e-4:
         return f"≤ {hi:.1%}"
     return f"{lo * 100:.1f}–{hi:.1%}"
+
+
+def money(lo: float, hi: float) -> str:
+    """``$121,400`` for a point, ``$118,200–121,400`` for a range (rounded to $100 or $1)."""
+    if max(abs(lo), abs(hi)) >= 10_000:
+        lo, hi = round(lo, -2), round(hi, -2)
+    else:
+        lo, hi = round(lo), round(hi)
+    return f"${lo:,.0f}" if lo == hi else f"${lo:,.0f}–{hi:,.0f}"
 
 
 def _row(cells, widths) -> str:
@@ -40,8 +50,11 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
         f"options: {r.expiry.product} {r.expiry.label}, expiry {r.expiry.expiry}, DF {r.df:.6f}",
         f"futures settlement {r.f_market:.4f}, envelope E(0) {r.e0:.4f}, "
         f"recentring gap {r.gap:+.4f} ({r.gap * 32:+.1f}/32)",
+        f"futures DV01 per bp: {money(*(dollars(v) for v in r.dv01))} per $100mm "
+        f"({money(*(dollars(v, r.face) for v in r.dv01))} per contract), probability-weighted; "
+        f"CTD-label {money(dollars(r.ctd_dv01), dollars(r.ctd_dv01))} ({money(*[dollars(r.ctd_dv01, r.face)] * 2)})",
         "",
-        f"Basket of {len(r.basket)} (forwards at the horizon, CTD at z = 0 marked *)",
+        f"Basket of {len(r.basket)} (forwards at the horizon, CTD at z = 0 marked *; DV01/CF per $100mm)",
     ]
     rows = []
     for b in basket:
@@ -49,8 +62,10 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
         rows.append([b.cusip + (" *" if b.cusip == p.ctd else ""), f"{b.coupon * 100:.3f} {b.maturity}",
                      f"{b.cf:.4f}", f"{b.price:.4f}" + ("" if b.price_from == "eod" else f" ({b.price_from})"),
                      f"{b.fwd:.4f}", f"{b.fwd_yield:.4%}", f"{b.carry:+.4f}", f"{b.converted:.4f}",
+                     f"{dollars(b.dv01_cf) / 1000:,.1f}",
                      prob(lo, hi) if b.cusip in by_bond else ""])
-    lines += _table(["cusip", "coupon maturity", "cf", "price", "fwd", "fwd yield", "carry", "converted", "P(CTD)"],
+    lines += _table(["cusip", "coupon maturity", "cf", "price", "fwd", "fwd yield", "carry", "converted",
+                     "DV01/CF $k", "P(CTD)"],
                     rows)
     if len(basket) < len(r.basket):
         lines.append(f"(bonds with a probability and the next {NEXT_CHEAPEST} cheapest; "

@@ -42,7 +42,7 @@ def inputs(**kw):
     x = LightInputs("ZBZ6", ASOF, SETTLE, date(2026, 12, 1), date(2026, 12, 31),
                     {c: conversion_factor(cpn, m, month, 3) for c, (cpn, m) in TERMS.items()}, prices, F, 0.0388,
                     date(2026, 10, 20), OptionExpiry("ZB", "DEC26", date(2026, 11, 20), "ZBZ6", True),
-                    normal_chain(), refdata.calendar("sifma"))
+                    normal_chain(), refdata.calendar("sifma"), 100_000)
     return replace(x, **kw)
 
 
@@ -116,3 +116,13 @@ def test_results_round_trip_and_overwrite(tmp_path):
     results.write_light(tmp_path, {**rec, "code": "later"})  # a re-run replaces the file
     assert [x["code"] for x in results.read_light(tmp_path, "ZBZ6")] == ["later"]
     assert results.read_light(tmp_path, "ZNZ6") == []
+
+
+def test_futures_dv01_is_the_probability_weighted_dv01_over_cf():
+    r = run(inputs())
+    per = {b.cusip: b.dv01_cf for b in r.basket}
+    probs = r.probabilities.by_bond()
+    assert all(lo == hi for lo, hi in probs.values())  # normal chain, no bounds: a point
+    assert r.dv01[0] == pytest.approx(sum(lo * per[c] for c, (lo, _) in probs.items()))
+    assert r.ctd_dv01 == per[r.probabilities.ctd]
+    assert "probability-weighted; CTD-label" in format_run(r)

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ctd.model.light import LightResult
 
-SCHEMA = 1
+SCHEMA = 2  # 2: futures DV01
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
@@ -35,9 +35,12 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
         "options": {"product": r.expiry.product, "label": r.expiry.label, "expiry": r.expiry.expiry.isoformat(),
                     "df": r.df},
         "ctd": p.ctd, "ctd_keeps": [kept.lo, kept.hi],
+        "dv01": {"weighted": list(r.dv01), "ctd_label": r.ctd_dv01, "face": r.face,
+                 "units": "price points per bp per 100 face of futures; x 1e6 for $ per $100mm"},
         "basket": [{"cusip": b.cusip, "coupon": b.coupon, "maturity": b.maturity.isoformat(), "cf": b.cf,
                     "price": b.price, "price_from": b.price_from, "fwd": b.fwd, "fwd_yield": b.fwd_yield,
-                    "carry": b.carry, "converted": b.converted, "p_ctd": list(by_bond.get(b.cusip, (0.0, 0.0)))}
+                    "carry": b.carry, "converted": b.converted, "dv01_cf": b.dv01_cf,
+                    "p_ctd": list(by_bond.get(b.cusip, (0.0, 0.0)))}
                    for b in r.basket],
         "crossovers": [{"z_bp": c.switch.z_bp, "from": c.switch.from_cusip, "to": c.switch.to_cusip,
                         "envelope": c.switch.envelope, "strike": c.strike, "side": region[id(c.switch)].side,
