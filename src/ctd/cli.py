@@ -263,7 +263,7 @@ def cmd_run(args) -> int:
 
 def cmd_derive(args) -> int:
     from ctd.data import alert
-    from ctd.data.derived import bonds, futures, options, quality, rates
+    from ctd.data.derived import baskets, bonds, futures, options, quality, rates
     from ctd.data.derived.store import DerivedStore, build
     from ctd.data.store import RawStore
 
@@ -289,6 +289,13 @@ def cmd_derive(args) -> int:
         s = bonds.build_securities(dstore, store, full=args.full, code=code_version())
         print(f"{bonds.SECURITIES}: " + ("up to date" if s is None else f"{s['cusips']} CUSIPs from {s['auctions']} "
                                          f"auctions {s['by_type']}" + "".join(f"; {n}" for n in s["notes"])))
+        b = baskets.build(dstore, store, full=args.full, code=code_version())
+        print(f"{baskets.NAME}: " + ("up to date" if b is None else
+              f"{b['rows']} rows over {b['months']} contract months; against TCF ({b['checked']} months): "
+              f"{b['membership_mismatches']} membership and {b['cf_mismatches']} CF mismatch(es)"
+              + (f", listed late by CME: {', '.join(b['cme_late'])}" if b["cme_late"] else "")))
+        if b and (b["membership_mismatches"] or b["cf_mismatches"]):
+            problems.append(f"baskets: the rules disagree with CME's TCF (see data/derived/baskets/_build.json)")
     if (dstore.table_dir("options") / "_build.json").exists() and (dstore.table_dir("futures") / "_build.json").exists():
         summary = quality.build(dstore, full=args.full, code=code_version())
         if summary is None:
@@ -357,7 +364,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(func=cmd_run)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
     d.add_argument("--table", action="append", choices=["options", "futures", "bond_prices", "par_curve", "rates"],
-                   help="only these tables (bond_prices also brings securities up to date)")
+                   help="only these tables (bond_prices also brings securities and baskets up to date)")
     d.add_argument("--full", action="store_true", help="rebuild from scratch (must give the same tables)")
     d.add_argument("--notify", action="store_true", help="desktop alert when a raw file fails to read")
     d.set_defaults(func=cmd_derive)

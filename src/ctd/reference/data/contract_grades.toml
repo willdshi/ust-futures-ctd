@@ -10,7 +10,15 @@
 #   min_remaining_months / max_remaining_months: remaining term to maturity, measured from the
 #     first day of the delivery month. Both limits are inclusive ("at least ... but not more
 #     than ..." in the CBOT rulebook wording).
-#   max_original_months: original term to maturity, measured from the original issue date.
+#   max_original_months: original term to maturity, measured from the issue date of a tranche: CME
+#     applies it per auction, so a 7-year note reopened as a 5-year qualifies for ZT and ZF from
+#     that reopening (91282CGQ8, 912828Z78).
+#   max_remaining_exclusive: true where the rulebook says "less than" the maximum (ZB).
+#   max_remaining_from: "last" where the maximum is measured from the last day of the delivery
+#     month (ZT); "first" otherwise.
+#
+# Each record is checked against every stored TCF file (CME's own baskets, December 2023 on) by
+# the derived baskets table (design 4); earlier months rest on the rulebook wording alone.
 #
 # Verify every record against the CBOT rulebook (Chapter 19) when encoding it. `verified` lists
 # what has been confirmed; `to_verify` what hasn't.
@@ -30,5 +38,49 @@ from_contract_month = "2023-09"
 min_remaining_months = 78     # 6 years 6 months
 max_remaining_months = 96     # 8 years
 max_original_months = 120     # 10 years
-verified = ["8-year remaining-term cap from the September 2023 contract month"]
-to_verify = ["inclusive limits"]
+verified = ["8-year remaining-term cap from the September 2023 contract month",
+            "matches CME's TCF baskets and CFs for every contract month from December 2023 (checked 2026-10-25)"]
+
+[[grade]]
+contract = "ZT"
+from_contract_month = "2016-03"
+min_remaining_months = 21     # 1 year 9 months, from the first day of the delivery month
+max_remaining_months = 24     # 2 years, from the last day of the delivery month
+max_remaining_from = "last"
+max_original_months = 63      # 5 years 3 months
+verified = ["matches CME's TCF baskets and CFs for every contract month from December 2023 (checked 2026-10-25)"]
+to_verify = ["rulebook wording", "unchanged before December 2023 (no TCF to check)"]
+
+[[grade]]
+contract = "ZF"
+from_contract_month = "2016-03"
+min_remaining_months = 50     # 4 years 2 months
+max_original_months = 63      # 5 years 3 months
+verified = ["matches CME's TCF baskets and CFs for every contract month from December 2023 (checked 2026-10-25)"]
+to_verify = ["rulebook wording", "unchanged before December 2023 (no TCF to check)"]
+
+[[grade]]
+contract = "TN"
+from_contract_month = "2016-03"   # the contract's first month
+min_remaining_months = 113    # 9 years 5 months
+max_remaining_months = 120    # 10 years
+max_original_months = 120     # 10 years
+verified = ["matches CME's TCF baskets and CFs for every contract month from December 2023 (checked 2026-10-25)"]
+to_verify = ["rulebook wording", "unchanged before December 2023 (no TCF to check)"]
+
+[[grade]]
+contract = "ZB"
+from_contract_month = "2016-03"
+min_remaining_months = 180    # 15 years
+max_remaining_months = 300    # less than 25 years
+max_remaining_exclusive = true
+verified = ["matches CME's TCF baskets and CFs for every contract month from December 2023 (checked 2026-10-25)"]
+to_verify = ["rulebook wording", "unchanged before December 2023 (no TCF to check)"]
+
+[[grade]]
+contract = "UB"
+from_contract_month = "2016-03"
+min_remaining_months = 300    # 25 years
+verified = ["matches CME's TCF baskets and CFs for every contract month from December 2023 (checked 2026-10-25)"]
+to_verify = ["rulebook wording", "unchanged before December 2023 (no TCF to check)"]
+

@@ -67,6 +67,7 @@ Phase 1b (the light model, design §5.11) is in progress. Status is tracked as c
     - TN is 9y 5m to 10y (original maturity ≤ 10y)
     - ZB is 15 to under 25y
     - UB is 25y and over
+    - Original-term limits apply per tranche: a 7-year note reopened as a 5-year counts as a 5-year for ZT and ZF from that reopening (CME's TCF lists it). Remaining-term limits are inclusive except ZB's "under 25y"; ZT's maximum (2y) runs from the last day of the delivery month.
   - A bond moves from UB's basket to ZB's when it drops below 25y, so baskets are dated per contract.
 
 ## Model invariants that are easy to get wrong

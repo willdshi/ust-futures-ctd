@@ -3,6 +3,7 @@
     derived/bond_prices/type=NOTE/year=2026/part.parquet   one row per date and CUSIP
     derived/securities/part.parquet                        one row per CUSIP
     derived/securities/_build.json
+    derived/security_auctions/part.parquet                 one row per auction
 
 ``bond_prices`` is every row of the TreasuryDirect price file (data.md 5.1), every security type,
 with all three prices as published: buy, sell and end of day, null where TreasuryDirect gives
@@ -10,10 +11,13 @@ with all three prices as published: buy, sell and end of day, null where Treasur
 a same-evening file without end-of-day prices, replaced once they're in (and then read again).
 
 ``securities`` reduces TreasuryDirect's security terms (data.md 5.2), one record per auction, to
-one row per CUSIP: the terms of the first auction (original term, dated and issue dates), the
-last issue date and the number of auctions. Built from the latest pull of each type: the file holds
+one row per CUSIP: the terms of the first auction (original term, dated and issue dates, the
+auction date, when a new issue joins a futures basket), the last issue date and the number of
+auctions. Built from the latest pull of each type: the file holds
 every security ever auctioned, and terms don't change once issued, so a newer pull only adds
-CUSIPs. Join prices to terms on ``cusip``.
+CUSIPs. Join prices to terms on ``cusip``. ``security_auctions`` keeps every auction (date, issue
+date, term as auctioned): a 7-year note reopened as a 5-year counts as a 5-year issue for ZT and
+ZF, so basket eligibility needs each tranche, not just the first.
 """
 
 import csv
@@ -83,14 +87,21 @@ PRICES = Table("bond_prices", 1, PRICES_SCHEMA, key=("asof", "type", "cusip"),
 # --- Security terms ----------------------------------------------------------------------------
 
 SECURITIES = "securities"
-SECURITIES_VERSION = 1
+SECURITIES_VERSION = 3  # 2: first_auction_date; 3: security_auctions alongside
+AUCTIONS = "security_auctions"
 SECURITY_TYPES = ("Bill", "Note", "Bond", "CMB", "TIPS", "FRN")
 
 SECURITIES_SCHEMA = pa.schema([
     ("cusip", pa.string()), ("type", pa.string()), ("original_term", pa.string()), ("coupon", pa.float64()),
     ("maturity", pa.date32()), ("dated_date", pa.date32()), ("original_issue_date", pa.date32()),
-    ("last_issue_date", pa.date32()), ("auctions", pa.int64()), ("callable", pa.bool_()),
+    ("first_auction_date", pa.date32()), ("last_issue_date", pa.date32()), ("auctions", pa.int64()), ("callable", pa.bool_()),
     ("inflation_protected", pa.bool_()), ("floating_rate", pa.bool_()),
+])
+
+
+AUCTIONS_SCHEMA = pa.schema([
+    ("cusip", pa.string()), ("type", pa.string()), ("term", pa.string()), ("auction_date", pa.date32()),
+    ("issue_date", pa.date32()), ("maturity", pa.date32()), ("reopening", pa.bool_()),
 ])
 
 
@@ -117,12 +128,30 @@ def securities_rows(auctions: list[dict]) -> tuple[list[dict], list[str]]:
             "original_term": first.get("originalSecurityTerm") or first.get("securityTerm"),
             "coupon": float(rate) / 100 if rate else None, "maturity": _iso(first.get("maturityDate")),
             "dated_date": _iso(first.get("datedDate")) or _iso(first.get("issueDate")),
-            "original_issue_date": _iso(first.get("issueDate")), "last_issue_date": _iso(recs[-1].get("issueDate")),
+            "original_issue_date": _iso(first.get("issueDate")),
+            "first_auction_date": _iso(first.get("competitiveAuctionCloseDate")),
+            "last_issue_date": _iso(recs[-1].get("issueDate")),
             "auctions": len(recs), "callable": first.get("callable") == "Yes",
             "inflation_protected": first.get("inflationProtected") == "Yes",
             "floating_rate": first.get("floatingRate") == "Yes"})
     notes = [f"{len(clashes)} CUSIP(s) whose coupon or maturity differs between auctions: {clashes[:5]}"] if clashes else []
     return rows, notes
+
+
+def auction_rows(auctions: list[dict]) -> list[dict]:
+    """One row per auction record, with the term as auctioned (``9-Year 10-Month`` for a reopening)."""
+    rows = [{"cusip": a["cusip"], "type": a.get("type") or a.get("securityType"), "term": a.get("securityTerm"),
+             "auction_date": _iso(a.get("competitiveAuctionCloseDate")), "issue_date": _iso(a.get("issueDate")),
+             "maturity": _iso(a.get("maturityDate")), "reopening": a.get("reopening") == "Yes"} for a in auctions]
+    return sorted(rows, key=lambda r: (r["cusip"], r["issue_date"] or date.min))
+
+
+def _write_flat(base, table: pa.Table) -> None:
+    shutil.rmtree(base, ignore_errors=True)
+    base.mkdir(parents=True)
+    tmp = base / f".{PART}.tmp"
+    pq.write_table(table, tmp, compression="zstd")
+    tmp.replace(base / PART)
 
 
 def _latest_securities(store) -> list[dict]:
@@ -152,12 +181,8 @@ def build_securities(dstore: DerivedStore, store, full: bool = False, code: str 
     auctions = [a for r in refs for a in json.loads(store.read(date.fromisoformat(r["asof"]), r["source"],
                                                                   r["unit"], r["name"]))]
     rows, notes = securities_rows(auctions)
-    shutil.rmtree(base, ignore_errors=True)
-    base.mkdir(parents=True)
-    table = pa.Table.from_pylist(rows, schema=SECURITIES_SCHEMA)
-    tmp = base / f".{PART}.tmp"
-    pq.write_table(table, tmp, compression="zstd")
-    tmp.replace(base / PART)
+    _write_flat(base, pa.Table.from_pylist(rows, schema=SECURITIES_SCHEMA))
+    _write_flat(dstore.table_dir(AUCTIONS), pa.Table.from_pylist(auction_rows(auctions), schema=AUCTIONS_SCHEMA))
     summary = {"cusips": len(rows), "auctions": len(auctions),
                "by_type": pd.Series([r["type"] for r in rows]).value_counts().to_dict(), "notes": notes}
     dstore.save_state(SECURITIES, {"table": SECURITIES, "version": SECURITIES_VERSION, "inputs": refs,
