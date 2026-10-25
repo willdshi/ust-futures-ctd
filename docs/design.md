@@ -515,8 +515,8 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
    - [x] TN options from the bulletin (its "ADDITIONAL" section), so TN has option rows from 2026-10-16 on.
    - [x] Bond prices (`bond_prices`, every TreasuryDirect row 2016 on, 1.1 million) and security terms (`securities`, one row per CUSIP); the engine's partition column is now per table (`type` for bonds).
    - [x] Par curve (`par_curve`, 1990 on) and reference rates (`rates`, 2018 on), each checked against FRED. Treasury's par curve also fixed the `sifma` calendar's Good Fridays.
-   - [ ] Run `ctd derive --notify` after the daily fetch (scheduled task).
    - [x] Baskets and CFs per contract month (`baskets`), rebuilt from the grade records (now all six contracts) and checked against every TCF file: no disagreement.
+   - [ ] Run `ctd derive --notify` after the daily fetch (scheduled task).
 
    **First milestone (before the late-November 2026 roll):** Tier 1 for ZN and ZB plus the December/March roll comparison ([outputs.md](outputs.md)). Phase 1c gives the single-date outputs; the time series need phase 2. Chart 3's time series needs history: until the historical runner (phase 4) exists, it covers only the dates since live runs began (section 11).
 3. **Phase 3, refinements**: total-variance vol interpolation (if not done in phase 1c item 7), with the beta adjustment for the next contract's CTD; smile-implied distribution (SABR fit, digitals, envelope mapping, recentring, horizon convolution) with quantile-based grid window; slope adjustment by convolution; digital and ATM-normal diagnostics; horizon decision logic; stepped/stripped repo path. Per-crossover vols (5.5.2) only as a stopgap if the smile fit lags.
