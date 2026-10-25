@@ -15,7 +15,7 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 4  # 2: futures DV01; 3: key-rate DV01s; 4: clusters
+SCHEMA = 5  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
@@ -43,6 +43,12 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
                 "par_date": r.par_date.isoformat(), "units": "as dv01"},
         "clusters": [{"node": cl.node, "members": list(cl.members), "prob": list(cl.prob), "krd": cl.krd.tolist()}
                      for cl in r.clusters],
+        "vol": {"label": r.vol.label, "t_expiry": r.vol.t, "t_horizon": r.t_horizon,
+                "strikes": list(r.vol.strikes), "vols": list(r.vol.vols), "price_vol": r.vol.price_vol,
+                "yield_vol": r.yield_vol, "width": r.width, "expiry_width": r.expiry_width,
+                "flags": list(r.vol.flags),
+                "units": "price vols in points per √year, yield vol in bp per √year, widths in bp; "
+                         "t in calendar days / 365"},
         "basket": [{"cusip": b.cusip, "coupon": b.coupon, "maturity": b.maturity.isoformat(), "cf": b.cf,
                     "price": b.price, "price_from": b.price_from, "fwd": b.fwd, "fwd_yield": b.fwd_yield,
                     "carry": b.carry, "converted": b.converted, "dv01_cf": b.dv01_cf,
@@ -51,6 +57,7 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
                    for b in r.basket],
         "crossovers": [{"z_bp": c.switch.z_bp, "from": c.switch.from_cusip, "to": c.switch.to_cusip,
                         "envelope": c.switch.envelope, "strike": c.strike, "side": region[id(c.switch)].side,
+                        "sigmas": c.sigmas, "normal": c.normal,
                         "digital": {"side": c.digital.side, "prob": c.digital.prob,
                                     "upper_bound": c.digital.upper_bound,
                                     "strikes_used": list(c.digital.strikes_used), "flags": list(c.digital.flags)},

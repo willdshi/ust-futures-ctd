@@ -33,6 +33,12 @@ def _table(header: list[str], rows: list[list[str]]) -> list[str]:
     return [_row(header, widths), _row(["-" * w for w in widths], widths), *(_row(r, widths) for r in rows)]
 
 
+def _distance(side: str, c) -> str:
+    if c is None:
+        return f"{side} none in range"
+    return f"{side} {c.switch.z_bp:+.1f}bp ({abs(c.sigmas):.2f}σ{', below 1σ' if abs(c.sigmas) < 1 else ''})"
+
+
 NEXT_CHEAPEST = 3  # bonds listed beyond those with a probability: the cheapest of the rest at z = 0
 
 
@@ -55,6 +61,10 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
         f"futures DV01 per bp: {money(*(dollars(v) for v in r.dv01))} per $100mm "
         f"({money(*(dollars(v, r.face) for v in r.dv01))} per contract), probability-weighted; "
         f"CTD-label {money(dollars(r.ctd_dv01), dollars(r.ctd_dv01))} ({money(*[dollars(r.ctd_dv01, r.face)] * 2)})",
+        f"ATM vol: {r.vol.price_vol:.2f} points per √year (put {r.vol.strikes[0]:g} {r.vol.vols[0]:.2f}, "
+        f"call {r.vol.strikes[1]:g} {r.vol.vols[1]:.2f}), {r.yield_vol:.1f}bp per √year through the CTD's DV01/CF; "
+        f"width {r.width:.1f}bp to the horizon, {r.expiry_width:.1f}bp to option expiry",
+        "distance to switch: " + "; ".join(_distance(side, c) for side, c in r.nearest().items()),
         "",
         f"Basket of {len(r.basket)} (forwards at the horizon, CTD at z = 0 marked *; DV01/CF per $100mm)",
     ]
@@ -84,18 +94,21 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
              f"{dollars(cl.krd.sum()) / 1000:,.1f}", f"{effective_maturity(cl.krd):.1f}y"] for cl in r.clusters]
     lines += _table(["cluster", "P", *(f"{n:g}y" for n in NODES), "total", "eff. maturity"], rows)
 
-    lines += ["", "Crossovers (as yields rise; K = futures price at the switch)"]
+    lines += ["", "Crossovers (as yields rise; K = futures price at the switch; σ = distance over the width to the "
+                  "horizon; normal = ATM normal tail at option expiry, to compare with the digital)"]
     region = {id(reg.switch): reg for reg in p.regions if reg.switch is not None}
     rows = []
     for c in r.crossovers:
         sw, d = c.switch, c.digital
         reg = region[id(sw)]
-        rows.append([f"{sw.from_cusip} → {sw.to_cusip}", reg.side, f"{sw.z_bp:+.1f}", f"{c.strike:.4f}",
-                     f"{c.strike - r.f_market:+.4f}", " ".join(f"{s:g}" for s in d.strikes_used) or "-",
+        rows.append([f"{sw.from_cusip} → {sw.to_cusip}", reg.side, f"{sw.z_bp:+.1f}", f"{c.sigmas:+.2f}",
+                     f"{c.strike:.4f}", f"{c.strike - r.f_market:+.4f}",
+                     " ".join(f"{s:g}" for s in d.strikes_used) or "-",
                      ("P(F<K) " if d.side == "below" else "P(F>K) ")
                      + ("-" if d.prob is None else ("≤ " if d.upper_bound else "") + f"{d.prob:.1%}"),
-                     f"{reg.cusip} {prob(reg.lo, reg.hi)}"])
-    lines += _table(["from → to", "side", "z bp", "K", "K − F", "strikes", "digital", "beyond"], rows) \
+                     f"{c.normal:.1%}", f"{reg.cusip} {prob(reg.lo, reg.hi)}"])
+    lines += _table(["from → to", "side", "z bp", "σ", "K", "K − F", "strikes", "digital", "normal", "beyond"],
+                    rows) \
         if rows else ["(no switches between -100 and +150bp)"]
 
     [kept] = [reg for reg in p.regions if reg.side == "ctd"]

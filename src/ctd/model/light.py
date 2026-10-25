@@ -13,6 +13,9 @@ prices, the futures settlement, the latest SOFR and the contract's quarterly opt
 4. Probabilities per bond (``model.probabilities``).
 5. Futures DV01 at z = 0, probability-weighted and CTD-label (``risk.dv01``), and key-rate DV01s from
    par-curve bumps scaled to each bond's DV01 (``risk.krd``), with effective maturity.
+6. ATM vol of the same options (``vol.atm``), converted to yield vol with the CTD's DV01/CF: the
+   width of the shift distribution to the horizon, each switch's distance in σ, and its normal tail
+   at the width to option expiry, comparable with its digital (the gap is skew, phase 1c item 3).
 
 ``F_market − E(0)`` is reported as the recentring gap: the net basis the model holds constant
 (delivery options, specialness, the timing of the price snapshots).
@@ -34,6 +37,7 @@ from ctd.model.probabilities import Probabilities, assemble, strike
 from ctd.reference.calendar import BusinessCalendar
 from ctd.reference.options import OptionExpiry
 from ctd.risk import dv01, krd
+from ctd.vol import atm
 from ctd.vol.digitals import Digital, digital
 
 
@@ -90,6 +94,8 @@ class Crossover:
     switch: Switch
     strike: float  # K_k
     digital: Digital
+    sigmas: float  # z_k over the width to the horizon (signed)
+    normal: float  # normal tail beyond z_k at the width to option expiry, comparable with the digital
 
 
 @dataclass(frozen=True)
@@ -115,6 +121,9 @@ class LightResult:
     ctd_krd: np.ndarray  # CTD-label
     par_date: date
     clusters: tuple[krd.Cluster, ...]  # bonds with a probability, by key-rate profile
+    vol: atm.AtmVol
+    yield_vol: float  # bp per √year, through the CTD's DV01/CF
+    t_horizon: float  # years from the as-of date to the horizon
     warnings: tuple[str, ...]
 
     @property
@@ -124,6 +133,23 @@ class LightResult:
     @property
     def ctd_effective_maturity(self) -> float:
         return krd.effective_maturity(self.ctd_krd)
+
+    @property
+    def width(self) -> float:
+        """Width of the shift distribution to the horizon, bp."""
+        return atm.width(self.yield_vol, self.t_horizon)
+
+    @property
+    def expiry_width(self) -> float:
+        """Width to option expiry, bp."""
+        return atm.width(self.yield_vol, self.vol.t)
+
+    def nearest(self) -> dict[str, Crossover | None]:
+        """The first switch on each side (``"rally"``, ``"selloff"``), None if there is none in range."""
+        return {"rally": max((c for c in self.crossovers if c.switch.z_bp < 0), key=lambda c: c.switch.z_bp,
+                             default=None),
+                "selloff": min((c for c in self.crossovers if c.switch.z_bp > 0), key=lambda c: c.switch.z_bp,
+                               default=None)}
 
     @property
     def gap(self) -> float:
@@ -179,15 +205,20 @@ def run(x: LightInputs) -> LightResult:
     chain = [o for o in x.chain if o.product == x.expiry.product and o.label == x.expiry.label]
     if not chain:
         raise ValueError(f"no {x.expiry.product} {x.expiry.label} options in the bulletin for {x.asof}")
+    per = {r.cusip: r.dv01_cf for r in rows}
+    t_h = atm.years(x.asof, horizon)
+    vol = atm.atm(chain, x.f_market, df, atm.years(x.asof, x.expiry.expiry))
+    warnings += [f"ATM vol: {f}" for f in vol.flags]
+    sigma_y = atm.yield_vol(vol.price_vol, per[ctd0])
+    s_h, s_e = atm.width(sigma_y, t_h), atm.width(sigma_y, vol.t)
     crossovers = []
     for sw in sws:
         k = strike(sw, x.f_market, e0)
         d = digital(chain, k, x.f_market, df)
-        crossovers.append(Crossover(sw, k, d))
+        crossovers.append(Crossover(sw, k, d, sw.z_bp / s_h, atm.normal_tail(sw.z_bp, s_e)))
         warnings += [f"switch at {sw.z_bp:+.1f}bp (K {k:.3f}): {f}" for f in d.flags]
     probs = assemble(ctd0, sws, [c.digital for c in crossovers])
     warnings += probs.warnings
-    per = {r.cusip: r.dv01_cf for r in rows}
     krds = {r.cusip: r.krd for r in rows}
     by_bond = probs.by_bond()
     em_lo, em_hi = krd.effective_maturity_range(krds, by_bond)
@@ -198,4 +229,4 @@ def run(x: LightInputs) -> LightResult:
                        x.expiry, df, tuple(rows), tuple(crossovers), probs,
                        dv01.weighted(per, by_bond), per[ctd0], x.face,
                        krd.weighted(krds, krd.point_weights(by_bond)), krds[ctd0], x.par_date,
-                       tuple(krd.clusters(krds, by_bond)), tuple(warnings))
+                       tuple(krd.clusters(krds, by_bond)), vol, sigma_y, t_h, tuple(warnings))

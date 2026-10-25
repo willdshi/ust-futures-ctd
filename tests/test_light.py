@@ -134,6 +134,25 @@ def test_futures_dv01_is_the_probability_weighted_dv01_over_cf():
     assert "probability-weighted; CTD-label" in format_run(r)
 
 
+def test_atm_vol_width_and_distance_to_switch():
+    r = run(inputs())
+    t_e = (date(2026, 11, 20) - ASOF).days / 365
+    # the chain's vol to expiry; not exact because the chain is priced at DF 0.997 and the model discounts at SOFR
+    assert r.vol.price_vol * math.sqrt(t_e) == pytest.approx(SIGMA, rel=1e-3)
+    assert r.yield_vol == pytest.approx(r.vol.price_vol / r.ctd_dv01)
+    assert r.width == pytest.approx(r.yield_vol * math.sqrt(71 / 365))  # 21 Oct → 31 Dec horizon
+    assert r.expiry_width < r.width
+    near = r.nearest()
+    first = near["selloff"]
+    assert first is r.crossovers[0] and near["rally"] is None  # the short bond is CTD: switches lie above
+    assert first.sigmas == pytest.approx(first.switch.z_bp / r.width)
+    # the chain is normal in the futures price, so the normal tail in yield is close to the digital
+    # (not exact: the envelope bends at each switch)
+    assert first.normal == pytest.approx(first.digital.prob, abs=0.03)
+    out = format_run(r)
+    assert "ATM vol:" in out and "distance to switch: rally none in range; selloff" in out
+
+
 def test_clusters_and_a_stale_par_curve():
     r = run(inputs())
     assert {c for cl in r.clusters for c in cl.members} == set(r.probabilities.by_bond())
