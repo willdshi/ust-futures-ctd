@@ -12,7 +12,8 @@ import pytest
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.databento import (IDENTITY, UNDEF_PRICE, UNDEF_TS, final_settlements, futures_rows, option_label,
                                  option_rows, stats_frame)
-from ctd.data.derived import futures
+from ctd.data.derived import bonds, futures
+from ctd.data.derived.bonds import price_rows, securities_rows
 from ctd.data.derived.options import bulletin_rows
 from ctd.data.derived.quality import chain_quality
 from ctd.data.derived.store import DerivedStore, Source, Table, build, file_ref
@@ -345,3 +346,56 @@ def test_chain_quality_compares_chains_on_the_same_futures():
     assert [(r.asof.day, r.label, r.issues) for r in flagged.itertuples()] == [(3, "MAY26", "forward")]
     assert q["parity"].isna().all()  # no futures price: parity isn't checked, and doesn't fail
     assert q.loc[(q["asof"].dt.day == 3) & (q["label"] == "MAY26"), "forward_gap"].item() == pytest.approx(0.5)
+
+
+PRICE_FILE = b"""912797QX8,MARKET BASED BILL,0.000000,11/19/2026,,0.000000,99.649444,99.649444
+912810QC5,MARKET BASED BOND,0.045,08/15/2039,,93.484375,93.406250,93.281250
+91282CRF0,MARKET BASED NOTE,0.04125,08/15/2036,,0.000000,95.000000,0.000000
+912828V49,TIPS,0.00375,01/15/2027,,0.000000,99.843750,0.000000
+"""
+
+
+def test_bond_price_rows():
+    rows, notes = price_rows(date(2026, 10, 21), PRICE_FILE)
+    assert [(r["type"], r["cusip"], r["buy"], r["sell"], r["eod"]) for r in rows] == [
+        ("BILL", "912797QX8", None, 99.649444, 99.649444), ("BOND", "912810QC5", 93.484375, 93.40625, 93.28125),
+        ("NOTE", "91282CRF0", None, 95.0, None), ("TIPS", "912828V49", None, 99.84375, None)]
+    assert rows[1]["coupon"] == 0.045 and rows[1]["maturity"] == date(2039, 8, 15) and rows[1]["call_date"] is None
+    assert not any(r["provisional"] for r in rows) and notes == []  # the bond has end of day
+    same_evening = PRICE_FILE.replace(b",93.281250", b",0.000000")
+    assert all(r["provisional"] for r in price_rows(date(2026, 10, 21), same_evening)[0])
+    odd, notes = price_rows(date(2026, 10, 21), PRICE_FILE.replace(b"TIPS", b"STRIPS"))
+    assert odd[3]["type"] == "STRIPS" and notes == ["security types not recognised, kept as printed: ['STRIPS']"]
+
+
+def test_bond_prices_partitioned_by_type_on_the_bond_market_calendar(store):
+    dstore = DerivedStore(store.root)
+    for d in (date(2026, 10, 9), date(2026, 10, 13)):  # Columbus Day (the 12th) closes the bond market
+        store.write(d, "td_prices", "securityprice", f"securityprice_{d.isoformat()}.csv", PRICE_FILE, {})
+    report = build(dstore, store, bonds.PRICES, log=quiet)
+    assert report.missing_days == {"BILL": [], "BOND": [], "NOTE": [], "TIPS": []}
+    assert sorted(p.name for p in dstore.table_dir("bond_prices").glob("type=*")) == \
+        ["type=BILL", "type=BOND", "type=NOTE", "type=TIPS"]
+    notes = dstore.read("bond_prices", ["NOTE", "BOND"])
+    assert sorted(notes["cusip"].unique()) == ["912810QC5", "91282CRF0"] and len(notes) == 4
+
+
+def test_securities_one_row_per_cusip():
+    auctions = [
+        {"cusip": "91282CFV8", "type": "Note", "securityTerm": "9-Year 10-Month", "originalSecurityTerm": "10-Year",
+         "interestRate": "4.125", "issueDate": "2023-01-17T00:00:00", "maturityDate": "2032-11-15T00:00:00",
+         "datedDate": "2022-11-15T00:00:00", "callable": "No"},
+        {"cusip": "91282CFV8", "type": "Note", "securityTerm": "10-Year", "originalSecurityTerm": "10-Year",
+         "interestRate": "4.125", "issueDate": "2022-11-15T00:00:00", "maturityDate": "2032-11-15T00:00:00",
+         "datedDate": "2022-11-15T00:00:00", "callable": "No"},
+        {"cusip": "912797QX8", "type": "Bill", "securityTerm": "4-Week", "interestRate": "",
+         "issueDate": "2026-10-22T00:00:00", "maturityDate": "2026-11-19T00:00:00", "datedDate": None}]
+    rows, notes = securities_rows(auctions)
+    note, bill = sorted(rows, key=lambda r: r["type"], reverse=True)
+    assert (note["original_term"], note["coupon"], note["original_issue_date"], note["last_issue_date"],
+            note["dated_date"], note["auctions"]) == ("10-Year", 0.04125, date(2022, 11, 15), date(2023, 1, 17),
+                                                      date(2022, 11, 15), 2)
+    assert (bill["coupon"], bill["dated_date"], bill["original_term"]) == (None, date(2026, 10, 22), "4-Week")
+    assert notes == []
+    auctions[0]["maturityDate"] = "2032-11-30T00:00:00"
+    assert securities_rows(auctions)[1] == ["1 CUSIP(s) whose coupon or maturity differs between auctions: ['91282CFV8']"]

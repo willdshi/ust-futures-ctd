@@ -22,7 +22,8 @@ raw store lacks. ``build`` is incremental and must give the same tables as ``bui
 - Trading days (on the table's calendar, ``reference/data/holidays.csv``) with no rows for a
   product, between its first and last date, are listed in ``_build.json`` as ``missing_days``.
 
-Partition columns (``product``, ``year``) live in the path, not in the files.
+Partition columns (``product`` by default, or the table's ``partition``, and ``year``) live in
+the path, not in the files.
 """
 
 import json
@@ -43,7 +44,11 @@ import pyarrow.parquet as pq
 PART = "part.parquet"
 BUILD = "_build.json"
 UNIT = "unit"  # staging column: the unit a row was read from
-PARTITIONING = ds.partitioning(pa.schema([("product", pa.string()), ("year", pa.int16())]), flavor="hive")
+
+
+def partitioning(key: str = "product") -> ds.Partitioning:
+    return ds.partitioning(pa.schema([(key, pa.string()), ("year", pa.int16())]), flavor="hive")
+
 
 
 def file_ref(store, asof: date, source: str, unit: str, name: str) -> dict:
@@ -58,27 +63,28 @@ class Source:
     version: int  # bump when the reader's output changes: this source's staging is rebuilt
     units: Callable  # (raw store) -> {unit key: [file_ref, ...]}
     read: Callable  # (raw store, unit key) -> (rows as dicts with the table's columns, notes)
-    scope: Callable  # (unit key) -> (product or None, year or None): staging partitions its rows can be in
+    scope: Callable  # (unit key) -> (partition value or None, year or None): staging partitions its rows can be in
 
 
 @dataclass(frozen=True)
 class Table:
     name: str
     version: int  # schema version: bump when the columns change, and everything is rebuilt
-    schema: pa.Schema  # every column, ``product`` and ``source`` included
+    schema: pa.Schema  # every column, the partition column and ``source`` included
     key: tuple[str, ...]  # identifies a row on a date (with ``asof``)
     compare: tuple[str, ...]  # columns cross-checked where sources overlap
     sources: tuple[Source, ...]
     winner: Callable  # (asof, product) -> the source whose rows the table keeps
     calendar: str | None = "cme"  # business calendar whose days every product should have
+    partition: str = "product"  # the column partitioned on, with the year
 
 
 def _without(schema: pa.Schema, *names: str) -> pa.Schema:
     return pa.schema([f for f in schema if f.name not in names])
 
 
-def _part_dir(base: Path, product: str, year: int) -> Path:
-    return base / f"product={product}" / f"year={year}"
+def _part_dir(base: Path, value: str, year: int, key: str = "product") -> Path:
+    return base / f"{key}={value}" / f"year={year}"
 
 
 def _write_atomic(path: Path, payload: bytes) -> None:
@@ -99,19 +105,24 @@ class DerivedStore:
         return self.root / "derived" / "staging" / table / source
 
     def partitions(self, base: Path) -> list[tuple[str, int]]:
-        """(product, year) of every partition file under ``base``."""
+        """(partition value, year) of every partition file under ``base``."""
         out = []
-        for p in base.glob(f"product=*/year=*/{PART}"):
+        for p in base.glob(f"*=*/year=*/{PART}"):
             out.append((p.parent.parent.name.split("=", 1)[1], int(p.parent.name.split("=", 1)[1])))
         return sorted(out)
 
-    def read_part(self, base: Path, product: str, year: int) -> pa.Table | None:
-        path = _part_dir(base, product, year) / PART
+    def partition_key(self, base: Path) -> str:
+        """The partition column of the table under ``base`` (from its directory names)."""
+        first = next(base.glob(f"*=*/year=*/{PART}"), None)
+        return first.parent.parent.name.split("=", 1)[0] if first else "product"
+
+    def read_part(self, base: Path, value: str, year: int, key: str = "product") -> pa.Table | None:
+        path = _part_dir(base, value, year, key) / PART
         return pq.read_table(path) if path.exists() else None
 
-    def write_part(self, base: Path, product: str, year: int, table: pa.Table) -> None:
+    def write_part(self, base: Path, value: str, year: int, table: pa.Table, key: str = "product") -> None:
         """Write (or, for an empty table, remove) one partition, atomically."""
-        d = _part_dir(base, product, year)
+        d = _part_dir(base, value, year, key)
         if table.num_rows == 0:
             shutil.rmtree(d, ignore_errors=True)
             return
@@ -131,13 +142,18 @@ class DerivedStore:
     def read(self, table: str, products: list[str] | None = None, start: date | None = None,
              end: date | None = None) -> pd.DataFrame:
         """A merged table as a DataFrame (dates as ``date``, nullable integers as ``Int64``), filtered
-        on product and on ``asof`` from ``start`` to ``end`` inclusive. Partitions not needed aren't read."""
+        on its partition column (``products``: product, or a bond table's ``type``) and on ``asof`` from
+        ``start`` to ``end`` inclusive. Partitions not needed aren't read. A table with no dates (one
+        file, ``securities``) is read whole."""
         base = self.table_dir(table)
+        if (base / PART).exists():
+            return pq.read_table(base / PART).to_pandas(types_mapper={pa.int64(): pd.Int64Dtype()}.get)
         if not self.partitions(base):
             raise FileNotFoundError(f"no derived {table} table under {base}; run `ctd derive --table {table}`")
-        dataset = ds.dataset(base, format="parquet", partitioning=PARTITIONING)
+        key = self.partition_key(base)
+        dataset = ds.dataset(base, format="parquet", partitioning=partitioning(key))
         cond = None
-        for c in ([pc.field("product").isin(products)] if products else []) + \
+        for c in ([pc.field(key).isin(products)] if products else []) + \
                  ([pc.field("year") >= start.year, pc.field("asof") >= start] if start else []) + \
                  ([pc.field("year") <= end.year, pc.field("asof") <= end] if end else []):
             cond = c if cond is None else cond & c
@@ -160,7 +176,8 @@ def _build_source(dstore: DerivedStore, store, table: Table, src: Source, rec: d
                   log: Callable) -> tuple[set, dict, dict, int]:
     """Bring one source's staging up to date. Returns (partitions rewritten, errors, notes, units read)."""
     base = dstore.staging_dir(table.name, src.name)
-    staging = _without(table.schema, "product").append(pa.field(UNIT, pa.string()))
+    pk = table.partition
+    staging = _without(table.schema, pk).append(pa.field(UNIT, pa.string()))
     current = src.units(store)
     done = rec["units"]
     dirty = sorted(k for k in current if current[k] != done.get(k)) + sorted(k for k in done if k not in current)
@@ -191,17 +208,17 @@ def _build_source(dstore: DerivedStore, store, table: Table, src: Source, rec: d
     touched = {(p, y) for p, y in dstore.partitions(base)
                if any((sp is None or sp == p) and (sy is None or sy == y) for sp, sy in scopes)}
     years = pc.year(new["asof"])
-    pairs = pa.table({"p": new["product"], "y": years}).group_by(["p", "y"]).aggregate([])
+    pairs = pa.table({"p": new[pk], "y": years}).group_by(["p", "y"]).aggregate([])
     touched |= set(zip(pairs["p"].to_pylist(), pairs["y"].to_pylist()))
     dirty_keys = pa.array(dirty, pa.string())
     for product, year in sorted(touched):
-        old = dstore.read_part(base, product, year)
+        old = dstore.read_part(base, product, year, pk)
         keep = [] if old is None else [old.filter(pc.invert(pc.is_in(old[UNIT], dirty_keys)))]
-        mask = pc.and_(pc.equal(new["product"], product), pc.equal(years, year))
-        add = [new.filter(mask).drop_columns(["product"]).select(staging.names)] if new.num_rows else []
+        mask = pc.and_(pc.equal(new[pk], product), pc.equal(years, year))
+        add = [new.filter(mask).drop_columns([pk]).select(staging.names)] if new.num_rows else []
         part = pa.concat_tables([t.cast(staging) for t in keep + add]) if keep + add else staging.empty_table()
         dstore.write_part(base, product, year, part.sort_by([("asof", "ascending")] + [(c, "ascending") for c in
-                                                            table.key if c not in ("asof", "product")]))
+                                                            table.key if c not in ("asof", pk)]), pk)
     return touched, errors, notes, len([k for k in dirty if k in current and k not in errors])
 
 
@@ -216,7 +233,7 @@ def _jsonable(v):
 def _overlap(table: Table, product: str, frame: pd.DataFrame) -> list[dict]:
     """Per date with several sources: how each other source compares with the winner."""
     out = []
-    keys = [c for c in table.key if c not in ("asof", "product")]
+    keys = [c for c in table.key if c not in ("asof", table.partition)]
     for asof, day in frame.groupby("asof"):
         sources = set(day["source"])
         if len(sources) < 2:
@@ -254,9 +271,11 @@ def missing_days(dstore: DerivedStore, table: Table) -> dict[str, list[str]]:
     if table.calendar is None or not dstore.partitions(base):
         return {}
     cal = refdata.calendar(table.calendar)
-    pairs = ds.dataset(base, format="parquet", partitioning=PARTITIONING).to_table(columns=["product", "asof"])         .group_by(["product", "asof"]).aggregate([])
+    pk = table.partition
+    pairs = ds.dataset(base, format="parquet", partitioning=partitioning(pk)).to_table(columns=[pk, "asof"])
+    pairs = pairs.group_by([pk, "asof"]).aggregate([])
     dates: dict[str, set] = {}
-    for product, d in zip(pairs["product"].to_pylist(), pairs["asof"].to_pylist()):
+    for product, d in zip(pairs[pk].to_pylist(), pairs["asof"].to_pylist()):
         dates.setdefault(product, set()).add(d)
     out = {}
     for product, have in sorted(dates.items()):
@@ -300,11 +319,12 @@ def build(dstore: DerivedStore, store, table: Table, full: bool = False, code: s
     touched = {(p, int(y)) for p, y in touched}
 
     base = dstore.table_dir(table.name)
-    merged_schema = _without(table.schema, "product")
+    pk = table.partition
+    merged_schema = _without(table.schema, pk)
     overlap = [o for o in state["overlap"] if (o["product"], int(o["asof"][:4])) not in touched]
     for product, year in sorted(touched):
         parts = [t for s in table.sources
-                 if (t := dstore.read_part(dstore.staging_dir(table.name, s.name), product, year)) is not None]
+                 if (t := dstore.read_part(dstore.staging_dir(table.name, s.name), product, year, pk)) is not None]
         frame = pa.concat_tables([t.drop_columns([UNIT]).cast(merged_schema) for t in parts]) if parts \
             else merged_schema.empty_table()
         dates = frame["asof"].to_pylist()
@@ -312,7 +332,7 @@ def build(dstore: DerivedStore, store, table: Table, full: bool = False, code: s
         keep = pa.array([win[d] == s for d, s in zip(dates, frame["source"].to_pylist())], pa.bool_())
         merged = frame.filter(keep) if frame.num_rows else frame
         dstore.write_part(base, product, year, merged.sort_by(
-            [("asof", "ascending")] + [(c, "ascending") for c in table.key if c not in ("asof", "product")]))
+            [("asof", "ascending")] + [(c, "ascending") for c in table.key if c not in ("asof", pk)]), pk)
         key = f"{product}/{year}"
         if merged.num_rows:
             counts = pd.Series(merged["source"].to_pylist()).value_counts()

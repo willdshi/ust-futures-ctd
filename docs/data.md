@@ -164,14 +164,14 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 `0.000000` means no price was provided in that column. Bills usually have no buy price, and the end-of-day column is sometimes empty too (as in this bill on 2026-10-19), so check which column holds a price before using it.
 
-- **History:** past dates can be requested back to **30 May 2008**, but history is only used from 2016 (§1). Until about September 2008 only CUSIP and prices are filled in (type, coupon and maturity are blank); join to security terms on CUSIP. Stored from 2016-01-04; 108 dates since then had no prices (holidays).
+- **History:** past dates can be requested back to **30 May 2008**, but history is only used from 2016 (§1). Until about September 2008 only CUSIP and prices are filled in (type, coupon and maturity are blank); join to security terms on CUSIP. Stored from 2016-01-04; 108 dates since then had no prices (holidays). The derived `bond_prices` table holds every row of every file (design §4).
 
 ### 5.2 `td_securities`: TreasuryDirect securities search
 
 - **What:** the terms of every auctioned security, one JSON array per type.
 - **How:** `GET https://www.treasurydirect.gov/TA_WS/securities/search?format=json&type=<type>`.
 - **Units/files:** `Bill`, `Note`, `Bond`, `CMB`, `TIPS`, `FRN` → `securities_<type>.json`. About 80 MB raw a day (bills alone 55 MB), about 11 MB compressed.
-- **Fields:** camelCase strings, e.g. `cusip`, `securityType`, `securityTerm`, `interestRate` (percent, `"5.125"`), `issueDate`, `maturityDate` (`2046-08-15T00:00:00`), `datedDate`, `announcedAsCusip`, `corpusCusip`, plus auction details. One object per auction, so reopenings repeat a CUSIP.
+- **Fields:** camelCase strings, e.g. `cusip`, `securityType`, `securityTerm`, `interestRate` (percent, `"5.125"`), `issueDate`, `maturityDate` (`2046-08-15T00:00:00`), `datedDate`, `announcedAsCusip`, `corpusCusip`, plus auction details. One object per auction, so reopenings repeat a CUSIP: `securityTerm` is the term left at that auction (`9-Year 10-Month`), `originalSecurityTerm` the original (`10-Year`). The derived `securities` table reduces them to one row per CUSIP with the first auction's terms (design §4).
 
 ### 5.3 `fiscaldata_auctions`: FiscalData auctions
 

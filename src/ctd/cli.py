@@ -263,11 +263,11 @@ def cmd_run(args) -> int:
 
 def cmd_derive(args) -> int:
     from ctd.data import alert
-    from ctd.data.derived import futures, options, quality
+    from ctd.data.derived import bonds, futures, options, quality
     from ctd.data.derived.store import DerivedStore, build
     from ctd.data.store import RawStore
 
-    tables = {t.name: t for t in (options.TABLE, futures.TABLE)}
+    tables = {t.name: t for t in (options.TABLE, futures.TABLE, bonds.PRICES)}
     store, dstore = RawStore(args.data_root), DerivedStore(args.data_root)
     problems = []
     for name in args.table or list(tables):
@@ -285,6 +285,10 @@ def cmd_derive(args) -> int:
         for product, days in (r.missing_days or {}).items():
             if days:
                 print(f"  missing {product}: {len(days)} trading day(s) with no rows: {', '.join(days)}")
+    if not args.table or "bond_prices" in args.table:
+        s = bonds.build_securities(dstore, store, full=args.full, code=code_version())
+        print(f"{bonds.SECURITIES}: " + ("up to date" if s is None else f"{s['cusips']} CUSIPs from {s['auctions']} "
+                                         f"auctions {s['by_type']}" + "".join(f"; {n}" for n in s["notes"])))
     if (dstore.table_dir("options") / "_build.json").exists() and (dstore.table_dir("futures") / "_build.json").exists():
         summary = quality.build(dstore, full=args.full, code=code_version())
         if summary is None:
@@ -352,7 +356,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
     r.set_defaults(func=cmd_run)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
-    d.add_argument("--table", action="append", choices=["options", "futures"], help="only these tables")
+    d.add_argument("--table", action="append", choices=["options", "futures", "bond_prices"],
+                   help="only these tables (bond_prices also brings securities up to date)")
     d.add_argument("--full", action="store_true", help="rebuild from scratch (must give the same tables)")
     d.add_argument("--notify", action="store_true", help="desktop alert when a raw file fails to read")
     d.set_defaults(func=cmd_derive)
