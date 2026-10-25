@@ -6,9 +6,10 @@
     ctd backfill
     ctd bookmarklet [--print]
     ctd run --contract ZBZ6 [--asof 2026-10-16]
+    ctd derive [--table options] [--full] [--notify]
     ctd history --contract ZB --from ... --to ...  (not implemented yet)
 
-``fetch`` and ``check`` exit 1 when there are gaps. ``fetch --notify`` also shows a desktop alert.
+``fetch`` and ``check`` exit 1 when there are gaps; ``derive`` when a raw file fails to read. ``fetch --notify`` also shows a desktop alert.
 """
 
 import argparse
@@ -255,6 +256,44 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_derive(args) -> int:
+    from ctd.data import alert
+    from ctd.data.derived import futures, options, quality
+    from ctd.data.derived.store import DerivedStore, build
+    from ctd.data.store import RawStore
+
+    tables = {t.name: t for t in (options.TABLE, futures.TABLE)}
+    store, dstore = RawStore(args.data_root), DerivedStore(args.data_root)
+    problems = []
+    for name in args.table or list(tables):
+        r = build(dstore, store, tables[name], full=args.full, code=code_version())
+        print(f"{name}: {sum(r.read.values())} unit(s) read, {r.partitions} partition(s) rewritten")
+        for source, notes in r.notes.items():
+            for unit, lines in notes.items():
+                for line in lines:
+                    print(f"  note {source} {unit}: {line}")
+        for source, errors in r.errors.items():
+            problems += [f"{name} {source} {unit}: {msg}" for unit, msg in errors.items()]
+        for o in r.disagreements:
+            print(f"  overlap {o['asof']} {o['product']}: {o['differ']} of {o['both']} rows differ "
+                  f"({o['winner']} vs {o['other']})")
+        for product, days in (r.missing_days or {}).items():
+            if days:
+                print(f"  missing {product}: {len(days)} trading day(s) with no rows: {', '.join(days)}")
+    if (dstore.table_dir("options") / "_build.json").exists() and (dstore.table_dir("futures") / "_build.json").exists():
+        summary = quality.build(dstore, full=args.full, code=code_version())
+        if summary is None:
+            print(f"{quality.NAME}: up to date")
+        for product, s in (summary or {}).items():
+            print(f"{quality.NAME} {product}: {s['flagged']} of {s['chains']} chains flagged on {s['flagged_dates']} "
+                  f"date(s) {s['by_flag']}")
+    for line in problems:
+        print("ERROR", line)
+    if problems and args.notify:
+        alert.notify(f"ctd derive: {len(problems)} problem(s)", "\n".join(problems[:3]) + "\nSee data\\fetch.log")
+    return 1 if problems else 0
+
+
 def cmd_not_implemented(args) -> int:
     print(f"ctd {args.command}: not implemented yet", file=sys.stderr)
     return 2
@@ -307,6 +346,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-save", action="store_true", help="print only; don't write data/results/light/...")
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
     r.set_defaults(func=cmd_run)
+    d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
+    d.add_argument("--table", action="append", choices=["options", "futures"], help="only these tables")
+    d.add_argument("--full", action="store_true", help="rebuild from scratch (must give the same tables)")
+    d.add_argument("--notify", action="store_true", help="desktop alert when a raw file fails to read")
+    d.set_defaults(func=cmd_derive)
     h = sub.add_parser("history", help="historical mode (not implemented yet)")
     h.add_argument("--contract")
     h.add_argument("--from", dest="date_from", type=date.fromisoformat)

@@ -1,0 +1,347 @@
+"""Derived tables (design 4): incremental builds equal full ones, precedence, overlap, failures."""
+
+import json
+from dataclasses import replace
+from datetime import date
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pytest
+
+from ctd.data.cme_bulletin import OptionSettle
+from ctd.data.databento import (IDENTITY, UNDEF_PRICE, UNDEF_TS, final_settlements, futures_rows, option_label,
+                                 option_rows, stats_frame)
+from ctd.data.derived import futures
+from ctd.data.derived.options import bulletin_rows
+from ctd.data.derived.quality import chain_quality
+from ctd.data.derived.store import DerivedStore, Source, Table, build, file_ref
+
+SCHEMA = pa.schema([("asof", pa.date32()), ("product", pa.string()), ("k", pa.int64()), ("v", pa.float64()),
+                    ("source", pa.string())])
+B_FROM = date(2026, 10, 16)
+
+
+def toy_source(name: str, version: int = 1) -> Source:
+    """Rows [{product, k, v}] in one JSON file per date."""
+    def units(store):
+        return {d.isoformat(): [file_ref(store, d, name, "all", "rows.json")]
+                for d in store.asofs() if store.names(d, name, "all")}
+
+    def read(store, key):
+        d = date.fromisoformat(key)
+        return [{"asof": d, **r} for r in json.loads(store.read(d, name, "all", "rows.json"))], []
+
+    return Source(name, version, units, read, lambda key: (None, int(key[:4])))
+
+
+TOY = Table("toy", 1, SCHEMA, key=("asof", "product", "k"), compare=("v",),
+            sources=(toy_source("a"), toy_source("b")), winner=lambda d, p: "b" if d >= B_FROM else "a")
+
+
+def put(store, d: date, source: str, rows: list[dict]) -> None:
+    store.write(d, source, "all", "rows.json", json.dumps(rows).encode(), {})
+
+
+def rows(*vs: float, product: str = "ZN") -> list[dict]:
+    return [{"product": product, "k": k, "v": v} for k, v in enumerate(vs)]
+
+
+def quiet(_):
+    pass
+
+
+def test_precedence_overlap_and_no_gap_filling(store):
+    dstore = DerivedStore(store.root)
+    put(store, date(2026, 10, 15), "a", rows(1.0, 2.0))
+    put(store, date(2026, 10, 16), "a", rows(1.0, 2.0, 3.0))
+    put(store, date(2026, 10, 16), "b", rows(1.0, 2.5))
+    put(store, date(2026, 10, 19), "a", rows(4.0))  # b has no file: the date stays empty
+    report = build(dstore, store, TOY, log=quiet)
+    t = dstore.read("toy")
+    assert list(zip(t["asof"], t["source"], t["v"])) == [
+        (date(2026, 10, 15), "a", 1.0), (date(2026, 10, 15), "a", 2.0),
+        (date(2026, 10, 16), "b", 1.0), (date(2026, 10, 16), "b", 2.5)]
+    [o] = report.disagreements
+    assert (o["asof"], o["winner"], o["other"], o["both"], o["differ"], o["only_b"], o["only_a"]) == \
+        ("2026-10-16", "b", "a", 2, 1, 0, 1)
+    assert o["examples"] == [{"k": 1, "v": 2.5, "v_o": 2.0}]
+    assert dstore.state("toy")["partitions"]["ZN/2026"]["by_source"] == {"a": 2, "b": 2}
+
+
+def test_incremental_equals_full(store, tmp_path):
+    dstore = DerivedStore(store.root)
+    put(store, date(2025, 12, 31), "a", rows(0.5))
+    put(store, date(2026, 10, 15), "a", rows(1.0) + rows(9.0, product="ZB"))
+    put(store, date(2026, 10, 16), "b", rows(1.0))
+    build(dstore, store, TOY, log=quiet)
+
+    put(store, date(2026, 10, 19), "b", rows(2.0))
+    store.replace(date(2026, 10, 16), "b", "all", "rows.json", json.dumps(rows(1.5)).encode(), {})
+    report = build(dstore, store, TOY, log=quiet)
+    assert report.read == {"a": 0, "b": 2}  # only the new and the changed file
+    assert build(dstore, store, TOY, log=quiet).read == {"a": 0, "b": 0}
+
+    incremental = dstore.read("toy")
+    assert incremental.loc[incremental["asof"] == date(2026, 10, 16), "v"].tolist() == [1.5]
+    build(dstore, store, TOY, full=True, log=quiet)
+    pd.testing.assert_frame_equal(dstore.read("toy"), incremental)
+    other = DerivedStore(tmp_path / "elsewhere")
+    build(other, store, TOY, log=quiet)
+    pd.testing.assert_frame_equal(other.read("toy"), incremental)
+
+    assert dstore.read("toy", products=["ZB"])["v"].tolist() == [9.0]
+    assert dstore.read("toy", end=date(2025, 12, 31))["v"].tolist() == [0.5]
+    assert dstore.read("toy", start=date(2026, 10, 16), end=date(2026, 10, 16))["v"].tolist() == [1.5]
+
+
+def test_a_unit_that_fails_is_reported_dropped_and_retried(store):
+    dstore = DerivedStore(store.root)
+    put(store, date(2026, 10, 14), "a", rows(1.0))
+    store.write(date(2026, 10, 15), "a", "all", "rows.json", b"not json", {})
+    report = build(dstore, store, TOY, log=quiet)
+    assert list(report.errors["a"]) == ["2026-10-15"]
+    assert dstore.read("toy")["asof"].tolist() == [date(2026, 10, 14)]
+    assert list(build(dstore, store, TOY, log=quiet).errors["a"]) == ["2026-10-15"]  # retried every build
+
+    store.replace(date(2026, 10, 15), "a", "all", "rows.json", json.dumps(rows(2.0)).encode(), {})
+    report = build(dstore, store, TOY, log=quiet)
+    assert report.errors["a"] == {} and report.read["a"] == 1
+    assert dstore.read("toy")["v"].tolist() == [1.0, 2.0]
+
+
+def test_version_bumps_rebuild(store):
+    dstore = DerivedStore(store.root)
+    for d in (date(2026, 10, 14), date(2026, 10, 15)):
+        put(store, d, "a", rows(1.0))
+    build(dstore, store, TOY, log=quiet)
+    bumped = replace(TOY, sources=(toy_source("a", version=2), toy_source("b")))
+    assert build(dstore, store, bumped, log=quiet).read == {"a": 2, "b": 0}
+    assert build(dstore, store, replace(bumped, version=2), log=quiet).read == {"a": 2, "b": 0}
+    with pytest.raises(FileNotFoundError, match="ctd derive"):
+        dstore.read("options")
+
+
+def page(trade_date: str, months: list[tuple[str, str, str]]) -> bytes:
+    """A CME settlement page: (month, settle, open interest) rows."""
+    return json.dumps({"tradeDate": trade_date, "settlements": [
+        {"month": m, "settle": s, "volume": "1", "openInterest": oi} for m, s, oi in months]}).encode()
+
+
+def test_cme_open_interest_comes_from_the_next_page(store):
+    dstore = DerivedStore(store.root)
+    store.write(date(2026, 10, 21), "cme_fut", "ZN", "ZN.json",
+                page("10/21/2026", [("DEC 26", "105'035", "5,857,268"), ("MAR 27", "104'285", "11,027")]), {})
+    build(dstore, store, futures.TABLE, log=quiet)
+    t = dstore.read("futures")
+    assert t["open_interest"].isna().all() and t["contract"].tolist() == ["ZNZ6", "ZNH7"]
+
+    store.write(date(2026, 10, 22), "cme_fut", "ZN", "ZN.json",
+                page("10/22/2026", [("DEC 26", "106'130", "5,851,680"), ("MAR 27", "106'065", "11,128")]), {})
+    assert build(dstore, store, futures.TABLE, log=quiet).read["cme_fut"] == 2  # the 21st is read again
+    t = dstore.read("futures")
+    assert list(zip(t["asof"], t["contract"], t["settle"], t["open_interest"].astype(object).where(
+        t["open_interest"].notna(), None))) == [
+        (date(2026, 10, 21), "ZNZ6", 105 + 3.5 / 32, 5_851_680), (date(2026, 10, 21), "ZNH7", 104 + 28.5 / 32, 11_128),
+        (date(2026, 10, 22), "ZNZ6", 106 + 13 / 32, None), (date(2026, 10, 22), "ZNH7", 106 + 6.5 / 32, None)]
+
+
+SYMBOLOGY = {"start_date": "2016-01-01", "result": {
+    "1": [{"d0": "2016-01-01", "d1": "2016-03-20", "s": "ZNH6"}, {"d0": "2016-03-20", "d1": "2026-10-22", "s": "OZNM6 C1300"}],
+    "2": [{"d0": "2016-01-01", "d1": "2026-10-22", "s": "ZNM6"}]}}
+
+
+STATS = np.dtype([("ts_event", "u8"), ("instrument_id", "u4"), ("ts_ref", "u8"), ("stat_type", "u2"),
+                  ("stat_flags", "u1"), ("price", "i8"), ("quantity", "i8")])
+
+
+def ns(ts: str) -> int:
+    return pd.Timestamp(ts).value
+
+
+def stats(*records) -> pd.DataFrame:
+    """(ts_event, instrument_id, ts_ref or None, stat_type, stat_flags, price, quantity) records, as
+    the statistics record array ``stats_frame`` reads (prices fixed-point, unset fields at their sentinels)."""
+    a = np.array([(ns(t), iid, UNDEF_TS if ref is None else ns(ref), st, fl,
+                   UNDEF_PRICE if px is None else round(px * 1e9), UNDEF_PRICE if q is None else q)
+                  for t, iid, ref, st, fl, px, q in records], dtype=STATS)
+    return stats_frame(a)
+
+
+def test_databento_futures_rows():
+    df = stats(
+        ("2016-01-01T00:20Z", 1, "2015-12-31", 3, 3, 129.0, None),  # before the history starts
+        ("2016-03-01T22:00Z", 1, "2016-03-01", 3, 2, 130.0, None),  # preliminary
+        ("2016-03-02T00:20Z", 1, "2016-03-01", 3, 3, 130.0, None),
+        ("2016-03-02T22:56Z", 1, "2016-03-01", 3, 3, 131.0, None),  # stray: next afternoon, the next day's price
+        ("2016-03-06T17:08Z", 1, None, 3, 3, 130.5, None),  # Sunday repeat
+        ("2016-03-01T23:00Z", 1, "2016-03-01", 7, 0, 999.0, None),  # another statistic
+        ("2016-03-02T01:00Z", 1, "2016-03-01", 9, 0, None, 100),
+        ("2016-03-02T13:00Z", 1, "2016-03-01", 9, 0, None, 105),  # morning revision
+        ("2016-03-02T00:20Z", 2, "2016-03-01", 3, 3, 129.5, None),
+        ("2016-03-02T00:20Z", 2, "2016-03-01", 3, 3, 129.5, None))
+    out, notes = futures_rows(df, SYMBOLOGY, "ZN")
+    assert out == [
+        {"asof": date(2016, 3, 1), "product": "ZN", "month": date(2016, 3, 1), "contract": "ZNH6", "settle": 130.0,
+         "open_interest": 105},
+        {"asof": date(2016, 3, 1), "product": "ZN", "month": date(2016, 6, 1), "contract": "ZNM6", "settle": 129.5,
+         "open_interest": None}]
+    assert len(notes) == 3 and "kept the one equal to the preliminary for 1," in notes[1]
+
+    reused = stats(("2016-03-22T00:20Z", 1, "2016-03-21", 3, 3, 1.5, None))  # id 1 is an option by then
+    with pytest.raises(ValueError, match="'OZNM6 C1300', not a ZN futures contract"):
+        futures_rows(reused, SYMBOLOGY, "ZN")
+
+
+def test_final_settlements_keeps_the_last_in_the_window():
+    settle, notes = final_settlements(stats(
+        ("2016-01-06T00:18Z", 7, "2016-01-06", 3, 1, 0.0234375, None),  # the previous evening's final
+        ("2016-01-07T00:07Z", 7, "2016-01-06", 3, 1, 0.03125, None),
+        ("2016-08-23T00:19Z", 8, "2016-08-22", 3, 3, 0.0005, None),  # a wrong batch ...
+        ("2016-08-23T04:35Z", 8, "2016-08-22", 3, 3, 3.0, None),  # ... corrected later that evening
+        ("2016-08-22T21:41Z", 8, "2016-08-22", 3, 2, 3.0, None),
+        ("2016-09-16T23:00Z", 9, "2016-09-16", 3, 3, 1.0, None),  # Friday: Monday morning is still in its window
+        ("2016-09-19T15:00Z", 9, "2016-09-16", 3, 3, 1.5, None),
+        ("2017-05-26T21:40Z", 10, "2017-05-26", 3, 2, 0.265625, None),  # Friday before Memorial Day
+        ("2017-05-28T16:03Z", 10, "2017-05-26", 3, 1, 0.0, None),  # stray, inside the weekday window
+        ("2017-05-30T00:47Z", 10, "2017-05-26", 3, 3, 0.265625, None)))  # the real final, on the holiday
+    assert settle.to_dict() == {(np.datetime64("2016-01-06"), 7): 0.03125, (np.datetime64("2016-08-22"), 8): 3.0,
+                                (np.datetime64("2016-09-16"), 9): 1.5, (np.datetime64("2017-05-26"), 10): 0.265625}
+    assert notes == ["4 date/instrument pair(s) with disagreeing finals: kept the one equal to the preliminary for 2, "
+                     "the last in the settlement window for 2, the last published for 0 (0 of these have a "
+                     "preliminary equal to none of their finals)"]
+
+
+def definitions(*records) -> pd.DataFrame:
+    """(instrument_id, raw_symbol, right, strike, expiration, underlying, first, last) definition rows."""
+    return pd.DataFrame([(iid, sym.encode(), right.encode(), round(k * 1e9), ns(exp), und.encode(), ns(a), ns(b))
+                         for iid, sym, right, k, exp, und, a, b in records], columns=IDENTITY + ["first", "last"])
+
+
+def test_option_rows():
+    defs = definitions(
+        (1, "OZNZ6 C1050", "C", 105.0, "2026-11-20T22:00Z", "ZNZ6", "2026-10-15", "2026-10-19"),
+        (2, "OZNF7 P1000", "P", 100.0, "2026-12-24T22:00Z", "ZNH7", "2026-10-16T14:00Z", "2026-10-19"),  # listed on the 16th
+        (3, "OZNX6 C1100", "C", 110.0, "2026-10-23T21:00Z", "ZNZ6", "2026-10-15", "2026-10-19"),
+        (4, "OZTZ6 C1050", "C", 105.0, "2026-11-20T22:00Z", "ZNZ6", "2016-01-04", "2016-11-18"))  # id 4 reused since
+    df = stats(
+        ("2026-10-16T23:00Z", 1, "2026-10-16", 3, 3, 1.25, None),
+        ("2026-10-17T13:00Z", 1, "2026-10-16", 6, 0, None, 500),
+        ("2026-10-17T13:00Z", 1, "2026-10-16", 9, 0, None, 12000),
+        ("2026-10-16T23:00Z", 2, "2026-10-16", 3, 3, 0.001, None),  # cabinet, on its first day
+        ("2026-10-16T23:00Z", 3, "2026-10-16", 3, 3, 0.5, None),
+        ("2026-10-15T23:00Z", 2, "2026-10-15", 3, 3, 0.0, None),  # dated before its first definition
+        ("2026-10-16T23:00Z", 4, "2026-10-16", 3, 3, 0.0, None),  # id 4 isn't a call or put any more
+        ("2026-10-19T23:00Z", 1, "2026-10-19", 3, 3, 1.5, None),  # last date: no volume or OI published yet
+        ("2026-10-19T23:00Z", 3, "2026-10-19", 3, 3, 0.0, None))  # a placeholder
+    table, notes = option_rows(df, defs, "ZN")
+    rows = table.to_pylist()
+    assert [(r["asof"].day, r["label"], r["right"], r["strike"]) for r in rows] == [
+        (16, "DEC26", "C", 105.0), (16, "JAN27", "P", 100.0), (16, "NOV26", "C", 110.0), (19, "DEC26", "C", 105.0)]
+    assert rows[0] == {"asof": date(2026, 10, 16), "product": "ZN", "label": "DEC26", "expiry": date(2026, 11, 20),
+                       "underlying_month": date(2026, 12, 1), "right": "C", "strike": 105.0, "settle": 1.25,
+                       "cabinet": False, "volume": 500, "open_interest": 12000}
+    assert (rows[1]["settle"], rows[1]["cabinet"], rows[1]["volume"], rows[1]["open_interest"],
+            rows[1]["underlying_month"]) == (None, True, 0, 0, date(2027, 3, 1))  # nothing published: none traded
+    assert rows[2]["expiry"] == date(2026, 10, 23)
+    assert (rows[3]["volume"], rows[3]["open_interest"]) == (None, None)
+    assert notes == ["2 settlement(s) on instruments not defined as calls or puts by that date skipped (mostly 0.0 "
+                     "or reference settlements for strikes listed for the next session)",
+                     "1 settlement(s) of 0.0 from 2017-05-19 on skipped (placeholders, never with open interest)"]
+
+
+def test_zero_was_a_cabinet_before_2017_05_19():
+    defs = definitions((1, "OZNN7 C1400", "C", 140.0, "2017-06-23T21:00Z", "ZNU7", "2017-01-03", "2017-06-23"))
+    df = stats(("2017-05-18T23:00Z", 1, "2017-05-18", 3, 3, 0.0, None),
+               ("2017-05-19T23:00Z", 1, "2017-05-19", 3, 3, 0.001, None),
+               ("2017-05-22T23:00Z", 1, "2017-05-22", 3, 3, 0.0, None))
+    rows = option_rows(df, defs, "ZN")[0].to_pylist()
+    assert [(r["asof"], r["settle"], r["cabinet"]) for r in rows] == [(date(2017, 5, 18), None, True),
+                                                                      (date(2017, 5, 19), None, True)]
+
+
+@pytest.mark.parametrize("symbol, expiry, label", [("OZNZ6 C1050", date(2026, 11, 20), "DEC26"),
+                                                   ("OZNF7 P1000", date(2026, 12, 24), "JAN27"),
+                                                   ("OZBG0 C1600", date(2019, 12, 27), "FEB20"),
+                                                   ("OZTX6 P1013", date(2016, 10, 21), "NOV16")])
+def test_option_label(symbol, expiry, label):
+    assert option_label(symbol, expiry) == label
+
+
+def test_option_label_checks_the_expiry():
+    with pytest.raises(ValueError, match="doesn't follow its expiry"):
+        option_label("OZNZ6 C1050", date(2026, 8, 21))
+
+
+def test_bulletin_rows():
+    settles = [OptionSettle("ZN", "NOV26", "C", 104.5, 42 / 64, 0.896, 8366, 65200),
+               OptionSettle("ZN", "JAN27", "P", 100.0, None, None, 0, 200)]
+    out, notes = bulletin_rows(date(2026, 10, 16), settles, {("ZN", "NOV26"): date(2026, 10, 23)})
+    assert out[0] == {"asof": date(2026, 10, 16), "product": "ZN", "label": "NOV26", "expiry": date(2026, 10, 23),
+                      "underlying_month": date(2026, 12, 1), "right": "C", "strike": 104.5, "settle": 42 / 64,
+                      "cabinet": False, "volume": 8366, "open_interest": 65200}
+    assert (out[1]["expiry"], out[1]["underlying_month"], out[1]["settle"], out[1]["cabinet"]) == \
+        (None, date(2027, 3, 1), None, True)
+    assert notes == ["no last trade date on page 1 for ZN JAN27"]
+
+
+def test_missing_trading_days_are_listed(store):
+    dstore = DerivedStore(store.root)
+    for d in (date(2026, 11, 20), date(2026, 11, 24), date(2026, 11, 25), date(2026, 11, 27)):
+        put(store, d, "b", rows(1.0))  # b wins from 2026-10-16
+    report = build(dstore, store, TOY, log=quiet)
+    # Monday the 23rd is missing; Thanksgiving (the 26th) is a holiday on the cme calendar
+    assert report.missing_days == {"ZN": ["2026-11-23"]}
+    assert dstore.state("toy")["missing_days"] == {"ZN": ["2026-11-23"]}
+    assert build(dstore, store, replace(TOY, calendar=None), full=True, log=quiet).missing_days == {}
+
+
+def test_chain_quality_flags_stale_parity_and_order():
+    days = [date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4), date(2026, 3, 5), date(2026, 3, 6)]
+    strikes = [96 + 0.5 * i for i in range(17)]
+    rows_, fut = [], []
+    for i, d in enumerate(days):
+        tv = 1.6 if i == 2 else 1.0  # the 4th: a stale straddle, 60% rich
+        for k in strikes:
+            c, p = max(100 - k, 0) + tv, max(k - 100, 0) + tv
+            if i == 4 and k >= 103.5:
+                c += 0.1 * (k - 103)  # the 6th: calls rising with strike at two strikes
+            for right, settle in (("C", c), ("P", p)):
+                rows_.append({"asof": d, "product": "ZN", "label": "JUN26", "expiry": date(2026, 5, 22),
+                              "underlying_month": date(2026, 6, 1), "right": right, "strike": k, "settle": settle,
+                              "cabinet": False, "volume": 0, "open_interest": 0, "source": "test"})
+        fut.append({"asof": d, "product": "ZN", "month": date(2026, 6, 1), "contract": "ZNM6",
+                    "settle": 100.5 if i == 3 else 100.0})  # the 5th: futures 16/32 away from the options
+    q = chain_quality(pd.DataFrame(rows_), pd.DataFrame(fut), "ZN")
+    assert q["issues"].tolist() == ["", "", "stale", "parity", "order"]
+    assert q["ok"].tolist() == [True, True, False, False, False]
+    assert q.loc[2, "straddle_log"] == pytest.approx(np.log(1.6), abs=1e-3)  # less a day of time decay
+    assert q.loc[3, "parity"] == pytest.approx(-0.5) and q.loc[4, "order_breaks"] == 2
+    assert pd.isna(q.loc[0, "straddle_log"]) and pd.isna(q.loc[4, "straddle_log"])  # one neighbour only
+
+
+def test_a_build_with_nothing_new_changes_nothing(store):
+    dstore = DerivedStore(store.root)
+    put(store, date(2026, 11, 20), "b", rows(1.0))
+    build(dstore, store, TOY, log=quiet)
+    before = (dstore.table_dir("toy") / "_build.json").read_bytes()
+    build(dstore, store, TOY, log=quiet)
+    assert (dstore.table_dir("toy") / "_build.json").read_bytes() == before
+
+
+def test_chain_quality_compares_chains_on_the_same_futures():
+    rows_ = []
+    for d in (date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4)):
+        for label, expiry in (("APR26", date(2026, 3, 27)), ("MAY26", date(2026, 4, 24)), ("JUN26", date(2026, 5, 22))):
+            f = 100.5 if (d.day, label) == (3, "MAY26") else 100.0  # MAY26 on the 3rd: priced off 16/32 higher
+            for k in [98 + 0.5 * i for i in range(9)]:
+                for right, settle in (("C", max(f - k, 0) + 1.0), ("P", max(k - f, 0) + 1.0)):
+                    rows_.append({"asof": d, "product": "ZN", "label": label, "expiry": expiry,
+                                  "underlying_month": date(2026, 6, 1), "right": right, "strike": k, "settle": settle,
+                                  "cabinet": False, "volume": 0, "open_interest": 0, "source": "test"})
+    no_futures = pd.DataFrame(columns=["asof", "product", "month", "contract", "settle"])
+    q = chain_quality(pd.DataFrame(rows_), no_futures, "ZN")
+    flagged = q.loc[~q["ok"], ["asof", "label", "issues"]]
+    assert [(r.asof.day, r.label, r.issues) for r in flagged.itertuples()] == [(3, "MAY26", "forward")]
+    assert q["parity"].isna().all()  # no futures price: parity isn't checked, and doesn't fail
+    assert q.loc[(q["asof"].dt.day == 3) & (q["label"] == "MAY26"), "forward_gap"].item() == pytest.approx(0.5)

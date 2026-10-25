@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from ctd.data import refdata
+from ctd.reference.options import underlying_month
 from ctd.data.http import FetchError, Http
 from ctd.data.sources import Kind, RawFile, SourceSpec
 
@@ -71,13 +72,23 @@ def fetch(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
 #   ...                              strike, open, high, low, close, settle, change, delta,
 #   TOTAL 85702 1236385 - 11839      exercises, volume, open interest, OI change, contract high/low
 #   DEC26                            next expiry of the same product
-# Weeklies ("10Y WK1 NOTE C"), TN and the other products in the "ADDITIONAL" section use other
+# Weeklies ("10Y WK1 NOTE C") and the other products in the "ADDITIONAL" section use other
 # layouts and are skipped; so is everything after "OPTIONS EOO'S" (blocks and exercises).
+#
+# TN is in the "ADDITIONAL" section, in one block per expiry with calls and puts mixed:
+#   TN OPT
+#   NOV26 TN OPT (FUTURES SETT. .00)
+#   1060 ---- .54B .25A ---- .27- .13 .704 ---- ---- 819 UNCH .528B .141A
+#   1060 ---- .9B .3A ---- .9+ .2 .295 ---- ---- 1847 UNCH .34B .7A
+#   DEC26 (FUTURES SETT. .00)
+# Premiums are points and 64ths after a dot (".218" = 2 + 18/64), the sign of the change is stuck
+# to the settlement (".27-"), deltas are unsigned, and a strike's call and put come in either order
+# (NOV26 call first, DEC26 put first on 2026-10-21). ``tn_rights`` works out which is which.
 
 _STANDARD = {"10Y NOTE": "ZN", "5Y NOTE": "ZF", "2Y NOTE": "ZT", "30Y BOND": "ZB", "ULTRA T-BND": "UB"}
 _PRODUCT_LINE = re.compile(r"^(10Y NOTE|5Y NOTE|2Y NOTE|30Y BOND|ULTRA T-BND) (CALL|PUT|C|P)$")
 _EXPIRY_LINE = re.compile(r"^((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2})(?: (.+))?$")
-_ROW = re.compile(r"^\d{3,4} (?:-{4}|\d)")  # not "2026 DAILY INFORMATION BULLETIN"
+_ROW = re.compile(r"^\d{3,4} (?:-{4}|\.?\d)")  # not "2026 DAILY INFORMATION BULLETIN"; TN prices: ".2"
 _TOTAL = re.compile(r"^TOTAL (\S+) (\S+)")
 _QUARTERS = {"0": 0.0, "2": 0.25, "5": 0.5, "7": 0.75}
 _EIGHTHS = {"0": 0, "1": 1, "2": 2, "3": 3, "5": 4, "6": 5, "7": 6, "8": 7}
@@ -128,26 +139,121 @@ def _row(product: str, label: str, right: str, line: str) -> OptionSettle:
                         None if delta.startswith("-") else float(delta), _int(volume), _int(oi))
 
 
+@dataclass(frozen=True)
+class _TNRow:
+    strike: float
+    settle: float | None  # None for a cabinet
+    priced: bool  # False where no settlement is printed at all ("----")
+    delta: float | None
+    volume: int
+    open_interest: int
+
+
+def _tn_row(line: str) -> _TNRow:
+    t = line.split()
+    settle = t[5].rstrip("+-")
+    delta, volume, oi = t[7], t[9], t[10]
+    price = None if settle in ("CAB", "----") else decode_premium("TN", settle[1:])
+    return _TNRow(decode_strike("TN", t[0]), price, settle != "----",
+                  None if delta.startswith("-") else float(delta), _int(volume), _int(oi))
+
+
+TN_MATCH = 2 / 64  # points: how close a strike's call-put gap must put the futures price to the chain's
+
+
+def tn_forward(rows: list[_TNRow]) -> float | None:
+    """The futures price a TN chain implies. At a strike with a call and a put both priced, call
+    minus put is futures minus strike, so the futures is the strike plus or minus their gap; one
+    value fits every such strike. None without such a strike."""
+    by_strike: dict[float, list[_TNRow]] = {}
+    for r in rows:
+        by_strike.setdefault(r.strike, []).append(r)
+    candidates = []
+    for k, pair in by_strike.items():
+        if len(pair) == 2 and pair[0].settle is not None and pair[1].settle is not None:
+            gap = abs(pair[0].settle - pair[1].settle)
+            candidates.append((k + gap, k - gap))
+    if not candidates:
+        return None
+    values = [v for c in candidates for v in c]
+    best = max(values, key=lambda v: sum(any(abs(v - x) <= TN_MATCH for x in c) for c in candidates))
+    support = sorted(x for c in candidates for x in c if abs(x - best) <= TN_MATCH)
+    return support[len(support) // 2]
+
+
+def tn_rights(rows: list[_TNRow], forward: float) -> list[str]:
+    """Call or put for each row of a TN chain, given the futures price it implies. Where a strike
+    has both, the dearer is the call below the futures price and the put above it, and a cabinet
+    is the out-of-the-money one. A lone row is in the money if its delta is over a half."""
+    out = [""] * len(rows)
+    by_strike: dict[float, list[int]] = {}
+    for i, r in enumerate(rows):
+        by_strike.setdefault(r.strike, []).append(i)
+    for k, idx in by_strike.items():
+        itm = "C" if k < forward else "P"
+        otm = "P" if itm == "C" else "C"
+        if len(idx) == 2:
+            a, b = rows[idx[0]], rows[idx[1]]
+            if a.settle is None or b.settle is None:
+                cheap = idx[0] if a.settle is None else idx[1]
+            else:
+                cheap = idx[0] if a.settle <= b.settle else idx[1]
+            for i in idx:
+                out[i] = otm if i == cheap else itm
+        else:
+            r = rows[idx[0]]
+            out[idx[0]] = itm if r.settle is not None and r.delta is not None and r.delta > 0.5 else otm
+    return out
+
+
+def _tn_settles(label: str, rows: list[_TNRow], forward: float) -> list[OptionSettle]:
+    rights = tn_rights(rows, forward)
+    out = [OptionSettle("TN", label, right, r.strike, r.settle, r.delta, r.volume, r.open_interest)
+           for r, right in zip(rows, rights) if r.priced]
+    for right, sign in (("C", 1), ("P", -1)):
+        prices = sorted((o.strike, o.settle) for o in out if o.right == right and o.settle is not None)
+        if any(sign * (b - a) > 1 / 64 + 1e-9 for (_, a), (_, b) in zip(prices, prices[1:])):
+            raise ValueError(f"TN {label}: calls and puts can't be told apart (futures at {forward:.4f})")
+    return sorted(out, key=lambda o: (o.right, o.strike))
+
+
 def parse_options(text: str) -> list[OptionSettle]:
     """Every standard (quarterly and serial) option settlement in Section 42's extracted text.
 
-    Each block is checked: strikes strictly increasing, and its volume and open interest equal its
-    TOTAL line. A block that fails raises ValueError (the layout may have changed).
+    Each block is checked: strikes strictly increasing (TN: at most a call and a put per strike),
+    and its volume and open interest equal its TOTAL line. A block that fails raises ValueError
+    (the layout may have changed). TN's rights come from put-call parity (``tn_rights``), with the
+    futures price implied by the chain, or by another chain on the same futures where it has no
+    strike priced both ways (FEB27 next to JAN27); calls must then fall and puts rise with strike,
+    or ValueError.
     """
     out: list[OptionSettle] = []
     product = right = label = header = None
     block: list[OptionSettle] = []
+    tn: list[tuple[str, list[_TNRow]]] = []
+    tn_block: list[_TNRow] = []
     for line in (s.strip() for s in text.splitlines()):
         if line.startswith("OPTIONS EOO'S"):
             break
         if line.endswith(("CALLS", "PUTS", "OPTIONS")):  # section title: a new product follows
             product = label = None
+        elif line == "TN OPT":
+            product, right, header, label = "TN", None, line, None
+        elif line.endswith(" OPT"):  # another product in the ADDITIONAL section (TNW, GBO, ...)
+            product = label = None
         elif m := _PRODUCT_LINE.match(line):
             product, right, header, label = _STANDARD[m[1]], m[2][0], line, None
         elif m := _EXPIRY_LINE.match(line):
-            if m[2] and m[2] != header:  # an expiry of something else (weekly, TN, ...)
+            tn_expiry = product == "TN" and (m[2] or "").startswith(("TN OPT", "(FUTURES SETT"))
+            if m[2] and m[2] != header and not tn_expiry:  # an expiry of something else (weekly, ...)
                 product = None
-            label, block = m[1], []
+            label, block, tn_block = m[1], [], []
+        elif _ROW.match(line) and product == "TN" and label:
+            row = _tn_row(line)
+            if tn_block and (row.strike < tn_block[-1].strike
+                             or sum(r.strike == row.strike for r in tn_block) >= 2):
+                raise ValueError(f"TN {label}: strikes out of order at {line!r}")
+            tn_block.append(row)
         elif _ROW.match(line) and product and label:
             row = _row(product, label, right, line)
             if block and row.strike <= block[-1].strike:
@@ -155,10 +261,27 @@ def parse_options(text: str) -> list[OptionSettle]:
             block.append(row)
         elif (m := _TOTAL.match(line)) and product and label:
             volume, oi = _int(m[1]), _int(m[2])
-            if (sum(r.volume for r in block), sum(r.open_interest for r in block)) != (volume, oi):
-                raise ValueError(f"{product} {label} {right}: rows don't add up to {line!r}")
-            out += block
-            label, block = None, []
+            rows = tn_block if product == "TN" else block
+            if (sum(r.volume for r in rows), sum(r.open_interest for r in rows)) != (volume, oi):
+                name = f"{product} {label}" + (f" {right}" if right else "")
+                raise ValueError(f"{name}: rows don't add up to {line!r}")
+            if product == "TN":
+                tn.append((label, tn_block))
+            else:
+                out += block
+            label, block, tn_block = None, [], []
+    forwards: dict = {}
+    for lab, rows in tn:
+        if (f := tn_forward(rows)) is not None:
+            forwards.setdefault(underlying_month(lab), []).append(f)
+    for lab, rows in tn:
+        f = tn_forward(rows)
+        if f is None:
+            same = sorted(forwards.get(underlying_month(lab), []))
+            if not same:
+                raise ValueError(f"TN {lab}: no strike priced both ways and no other chain on its futures")
+            f = same[len(same) // 2]
+        out += _tn_settles(lab, rows, f)
     return out
 
 
@@ -193,13 +316,19 @@ def text(content: bytes) -> str:
         return "\n".join(p.extract_text() or "" for p in pdf.pages)
 
 
-def read_options(store, asof: date) -> list[OptionSettle]:
-    """``asof``'s standard option settlements from the stored Section 42 bulletin."""
+def read(store, asof: date) -> tuple[list[OptionSettle], dict[tuple[str, str], date]]:
+    """``asof``'s standard option settlements and page 1's last trade dates, from the stored Section 42."""
     content = store.read(asof, "cme_bulletin", "Section42", "Section42.pdf")
     _, printed, _ = bulletin_header(content)
     if printed != asof:
         raise ValueError(f"stored Section 42 is for {printed}, not {asof}")
-    return parse_options(text(content))
+    t = text(content)
+    return parse_options(t), last_trade_dates(t)
+
+
+def read_options(store, asof: date) -> list[OptionSettle]:
+    """``asof``'s standard option settlements from the stored Section 42 bulletin."""
+    return read(store, asof)[0]
 
 
 SPECS = [

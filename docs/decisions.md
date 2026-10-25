@@ -104,6 +104,14 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 
 **Decision:** take forwards to the last delivery day if the CTD's carry is positive, the first delivery day if negative. Carry is measured directly: the CTD (cheapest converted forward at the last delivery day) has positive carry when its forward clean price at the last delivery day is below the one at the first. One date for the whole basket, as in §5.2. Settled 2026-10-22, replacing a phase 1b open question.
 
+## Derived tables: format and columns (design §4)
+
+**Decision** (settled 2026-10-23):
+- **Parquet, not Feather.** The tables are written once and read many times, filtered by product and date. Parquet's row-group statistics let those reads skip data, its dictionary encoding and zstd make it several times smaller (product, label, right and source repeat on every row), and every tool reads it. Feather (Arrow IPC) reads faster with no filtering and suits scratch files, not a store read selectively for years.
+- **Partitioned by product and year, with a per-source staging stage**, so the daily build rewrites one small partition and the slow Databento option backfill is read once.
+- **No option delta.** CBOT Treasury options are American and CME's deltas come from its own model; a Black-76 delta from the settlement-implied vol is close enough for anything the model does, and consistent with it. Databento has no delta, so the column would be null before 2026-10-16 anyway. The bulletin PDFs keep CME's, for a check if ever wanted.
+- **No futures volume.** CME's page has a same-day estimate, Databento the final cleared volume: different quantities, so one column with a precedence rule would mix them. Nothing in the model uses it; both stay in the raw store.
+
 ## Probabilities in the published charts, first milestone (design §5.6, §5.11)
 
 **Status:** adopted (2026-10-24).
@@ -130,3 +138,11 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 **Decision:** roll at option expiry. Each contract's series runs on the contract whose quarterly options are the nearest not yet expired: ZBZ6 and ZNZ6 through 2026-11-19, ZBH7 and ZNH7 (with MAR27 options) from the December options' expiry, 2026-11-20. The light model already stops a contract once its options have expired. The March contracts are also run alongside from now, for the roll comparison (outputs.md Tier 2). Phase 1c follows the same rule.
 
 **Given up:** the December contract after 2026-11-20, which still trades to mid-December and delivers to month-end, when its CTD question matters most. Covering it needs vol from the next expiry (§5.5 step 3; the expiry-after-horizon issue in §11) and is left for phase 2.
+
+## Holiday calendar for 2016–2025 (data.md §2.5)
+
+**Decision** (settled 2026-10-24): derive past holidays from the stored data, not from CME or a calendar library.
+- CME publishes no structured archive of past holidays: each year's schedule, an online Trading Calendar for current dates, and old notices and press releases. Assembling ten years from those would be by hand, and cmegroup.com blocks scripts.
+- A calendar library (pandas_market_calendars, exchange_calendars) encodes holidays as rules, which is where special closures go wrong: CME settled on the 2018-12-05 day of mourning and on the 2021 and 2023 Good Fridays. It would also be a new dependency.
+- The data records what happened. `scripts/derive_holidays.py` marks a CME closure where none of the 15 Databento backfills has a settlement and a bond-market closure where TreasuryDirect has no prices; rule-based names only label the rows, and each row says what it rests on. Weekdays with no settlements that aren't holidays are gaps, confirmed by Yahoo volume or TreasuryDirect prices, and `ctd derive` lists every product's missing trading days, so skipped dates in history need no diagnosis.
+- Known difference: TreasuryDirect published on Good Friday 2024 and 2025, when SIFMA usually recommends closing, so the `sifma` calendar has those two open.

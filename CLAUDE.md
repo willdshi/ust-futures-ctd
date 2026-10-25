@@ -51,6 +51,7 @@ Phase 1b (the light model, design §5.11) is in progress. Status is tracked as c
   - `cli.py` connects them:
     - `ctd fetch --asof 2026-10-16`
     - `ctd run --contract ZBZ6 --asof 2026-10-16`
+    - `ctd derive` (derived Parquet tables under `/data/derived/`, design §4; incremental, and must equal `--full`)
     - `ctd history --contract ZB --from 2022-01-01 --to 2026-10-16`
 - **Bond math is hand-written (§5.1).** One street-convention pricing function (`ctd.bonds.pricing`) is used for every price, yield and duration calculation. QuantLib is a test-only dependency, used as an independent check.
   - Coupons and yields are decimals (0.045); prices are per 100 face. The price functions accept a numpy array of yields.

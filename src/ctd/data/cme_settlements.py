@@ -85,17 +85,21 @@ def fetch_options(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
 @dataclass(frozen=True)
 class FuturesSettle:
     settle: float  # decimal price, per 100 face
-    open_interest: int
-    volume: int
+    prior_open_interest: int  # CME's page shows the previous business day's open interest (data.md 5.8)
+    est_volume: int  # same-day estimate, not the final cleared volume
+
+
+_EIGHTHS_OF_32 = {"0": 0, "1": 0.125, "2": 0.25, "3": 0.375, "5": 0.5, "6": 0.625, "7": 0.75, "8": 0.875}
 
 
 def parse_price(s: str) -> float:
-    """CME's points-and-32nds: ``"105'17"`` = 105 + 17/32; with a third digit for fractions of a
-    32nd (0, 2, 5, 7 = 0, ¼, ½, ¾), ``"105'035"`` = 105 + 3.5/32. A trailing ``A``/``B`` (ask/bid) is dropped."""
+    """CME's points-and-32nds: ``"105'17"`` = 105 + 17/32; with a third digit for eighths of a 32nd
+    (1, 2, 3, 5, 6, 7, 8 = ⅛, ¼, ⅜, ½, ⅝, ¾, ⅞; ZN uses 0 and 5, ZF also 2 and 7, ZT all),
+    ``"105'035"`` = 105 + 3.5/32. A trailing ``A``/``B`` (ask/bid) is dropped."""
     whole, _, frac = s.rstrip("AB").partition("'")
     if not frac:
         return float(whole)
-    thirty_seconds = int(frac[:2]) + ({"0": 0, "2": 0.25, "5": 0.5, "7": 0.75}[frac[2]] if len(frac) == 3 else 0)
+    thirty_seconds = int(frac[:2]) + (_EIGHTHS_OF_32[frac[2]] if len(frac) == 3 else 0)
     return int(whole or 0) + thirty_seconds / 32
 
 

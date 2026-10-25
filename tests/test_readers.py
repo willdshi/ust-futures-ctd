@@ -75,7 +75,9 @@ def test_tcf_basket_by_contract_and_month(store):
 @pytest.mark.parametrize("text, price", [("105'17", 105 + 17 / 32), ("105'035", 105 + 3.5 / 32),
                                          ("104'285", 104 + 28.5 / 32), ("105'102", 105 + 10.25 / 32),
                                          ("105'107", 105 + 10.75 / 32), ("105'105B", 105 + 10.5 / 32),
-                                         ("106'00", 106.0)])
+                                         ("106'00", 106.0), ("101'261", 101 + 26.125 / 32),
+                                         ("101'296", 101 + 29.625 / 32), ("102'008", 102 + 0.875 / 32),
+                                         ("101'263", 101 + 26.375 / 32), ("96.1100", 96.11)])
 def test_parse_32nds(text, price):
     assert cme_settlements.parse_price(text) == price
 
@@ -85,7 +87,7 @@ def test_futures_settlements(store):
     fut = cme_settlements.read_futures(store, ASOF, "ZN")
     assert set(fut) == {date(2026, 12, 1), date(2027, 3, 1)}  # Total row skipped
     dec = fut[date(2026, 12, 1)]
-    assert (dec.settle, dec.open_interest, dec.volume) == (105 + 3.5 / 32, 5_857_268, 1_969_012)
+    assert (dec.settle, dec.prior_open_interest, dec.est_volume) == (105 + 3.5 / 32, 5_857_268, 1_969_012)
     with pytest.raises(ValueError, match="trade date 2026-10-21"):
         cme_settlements.parse_futures(ZN, date(2026, 10, 22))
     with pytest.raises(FileNotFoundError):

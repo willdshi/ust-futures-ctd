@@ -35,18 +35,23 @@ def option_month(label: str) -> date:
     return date(2000 + int(label[3:]), LABELS.index(label[:3]) + 1, 1)
 
 
+def underlying_month(label: str) -> date:
+    """Contract month (first day) of the futures under option month ``label``: its own month for a
+    quarterly, the next quarterly for a serial (``"NOV26"`` → ``date(2026, 12, 1)``, ``"JAN27"`` → March)."""
+    month = option_month(label)
+    fut_month = month.month + (3 - month.month % 3) % 3
+    return date(month.year + (fut_month > 12), (fut_month - 1) % 12 + 1, 1)
+
+
 def rule_expiry(product: str, label: str, cal: BusinessCalendar) -> OptionExpiry:
     month = option_month(label)
     prev_month_end = cal.prev_business_day(month)
     friday = cal.add_business_days(prev_month_end, -2)
     friday -= timedelta(days=(friday.weekday() - 4) % 7)
     expiry = friday if cal.is_business_day(friday) else cal.prev_business_day(friday)
-    quarterly = month.month % 3 == 0
-    fut_month = month.month if quarterly else month.month + 3 - month.month % 3
-    fut_year = month.year + (fut_month > 12)
-    fut_month = (fut_month - 1) % 12 + 1
-    underlying = f"{product}{MONTH_CODES[fut_month - 1]}{fut_year % 10}"
-    return OptionExpiry(product, label, expiry, underlying, quarterly)
+    fut = underlying_month(label)
+    underlying = f"{product}{MONTH_CODES[fut.month - 1]}{fut.year % 10}"
+    return OptionExpiry(product, label, expiry, underlying, month.month % 3 == 0)
 
 
 def expiry_for(records: list[OptionExpiry], product: str, label: str) -> OptionExpiry:
