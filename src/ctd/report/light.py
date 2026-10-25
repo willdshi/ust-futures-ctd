@@ -1,7 +1,9 @@
 """Text output of a light-model run (design 5.11, phase 1b B5): the basket and crossover tables."""
 
+from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 from ctd.risk.dv01 import dollars
+from ctd.risk.krd import effective_maturity
 
 
 def prob(lo: float, hi: float) -> str:
@@ -70,6 +72,17 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
     if len(basket) < len(r.basket):
         lines.append(f"(bonds with a probability and the next {NEXT_CHEAPEST} cheapest; "
                      f"{len(r.basket) - len(basket)} more with --all-bonds)")
+
+    lines += ["", f"Key-rate DV01 per $100mm, $k (par curve of {r.par_date}; can be negative)"]
+    rows = [[name, *(f"{dollars(v) / 1000:,.1f}" for v in k), f"{dollars(k.sum()) / 1000:,.1f}", f"{m:.1f}y"]
+            for name, k, m in (("probability-weighted", r.krd, r.effective_maturity),
+                               ("CTD-label", r.ctd_krd, r.ctd_effective_maturity))]
+    lines += _table(["", *(f"{n:g}y" for n in NODES), "total", "eff. maturity"], rows)
+
+    lines += ["", "Clusters (same dominant key rate, DV01 within 5%): key-rate DV01 if delivered, $k per $100mm"]
+    rows = [[f"{cl.node:g}y: {', '.join(cl.members)}", prob(*cl.prob), *(f"{dollars(v) / 1000:,.1f}" for v in cl.krd),
+             f"{dollars(cl.krd.sum()) / 1000:,.1f}", f"{effective_maturity(cl.krd):.1f}y"] for cl in r.clusters]
+    lines += _table(["cluster", "P", *(f"{n:g}y" for n in NODES), "total", "eff. maturity"], rows)
 
     lines += ["", "Crossovers (as yields rise; K = futures price at the switch)"]
     region = {id(reg.switch): reg for reg in p.regions if reg.switch is not None}

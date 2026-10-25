@@ -191,7 +191,8 @@ def _report(gaps) -> int:
 def light_inputs(store, contract: str, asof: date):
     """Everything the light model needs for ``contract`` on ``asof``, from the raw store only, and
     the raw files read (source, unit, name, sha256)."""
-    from ctd.data import cme_bulletin, cme_settlements, cme_tcf, nyfed, refdata, td_prices
+    from ctd.curve.par import ParCurve
+    from ctd.data import cme_bulletin, cme_settlements, cme_tcf, nyfed, par_curve, refdata, td_prices
     from ctd.model.light import LightInputs
     from ctd.reference.contracts import MONTH_CODES, parse_contract
     from ctd.reference.delivery import delivery_for
@@ -205,6 +206,7 @@ def light_inputs(store, contract: str, asof: date):
         raise ValueError(f"no {contract} settlement on {asof}")
     prices, _ = td_prices.read(store, asof)
     sofr_date, sofr = nyfed.read_latest(store, asof)
+    par_date, par_points = par_curve.read_latest(store, asof)
     label = f"{LABELS[month.month - 1]}{month.year % 100:02d}"
     expiry = expiry_for(refdata.option_expiries(), product, label)
     assert expiry.underlying[-2] == MONTH_CODES[month.month - 1]
@@ -212,12 +214,15 @@ def light_inputs(store, contract: str, asof: date):
         contract, asof, sifma.add_business_days(asof, 1), cal.first_delivery, cal.last_delivery,
         cme_tcf.read_basket(store, asof, product, month), prices, futures[month].settle, sofr, sofr_date,
         expiry, cme_bulletin.read_options(store, asof), sifma,
-        {p["code"]: p["face"] for p in refdata.cme_products()["treasury"]}[product])
+        {p["code"]: p["face"] for p in refdata.cme_products()["treasury"]}[product],
+        ParCurve.from_points(par_points), par_date)
     read = [("td_prices", "securityprice", f"securityprice_{asof.isoformat()}.csv"),
             ("cme_tcf", "csv", cme_tcf.file_name(asof, "csv")),
             ("cme_fut", product, store.names(asof, "cme_fut", product)[0]),
             *(("nyfed_rates", "sofr", n) for n in store.names(asof, "nyfed_rates", "sofr")),
-            ("cme_bulletin", "Section42", "Section42.pdf")]
+            ("cme_bulletin", "Section42", "Section42.pdf"),
+            *(("par_curve", "daily_treasury_yield_curve", n)
+              for n in store.names(asof, "par_curve", "daily_treasury_yield_curve"))]
     files = [{"source": s, "unit": u, "name": n, "sha256": store.meta(asof, s, u, n)["sha256"]} for s, u, n in read]
     return inputs, files
 

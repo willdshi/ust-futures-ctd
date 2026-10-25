@@ -7,8 +7,10 @@ Treasury's real yield curve and long-term rate tables aren't collected: TIPS are
 the long-term composites are averages the model doesn't use, and all of them can be backfilled.
 """
 
+import csv
+import io
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, datetime
 
 from ctd.data.http import FetchError, Http
 from ctd.data.sources import Kind, RawFile, SourceSpec
@@ -45,3 +47,38 @@ SPECS = [
     SourceSpec("par_curve_backfill", "Treasury par yield curve and bill rates, all past years (one-off)", Kind.HISTORY,
                "cme", units=lambda asof, cal: list(TYPES), fetch=fetch_history, schedule="backfill"),
 ]
+
+
+def _tenor_years(column: str) -> float:
+    """``"6 Mo"`` -> 0.5, ``"1.5 Month"`` -> 0.125, ``"10 Yr"`` -> 10.0."""
+    n, unit = column.split()
+    return float(n) / 12 if unit.startswith("Mo") else float(n)
+
+
+def parse(content: bytes) -> dict[date, dict[float, float]]:
+    """Date -> {tenor in years: par yield as a decimal}, from a ``daily_treasury_yield_curve`` year file.
+
+    Blank cells (tenors not published on that date) are left out.
+    """
+    rows = list(csv.reader(io.StringIO(content.decode("utf-8-sig"))))
+    tenors = [_tenor_years(c) for c in rows[0][1:]]
+    out = {}
+    for r in rows[1:]:
+        if not r or not r[0]:
+            continue
+        d = datetime.strptime(r[0], "%m/%d/%Y").date()
+        out[d] = {t: float(v) / 100 for t, v in zip(tenors, r[1:]) if v.strip()}
+    return out
+
+
+def read_latest(store, asof: date) -> tuple[date, dict[float, float]]:
+    """The latest par curve on or before ``asof`` from the year file stored under ``asof``
+    (it can hold later dates when fetched after the fact; those are ignored)."""
+    table = "daily_treasury_yield_curve"
+    curves = {}
+    for name in store.names(asof, "par_curve", table):
+        curves.update(parse(store.read(asof, "par_curve", table, name)))
+    known = [d for d in curves if d <= asof]
+    if not known:
+        raise ValueError(f"no par curve stored for {asof}")
+    return max(known), curves[max(known)]

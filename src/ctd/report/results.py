@@ -12,9 +12,10 @@ import os
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 2  # 2: futures DV01
+SCHEMA = 4  # 2: futures DV01; 3: key-rate DV01s; 4: clusters
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
@@ -37,9 +38,15 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
         "ctd": p.ctd, "ctd_keeps": [kept.lo, kept.hi],
         "dv01": {"weighted": list(r.dv01), "ctd_label": r.ctd_dv01, "face": r.face,
                  "units": "price points per bp per 100 face of futures; x 1e6 for $ per $100mm"},
+        "krd": {"nodes": list(NODES), "weighted": r.krd.tolist(), "ctd_label": r.ctd_krd.tolist(),
+                "effective_maturity": r.effective_maturity, "ctd_effective_maturity": r.ctd_effective_maturity,
+                "par_date": r.par_date.isoformat(), "units": "as dv01"},
+        "clusters": [{"node": cl.node, "members": list(cl.members), "prob": list(cl.prob), "krd": cl.krd.tolist()}
+                     for cl in r.clusters],
         "basket": [{"cusip": b.cusip, "coupon": b.coupon, "maturity": b.maturity.isoformat(), "cf": b.cf,
                     "price": b.price, "price_from": b.price_from, "fwd": b.fwd, "fwd_yield": b.fwd_yield,
                     "carry": b.carry, "converted": b.converted, "dv01_cf": b.dv01_cf,
+                    "krd_shares": list(b.krd_shares),
                     "p_ctd": list(by_bond.get(b.cusip, (0.0, 0.0)))}
                    for b in r.basket],
         "crossovers": [{"z_bp": c.switch.z_bp, "from": c.switch.from_cusip, "to": c.switch.to_cusip,

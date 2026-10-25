@@ -11,7 +11,8 @@ prices, the futures settlement, the latest SOFR and the contract's quarterly opt
 3. A digital at each ``K_k`` from the options (``vol.digitals``), discounted at flat SOFR from
    settlement to expiry.
 4. Probabilities per bond (``model.probabilities``).
-5. Futures DV01 at z = 0, probability-weighted and CTD-label (``risk.dv01``).
+5. Futures DV01 at z = 0, probability-weighted and CTD-label (``risk.dv01``), and key-rate DV01s from
+   par-curve bumps scaled to each bond's DV01 (``risk.krd``), with effective maturity.
 
 ``F_market − E(0)`` is reported as the recentring gap: the net basis the model holds constant
 (delivery options, specialness, the timing of the price snapshots).
@@ -20,7 +21,10 @@ prices, the futures settlement, the latest SOFR and the contract's quarterly opt
 from dataclasses import dataclass
 from datetime import date
 
+import numpy as np
+
 from ctd.bonds.forward import forward_clean, forward_yield
+from ctd.curve.par import ParCurve, key_rate_curves
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.td_prices import BondPrice
 from ctd.funding.repo import flat
@@ -29,8 +33,11 @@ from ctd.model.horizon import light_horizon
 from ctd.model.probabilities import Probabilities, assemble, strike
 from ctd.reference.calendar import BusinessCalendar
 from ctd.reference.options import OptionExpiry
-from ctd.risk import dv01
+from ctd.risk import dv01, krd
 from ctd.vol.digitals import Digital, digital
+
+
+EM_WARN_YEARS = 0.05  # warn when interval probabilities could move effective maturity by more
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,8 @@ class LightInputs:
     chain: list[OptionSettle]  # its settlements, both rights
     repo_cal: BusinessCalendar  # sifma
     face: float  # contract unit, $ face per contract
+    par_curve: ParCurve  # Treasury par curve, latest on or before asof
+    par_date: date
 
 
 @dataclass(frozen=True)
@@ -63,6 +72,12 @@ class BasketRow:
     fwd_yield: float
     converted: float  # fwd / cf
     dv01_cf: float  # forward DV01 / CF: price points per bp per 100 face of futures
+    krd_shares: tuple[float, ...]  # each key-rate node's share of dv01_cf (sums to 1)
+
+    @property
+    def krd(self) -> np.ndarray:
+        """Key-rate DV01s over CF, per 100 face of futures."""
+        return np.array(self.krd_shares) * self.dv01_cf
 
     @property
     def carry(self) -> float:
@@ -96,7 +111,19 @@ class LightResult:
     dv01: tuple[float, float]  # probability-weighted, per 100 face of futures (lo, hi)
     ctd_dv01: float  # CTD-label, per 100 face of futures
     face: float  # contract unit
+    krd: np.ndarray  # probability-weighted key-rate DV01s per 100 face of futures (interval midpoints)
+    ctd_krd: np.ndarray  # CTD-label
+    par_date: date
+    clusters: tuple[krd.Cluster, ...]  # bonds with a probability, by key-rate profile
     warnings: tuple[str, ...]
+
+    @property
+    def effective_maturity(self) -> float:
+        return krd.effective_maturity(self.krd)
+
+    @property
+    def ctd_effective_maturity(self) -> float:
+        return krd.effective_maturity(self.ctd_krd)
 
     @property
     def gap(self) -> float:
@@ -119,7 +146,10 @@ def run(x: LightInputs) -> LightResult:
     if not_eod:
         warnings.append(f"provisional prices (no end of day) for {', '.join(not_eod)}")
 
+    if x.par_date != x.asof:
+        warnings.append(f"par curve is from {x.par_date}, not {x.asof} (none published for {x.asof})")
     g = flat(x.sofr, x.repo_cal)
+    curves = key_rate_curves(x.par_curve)
 
     def fwd(c: str, delivery: date) -> float:
         p = x.prices[c]
@@ -138,7 +168,8 @@ def run(x: LightInputs) -> LightResult:
         f = last[c] if horizon == x.last_delivery else fwd(c, horizon)
         y = forward_yield(p.price, p.coupon, p.maturity, x.settle, horizon, g)
         rows.append(BasketRow(c, p.coupon, p.maturity, x.cfs[c], p.price, p.price_from, f, y, f / x.cfs[c],
-                              dv01.per_futures(p.coupon, p.maturity, horizon, y, x.cfs[c])))
+                              dv01.per_futures(p.coupon, p.maturity, horizon, y, x.cfs[c]),
+                              tuple(krd.shares(p.coupon, p.maturity, horizon, curves))))
     bonds = [BasketBond(r.cusip, r.coupon, r.maturity, r.cf, r.fwd_yield) for r in rows]
 
     e, ctd = envelope(bonds, horizon, 0)
@@ -157,6 +188,14 @@ def run(x: LightInputs) -> LightResult:
     probs = assemble(ctd0, sws, [c.digital for c in crossovers])
     warnings += probs.warnings
     per = {r.cusip: r.dv01_cf for r in rows}
+    krds = {r.cusip: r.krd for r in rows}
+    by_bond = probs.by_bond()
+    em_lo, em_hi = krd.effective_maturity_range(krds, by_bond)
+    if em_hi - em_lo > EM_WARN_YEARS:
+        warnings.append(f"KRDs use interval midpoints of the probabilities; effective maturity could be "
+                        f"{em_lo:.2f}–{em_hi:.2f}y")
     return LightResult(x.contract, x.asof, x.settle, horizon, reason, x.sofr, x.sofr_date, x.f_market, e0,
                        x.expiry, df, tuple(rows), tuple(crossovers), probs,
-                       dv01.weighted(per, probs.by_bond()), per[ctd0], x.face, tuple(warnings))
+                       dv01.weighted(per, by_bond), per[ctd0], x.face,
+                       krd.weighted(krds, krd.point_weights(by_bond)), krds[ctd0], x.par_date,
+                       tuple(krd.clusters(krds, by_bond)), tuple(warnings))

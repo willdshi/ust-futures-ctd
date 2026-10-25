@@ -8,6 +8,7 @@ import pytest
 
 from ctd.bonds.conversionfactor import conversion_factor
 from ctd.bonds.pricing import clean_price
+from ctd.curve.par import ParCurve
 from ctd.data import refdata
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.td_prices import BondPrice
@@ -42,7 +43,8 @@ def inputs(**kw):
     x = LightInputs("ZBZ6", ASOF, SETTLE, date(2026, 12, 1), date(2026, 12, 31),
                     {c: conversion_factor(cpn, m, month, 3) for c, (cpn, m) in TERMS.items()}, prices, F, 0.0388,
                     date(2026, 10, 20), OptionExpiry("ZB", "DEC26", date(2026, 11, 20), "ZBZ6", True),
-                    normal_chain(), refdata.calendar("sifma"), 100_000)
+                    normal_chain(), refdata.calendar("sifma"), 100_000, ParCurve((0.5, 30.0), (0.055, 0.055)),
+                    date(2026, 10, 21))
     return replace(x, **kw)
 
 
@@ -125,4 +127,17 @@ def test_futures_dv01_is_the_probability_weighted_dv01_over_cf():
     assert all(lo == hi for lo, hi in probs.values())  # normal chain, no bounds: a point
     assert r.dv01[0] == pytest.approx(sum(lo * per[c] for c, (lo, _) in probs.items()))
     assert r.ctd_dv01 == per[r.probabilities.ctd]
+    assert r.krd.sum() == pytest.approx(r.dv01[0], rel=1e-12)  # KRDs add up to the DV01
+    assert r.ctd_krd.sum() == pytest.approx(r.ctd_dv01, rel=1e-12)
+    assert min(b.maturity for b in r.basket).year - 2026 < r.effective_maturity < 24
+    assert "Key-rate DV01" in format_run(r)
     assert "probability-weighted; CTD-label" in format_run(r)
+
+
+def test_clusters_and_a_stale_par_curve():
+    r = run(inputs())
+    assert {c for cl in r.clusters for c in cl.members} == set(r.probabilities.by_bond())
+    assert sum(cl.prob[0] for cl in r.clusters) == pytest.approx(1)
+    assert not any("par curve is from" in w for w in r.warnings)
+    stale = run(inputs(par_date=date(2026, 10, 20)))
+    assert "par curve is from 2026-10-20, not 2026-10-21 (none published for 2026-10-21)" in stale.warnings

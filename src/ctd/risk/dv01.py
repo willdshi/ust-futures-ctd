@@ -25,6 +25,18 @@ def per_futures(coupon: float, maturity: date, horizon: date, fwd_yield: float, 
     return float(dv01(coupon, maturity, horizon, fwd_yield)) / cf
 
 
+def fill(probs: dict[str, tuple[float, float]], order) -> dict[str, float]:
+    """One probability per bond: every bond at its lower bound, then the mass still needed to reach
+    1 given to the bonds in ``order``, each up to its upper bound."""
+    w = {c: lo for c, (lo, _) in probs.items()}
+    slack = 1 - sum(w.values())
+    for c in order:
+        take = min(max(slack, 0.0), probs[c][1] - probs[c][0])
+        w[c] += take
+        slack -= take
+    return w
+
+
 def weighted(values: dict[str, float], probs: dict[str, tuple[float, float]]) -> tuple[float, float]:
     """``(lo, hi)`` of ``Σ p_i · values_i`` over every ``p`` with ``lo_i ≤ p_i ≤ hi_i`` and ``Σ p_i = 1``.
 
@@ -40,17 +52,9 @@ def weighted(values: dict[str, float], probs: dict[str, tuple[float, float]]) ->
         x = sum(p / total * values[c] for c, p in mids.items())
         return x, x
 
-    def fill(order):
-        slack, out = 1 - lo_sum, 0.0
-        for c in order:
-            lo, hi = probs[c]
-            take = min(max(slack, 0.0), hi - lo)
-            out += (lo + take) * values[c]
-            slack -= take
-        return out
-
     by_value = sorted(probs, key=lambda c: values[c])
-    return fill(by_value), fill(reversed(by_value))
+    return tuple(sum(p * values[c] for c, p in fill(probs, order).items())
+                 for order in (by_value, by_value[::-1]))
 
 
 def dollars(per_100: float, face: float = NOTIONAL) -> float:
