@@ -8,9 +8,11 @@ actually published:
   A weekday with no settlements that isn't a scheduled holiday is a gap in the feed, not a
   closure, when Yahoo shows the contracts trading or TreasuryDirect published (Yahoo is missing
   some of the same days); with neither it's listed for review instead of being written.
-- ``sifma_closed``: a weekday with no TreasuryDirect prices (FedInvest returned an empty file).
-  FedInvest follows the Federal Reserve, so it publishes on Good Friday, when SIFMA usually
-  recommends a full close; the evidence column says so.
+- ``sifma_closed``: a weekday with no TreasuryDirect prices (FedInvest returned an empty file), or
+  with no Treasury par curve (the derived ``par_curve`` table). FedInvest follows the Federal
+  Reserve and publishes on every Good Friday; Treasury's par curve is missing exactly on the Good
+  Fridays SIFMA recommended a full close (2024, 2025) and present when it recommended an early one
+  (2021, 2023). The evidence column says which.
 
 Names come from the US holiday rules; they label the rows, the data decides them. Rows outside
 2016-2025 are kept as they are.
@@ -137,8 +139,19 @@ def treasurydirect_empty() -> set[date]:
     return out
 
 
+def par_curve_dates() -> set[date]:
+    """Dates with a Treasury par curve (the derived table; run `ctd derive --table par_curve` first)."""
+    out = set()
+    for path in (DATA / "derived" / "par_curve").glob("curve=*/year=*/part.parquet"):
+        out |= set(pq.read_table(path, columns=["asof"]).to_pandas()["asof"])
+    if not out:
+        raise SystemExit("no derived par_curve table: run `ctd derive --table par_curve` first")
+    return out
+
+
 def derive() -> tuple[list[dict], list[str], list[str]]:
     rows_db, vol, td_closed = databento_rows(), yahoo_volume(), treasurydirect_empty()
+    par = par_curve_dates()
     usual = rows_db.sort_index().rolling(21, center=True, min_periods=5).median()
     sched = {d: v for y in range(FIRST.year, LAST.year + 1) for d, v in scheduled(y).items()}
     out, gaps, review = [], [], []
@@ -153,15 +166,18 @@ def derive() -> tuple[list[dict], list[str], list[str]]:
                 (gaps if vol.get(d, 0) >= YAHOO_MIN_VOLUME or d not in td_closed else review).append(
                     f"{d} {d:%a}: no Databento settlements, Yahoo volume {int(vol.get(d, 0)):,}, "
                     f"TreasuryDirect {'empty' if d in td_closed else 'published'}")
-            sifma_closed = d in td_closed
+            no_par = d not in par
+            sifma_closed = d in td_closed or no_par
             if cme_closed or sifma_closed:
                 evidence = []
                 evidence.append("CME: no settlements in any Databento backfill" if cme_closed else
                                 f"CME: settlements ({n:,} Databento rows)")
-                evidence.append("bond market: no TreasuryDirect prices" if sifma_closed else
-                                "bond market: TreasuryDirect published")
-                if name and name.startswith("Good Friday") and not sifma_closed:
-                    evidence.append("SIFMA usually recommends a full close")
+                if d in td_closed:
+                    evidence.append("bond market: no TreasuryDirect prices" + ("" if no_par else ", but a par curve"))
+                elif no_par:
+                    evidence.append("bond market: no Treasury par curve (TreasuryDirect published)")
+                else:
+                    evidence.append("bond market: TreasuryDirect prices and a par curve")
                 out.append({"date": d.isoformat(), "name": name or "unscheduled closure",
                             "cme_closed": "y" if cme_closed else "n", "sifma_closed": "y" if sifma_closed else "n",
                             "verified": "data", "evidence": "; ".join(evidence)})

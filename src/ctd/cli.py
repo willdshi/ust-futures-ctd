@@ -263,11 +263,11 @@ def cmd_run(args) -> int:
 
 def cmd_derive(args) -> int:
     from ctd.data import alert
-    from ctd.data.derived import bonds, futures, options, quality
+    from ctd.data.derived import bonds, futures, options, quality, rates
     from ctd.data.derived.store import DerivedStore, build
     from ctd.data.store import RawStore
 
-    tables = {t.name: t for t in (options.TABLE, futures.TABLE, bonds.PRICES)}
+    tables = {t.name: t for t in (options.TABLE, futures.TABLE, bonds.PRICES, rates.PAR_CURVE, rates.RATES_TABLE)}
     store, dstore = RawStore(args.data_root), DerivedStore(args.data_root)
     problems = []
     for name in args.table or list(tables):
@@ -356,7 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
     r.set_defaults(func=cmd_run)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
-    d.add_argument("--table", action="append", choices=["options", "futures", "bond_prices"],
+    d.add_argument("--table", action="append", choices=["options", "futures", "bond_prices", "par_curve", "rates"],
                    help="only these tables (bond_prices also brings securities up to date)")
     d.add_argument("--full", action="store_true", help="rebuild from scratch (must give the same tables)")
     d.add_argument("--notify", action="store_true", help="desktop alert when a raw file fails to read")

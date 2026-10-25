@@ -107,8 +107,8 @@ Occasional sources are never reported as gaps. `ctd check` lists gaps and warnin
 
 Two business calendars are kept in `src/ctd/reference/data/holidays.csv`: `cme` (CME interest rate settlements) and `sifma` (cash Treasuries; adds Columbus Day and Veterans Day).
 
-- **2016–2025 are derived from the data** by `scripts/derive_holidays.py`, because CME publishes no archive of past holidays: only each year's schedule, an online Trading Calendar for current dates, and old notices and press releases (and cmegroup.com blocks scripts). A CME closure is a weekday with no settlements in any of the 15 Databento backfills (nine futures, six option products); a bond-market closure is a weekday with no TreasuryDirect prices. Rule-based holiday names label the rows; the data decides them, and each row's `evidence` column says what it rests on (`verified` = `data`). Result: 110 closures, 91 CME and 108 bond market. The data also settles the special cases: CME settled on the Good Fridays of 2021 and 2023 (payrolls) and on the days of mourning 2018-12-05 and 2025-01-09; the bond market closed on 2018-12-05. Re-run the script after a rebuild of the Databento tables; it rewrites only 2016–2025.
-- **Caveat:** TreasuryDirect follows the Federal Reserve and published prices on Good Friday 2024 and 2025, when SIFMA usually recommends a full close, so those two are open on the `sifma` calendar (flagged in `evidence`). A day's accrual either way is within design §5.1's tolerance for stray holidays.
+- **2016–2025 are derived from the data** by `scripts/derive_holidays.py`, because CME publishes no archive of past holidays: only each year's schedule, an online Trading Calendar for current dates, and old notices and press releases (and cmegroup.com blocks scripts). A CME closure is a weekday with no settlements in any of the 15 Databento backfills (nine futures, six option products); a bond-market closure is a weekday with no TreasuryDirect prices or no Treasury par curve (the derived `par_curve` table). Rule-based holiday names label the rows; the data decides them, and each row's `evidence` column says what it rests on (`verified` = `data`). Result: 110 closures, 91 CME and 110 bond market. The data also settles the special cases: CME settled on the Good Fridays of 2021 and 2023 (payrolls) and on the days of mourning 2018-12-05 and 2025-01-09; the bond market closed on 2018-12-05. Re-run the script after a rebuild of the Databento tables; it rewrites only 2016–2025.
+- **Good Friday:** TreasuryDirect follows the Federal Reserve and publishes prices on every Good Friday, so it can't tell when the bond market closed. Treasury's par curve can: it is missing exactly on the Good Fridays SIFMA recommended a full close (2024-03-29, 2025-04-18), which the `sifma` calendar therefore closes, and present on the early-close ones (2021, 2023, 2026), which stay open. The NY Fed publishes no SOFR, TGCR or BGCR on any Good Friday, even an early-close one (EFFR it does).
 - **2026–27** are the earlier hand-entered rows, unverified against the official calendars (`verified` = `n`, except Veterans Day, Thanksgiving and Christmas 2026).
 - A weekday with no settlements anywhere that isn't a holiday is a gap in the feed, not a closure: the script lists them (8 in 2016–2025, each confirmed by Yahoo volume or TreasuryDirect prices), and `ctd derive` lists every product's missing trading days (design §4).
 - Before 2016, holidays are recognised from the data only: TreasuryDirect returns an empty file, and more than 5 business days later that's recorded as `not_expected`.
@@ -192,6 +192,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
   - `daily_treasury_bill_rates` (from 2002): bank discount and coupon-equivalent rates for 4, 6, 8, 13, 17, 26 and 52-week bills.
 - **How:** `GET https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/<year>/all?type=<table>&...`. Each yearly file takes about 20 s to arrive.
 - **Files:** `<table>_<year>.csv`. Dates are `MM/DD/YYYY`, newest first, yields in percent. The daily pull fetches the current year; `par_curve_backfill` (stored under 2026-10-19) has every earlier year.
+- **Derived table:** `par_curve` (design §4), one row per date with a column per tenor, 1990 on; FRED's CMT series agree with it on every shared value (97,450).
 - **Not collected:** the real yield curve and the long-term rate tables (TIPS aren't deliverable; the long-term composites are averages the model doesn't use). Some early pulls still include them.
 
 ### 5.5 `fred`: FRED series
@@ -199,13 +200,14 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 - **What:** 13 series, each as its full history: `DGS1MO`, `DGS3MO`, `DGS6MO`, `DGS1`, `DGS2`, `DGS3`, `DGS5`, `DGS7`, `DGS10`, `DGS20`, `DGS30` (CMT yields), `SOFR`, `DFF` (effective fed funds, every calendar day).
 - **How:** `GET https://fred.stlouisfed.org/graph/fredgraph.csv?id=<series>`. FRED stalls on some user agents (e.g. ones containing "collector"); the collector's is accepted.
 - **Files:** `<series>.csv`, columns `observation_date,<series>`, ISO dates, blank where there's no value.
-- **Note:** every series duplicates data already collected from its publisher (Treasury, NY Fed). Kept as a cross-check, and for CMT history before 1990.
+- **Note:** every series duplicates data already collected from its publisher (Treasury, NY Fed); the derived `par_curve` and `rates` tables use FRED as the cross-check, never the source. Kept as a cross-check, and for CMT history before 1990.
 
 ### 5.6 `nyfed_rates`: NY Fed reference rates
 
 - **What:** SOFR, TGCR, BGCR (secured) and EFFR (unsecured).
 - **How:** `GET https://markets.newyorkfed.org/api/rates/<secured|unsecured>/<rate>/search.json?startDate=...&endDate=...`.
 - **Files:** `<rate>_<start>_<end>.json`. The daily pull covers the two weeks ending on the as-of date, because a rate for day D is published the next morning; the file therefore holds every rate known that evening. `nyfed_rates_backfill` covers 2018-04-02 onwards.
+- **Derived table:** `rates` (design §4), one row per date and rate from 2018-04-02, the latest pull of each date. `revisionIndicator` is empty on every record stored (8,852), and a few early records have `NA` percentiles. No SOFR, TGCR or BGCR is published on Good Friday.
 - **Fields** (`refRates[]`): `effectiveDate`, `type`, `percentRate`, `percentPercentile1/25/75/99`, `volumeInBillions`, `revisionIndicator`.
 
 ### 5.7 `cme_tcf`: CME Treasury conversion factor tables

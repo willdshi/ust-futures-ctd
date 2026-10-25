@@ -20,7 +20,8 @@ raw store lacks. ``build`` is incremental and must give the same tables as ``bui
   ``_build.json``) and never fill its gaps.
 - A unit that fails to read is left out (its old rows dropped), reported, and retried next build.
 - Trading days (on the table's calendar, ``reference/data/holidays.csv``) with no rows for a
-  product, between its first and last date, are listed in ``_build.json`` as ``missing_days``.
+  product, between its first date (or the table's ``calendar_from``) and its last, are listed in
+  ``_build.json`` as ``missing_days``.
 
 Partition columns (``product`` by default, or the table's ``partition``, and ``year``) live in
 the path, not in the files.
@@ -77,6 +78,7 @@ class Table:
     winner: Callable  # (asof, product) -> the source whose rows the table keeps
     calendar: str | None = "cme"  # business calendar whose days every product should have
     partition: str = "product"  # the column partitioned on, with the year
+    calendar_from: date | None = None  # missing days aren't checked before this (the calendar's start)
 
 
 def _without(schema: pa.Schema, *names: str) -> pa.Schema:
@@ -242,7 +244,8 @@ def _overlap(table: Table, product: str, frame: pd.DataFrame) -> list[dict]:
         a = day[day["source"] == win]
         for other in sorted(sources - {win}):
             b = day[day["source"] == other]
-            m = a.merge(b, on=keys, how="outer", suffixes=("", "_o"), indicator=True)
+            on = keys or ["_one"]  # a table with one row per date and partition value
+            m = a.assign(_one=0).merge(b.assign(_one=0), on=on, how="outer", suffixes=("", "_o"), indicator=True)
             both = m[m["_merge"] == "both"]
             differ = pd.Series(False, index=both.index)
             for c in table.compare:
@@ -263,6 +266,15 @@ def _overlap(table: Table, product: str, frame: pd.DataFrame) -> list[dict]:
     return out
 
 
+def _calendar_hash() -> str:
+    """sha256 of the holiday list, so missing days are recomputed when it changes."""
+    import hashlib
+
+    from ctd.data import refdata
+
+    return hashlib.sha256(refdata._ref_file("holidays.csv").read_bytes()).hexdigest()
+
+
 def missing_days(dstore: DerivedStore, table: Table) -> dict[str, list[str]]:
     """Per product, the business days on ``table.calendar`` from its first to its last date with no rows."""
     from ctd.data import refdata
@@ -279,7 +291,7 @@ def missing_days(dstore: DerivedStore, table: Table) -> dict[str, list[str]]:
         dates.setdefault(product, set()).add(d)
     out = {}
     for product, have in sorted(dates.items()):
-        d, last, miss = min(have), max(have), []
+        d, last, miss = max(min(have), table.calendar_from or min(have)), max(have), []
         while d <= last:
             if cal.is_business_day(d) and d not in have:
                 miss.append(d.isoformat())
@@ -299,7 +311,7 @@ def build(dstore: DerivedStore, store, table: Table, full: bool = False, code: s
         state = {}
     state = {"table": table.name, "version": table.version, "sources": state.get("sources", {}),
              "partitions": state.get("partitions", {}), "overlap": state.get("overlap", []),
-             **({"missing_days": state["missing_days"]} if "missing_days" in state else {})}
+             **{k: state[k] for k in ("missing_days", "calendar") if k in state}}
     touched, report = set(), Report(table.name, {}, {}, {}, [], 0)
     for src in table.sources:
         rec = state["sources"].get(src.name)
@@ -347,9 +359,11 @@ def build(dstore: DerivedStore, store, table: Table, full: bool = False, code: s
     state["partitions"] = dict(sorted(state["partitions"].items()))
     report.partitions = len(touched)
     report.disagreements = [o for o in state["overlap"] if o["differ"]]
-    fresh = touched or "missing_days" not in state
+    calendar = _calendar_hash()
+    fresh = touched or "missing_days" not in state or state.get("calendar") != calendar
     if fresh:
         state["missing_days"] = missing_days(dstore, table)
+        state["calendar"] = calendar
     report.missing_days = state["missing_days"]
     if fresh or any(report.errors.values()) or not (dstore.table_dir(table.name) / BUILD).exists():
         state["code"] = code

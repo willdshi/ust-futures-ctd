@@ -88,7 +88,7 @@ date,name,cme_closed,sifma_closed,verified,evidence
 2024-01-01,New Year's Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2024-01-15,Martin Luther King Jr. Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2024-02-19,Presidents' Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
-2024-03-29,Good Friday,y,n,data,CME: no settlements in any Databento backfill; bond market: TreasuryDirect published; SIFMA usually recommends a full close
+2024-03-29,Good Friday,y,y,data,CME: no settlements in any Databento backfill; bond market: no Treasury par curve (TreasuryDirect published)
 2024-05-27,Memorial Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2024-06-19,Juneteenth,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2024-07-04,Independence Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
@@ -100,7 +100,7 @@ date,name,cme_closed,sifma_closed,verified,evidence
 2025-01-01,New Year's Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2025-01-20,Martin Luther King Jr. Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2025-02-17,Presidents' Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
-2025-04-18,Good Friday,y,n,data,CME: no settlements in any Databento backfill; bond market: TreasuryDirect published; SIFMA usually recommends a full close
+2025-04-18,Good Friday,y,y,data,CME: no settlements in any Databento backfill; bond market: no Treasury par curve (TreasuryDirect published)
 2025-05-26,Memorial Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2025-06-19,Juneteenth,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices
 2025-07-04,Independence Day,y,y,data,CME: no settlements in any Databento backfill; bond market: no TreasuryDirect prices

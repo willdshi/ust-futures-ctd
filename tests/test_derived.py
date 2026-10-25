@@ -12,7 +12,7 @@ import pytest
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.databento import (IDENTITY, UNDEF_PRICE, UNDEF_TS, final_settlements, futures_rows, option_label,
                                  option_rows, stats_frame)
-from ctd.data.derived import bonds, futures
+from ctd.data.derived import bonds, futures, rates
 from ctd.data.derived.bonds import price_rows, securities_rows
 from ctd.data.derived.options import bulletin_rows
 from ctd.data.derived.quality import chain_quality
@@ -399,3 +399,42 @@ def test_securities_one_row_per_cusip():
     assert notes == []
     auctions[0]["maturityDate"] = "2032-11-30T00:00:00"
     assert securities_rows(auctions)[1] == ["1 CUSIP(s) whose coupon or maturity differs between auctions: ['91282CFV8']"]
+
+
+YIELD_CURVE_2026 = b'''Date,"1 Mo","1.5 Month","2 Mo","3 Mo","4 Mo","6 Mo","1 Yr","2 Yr","3 Yr","5 Yr","7 Yr","10 Yr","20 Yr","30 Yr"
+10/13/2026,4.11,4.11,4.16,4.22,4.30,4.30,4.44,4.69,4.75,4.82,4.89,5.00,5.37,5.33
+10/09/2026,4.10,4.10,4.15,4.21,4.29,4.29,4.43,4.68,4.74,4.81,4.88,4.99,5.36,5.32
+'''
+
+
+def test_par_curve_from_treasury_checked_against_fred(store):
+    dstore = DerivedStore(store.root)
+    store.write(date(2026, 10, 13), "par_curve", "daily_treasury_yield_curve", "daily_treasury_yield_curve_2026.csv",
+                YIELD_CURVE_2026, {})
+    store.write(date(2026, 10, 13), "fred", "DGS10", "DGS10.csv",
+                b"observation_date,DGS10\n2026-10-08,4.97\n2026-10-09,4.99\n2026-10-12,\n2026-10-13,5.01\n", {})
+    report = build(dstore, store, rates.PAR_CURVE, log=quiet)
+    t = dstore.read("par_curve")
+    assert t["asof"].tolist() == [date(2026, 10, 9), date(2026, 10, 13)]  # FRED's 10-08 never fills a gap
+    assert t["y_10y"].tolist() == pytest.approx([0.0499, 0.05]) and t["y_1_5m"].tolist() == pytest.approx([0.041, 0.0411])
+    [o13] = report.disagreements  # 5.01 vs 5.00; the 10-09 rows agree
+    assert (o13["asof"], o13["differ"]) == ("2026-10-13", 1)
+    assert o13["examples"][0]["y_10y"] == pytest.approx(0.05) and o13["examples"][0]["y_10y_o"] == pytest.approx(0.0501)
+    assert report.missing_days == {"par": []}  # Columbus Day (the 12th) is closed on the sifma calendar
+
+
+def test_nyfed_rows_keep_the_latest_pull_and_note_revisions():
+    old = json.dumps({"refRates": [
+        {"effectiveDate": "2019-05-31", "type": "SOFR", "percentRate": 2.38, "percentPercentile1": "NA",
+         "volumeInBillions": 1100},
+        {"effectiveDate": "2019-06-03", "type": "SOFR", "percentRate": 2.40, "volumeInBillions": 1050}]}).encode()
+    new = json.dumps({"refRates": [
+        {"effectiveDate": "2019-06-03", "type": "SOFR", "percentRate": 2.41, "volumeInBillions": 1050,
+         "targetRateFrom": 2.25, "targetRateTo": 2.5}]}).encode()
+    rows, notes = rates.nyfed_rows("sofr", [old, new])
+    assert [(r["asof"], r["p1"], r["volume_bn"]) for r in rows] == [(date(2019, 5, 31), None, 1100.0),
+                                                                    (date(2019, 6, 3), None, 1050.0)]
+    assert [r["value"] for r in rows] == pytest.approx([0.0238, 0.0241])
+    assert (rows[1]["target_from"], rows[1]["target_to"]) == pytest.approx((0.0225, 0.025))
+    assert notes == ["1 value(s) revised by a later pull"]
+    assert rates.fred_values(b"observation_date,DFF\n2026-10-10,3.88\n2026-10-11,.\n") == {date(2026, 10, 10): 0.0388}
