@@ -35,3 +35,29 @@ def test_run_on_an_empty_store_reports_what_is_missing(tmp_path, capsys):
 
 def test_history_not_implemented():
     assert main(["history", "--contract", "ZB"]) == 2
+
+
+def test_output_is_utf8_on_a_cp1252_stream(monkeypatch):
+    import io
+    import sys
+
+    from ctd.cli import utf8_output
+
+    buf = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(buf, encoding="cp1252"))
+    utf8_output()
+    print("→ ≤ √ σ")
+    sys.stdout.flush()
+    assert buf.getvalue().decode("utf-8").rstrip() == "→ ≤ √ σ"  # \r\n on Windows
+
+
+def test_piped_output_is_utf8_without_environment_help():
+    # a pipe on Windows defaults to cp1252, which can't encode the report's symbols
+    import os
+    import subprocess
+    import sys
+
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+    code = "from ctd.cli import utf8_output; utf8_output(); print('→ ≤ √ σ')"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, env=env, check=True).stdout
+    assert out.decode("utf-8").strip() == "→ ≤ √ σ"

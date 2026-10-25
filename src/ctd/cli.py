@@ -376,7 +376,16 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def utf8_output() -> None:
+    """Write stdout and stderr as UTF-8: piped or scheduled, Windows would use cp1252 and fail on
+    the reports' →, ≤, √ and σ."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
+    utf8_output()
     args = build_parser().parse_args(argv)
     return args.func(args)
 
