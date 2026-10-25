@@ -121,6 +121,21 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 
 **Why:** the charts need probabilities at shifted states (each centre `c` from −100 to +100bp, ±1σ and ±2σ). The light model's digitals are today's option prices and can't be moved to another state; the normal factor can, using the same envelope. Its cost is no skew, so at `c = 0` it won't match the digitals. The gap is reported, and the smile-implied distribution (phase 3) is the fix if it is material.
 
+**Axes (adopted 2026-10-25):** chart 1's main x-axis is the shift in bp, labelled as what moves: "parallel shift in basket forward yields (bp)" while β = 1, and the reference yield ("20y yield change (bp)") once betas arrive in phase 2. Percentiles of the move-to-horizon distribution go on the secondary axis. A futures price axis is left out: the futures price is the envelope, monotone in the shift but with a slope that changes at each switch, so it would squeeze and stretch the regions the chart is meant to show. Switch points appear as futures prices (`K_k`) in the crossover table instead. Percentiles are the same in yield and futures price space, because the mapping between them is monotone (the 95th percentile yield shift is the 5th percentile futures price), so only the distribution they come from matters, not the space.
+
+## Which bond the constant-CTD DV01 holds (design §5.9, outputs.md chart 3)
+
+**Status:** adopted (2026-10-25), replacing a section 11 open question.
+
+**Decision:** the CTD on the contract's first date in the series, held for the whole contract and reset at each roll (the March basket and CFs differ). Built in phase 2 with the time series, as post-processing over the saved results: the first file's `ctd`, then that CUSIP's `dv01_cf` and `krd_shares` (for the constant-CTD effective maturity) from every later file. Not part of the single-date output.
+
+**Why:**
+- The alternative, today's CTD carried back, redraws the whole history whenever the label flips, so past charts would change. The start-of-series bond keeps every past value fixed, and the gap to the probability-weighted line reads as the cumulative basket effect since the start.
+- On a single date it equals the CTD-label DV01, and it stays equal until the first label flip. It is the only Tier 1 number that depends on another date, and `ctd run` reads one date only, so it belongs with the series code.
+- It needs no model work: the bond stays in the basket for the whole contract (new issues can join, none leave), and every saved result already holds its DV01/CF and KRD shares.
+
+**Expect:** on a short live series with no flip (ZBZ6, 2026-10-16 to 11-19) the constant-CTD and CTD-label lines coincide. Its value shows in the long histories (phase 4). If flips turn out rare there, reading the basket effect from probability-weighted against CTD-label between flips may be enough.
+
 ## Chart rendering (design §6, outputs.md)
 
 **Status:** adopted (2026-10-24).
