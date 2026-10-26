@@ -10,8 +10,8 @@ import pyarrow as pa
 import pytest
 
 from ctd.data.cme_bulletin import OptionSettle
-from ctd.data.databento import (IDENTITY, UNDEF_PRICE, UNDEF_TS, final_settlements, futures_rows, option_label,
-                                 option_rows, stats_frame)
+from ctd.data.databento import (IDENTITY, UNDEF_PRICE, UNDEF_TS, final_settlements, futures_rows,
+                                 merge_symbology, option_label, option_rows, stats_frame)
 from ctd.data.derived import bonds, futures, rates
 from ctd.data.derived.bonds import price_rows, securities_rows
 from ctd.data.derived.options import bulletin_rows
@@ -192,6 +192,61 @@ def test_databento_futures_rows():
     reused = stats(("2016-03-22T00:20Z", 1, "2016-03-21", 3, 3, 1.5, None))  # id 1 is an option by then
     with pytest.raises(ValueError, match="'OZNM6 C1300', not a ZN futures contract"):
         futures_rows(reused, SYMBOLOGY, "ZN")
+    placeholder = stats(("2016-03-22T00:20Z", 1, "2016-03-21", 3, 3, 0.0, None))
+    assert futures_rows(placeholder, SYMBOLOGY, "ZN") == (
+        [], ["1 settlement(s) of 0.0 on instruments not yet a ZN futures contract skipped (placeholders before listing)"])
+
+
+# SR1 around the 2018-06-29 roll: the front-two pull (c.0, c.1) and months 3 to 8 (c.2 on), both
+# from 2018-06-01. Id 3 is c.2 until 07-01, then c.1.
+FRONT = {"start_date": "2018-06-01", "result": {
+    "1": [{"d0": "2018-06-01", "d1": "2018-07-01", "s": "SR1M8"}],
+    "2": [{"d0": "2018-06-01", "d1": "2018-08-01", "s": "SR1N8"}],
+    "3": [{"d0": "2018-07-01", "d1": "2018-09-01", "s": "SR1Q8"}]}}
+MONTHS_3_TO_8 = {"start_date": "2018-06-01", "result": {
+    "3": [{"d0": "2018-06-01", "d1": "2018-07-01", "s": "SR1Q8"}],
+    "4": [{"d0": "2017-01-01", "d1": "2018-06-01", "s": "6R4V8 P0082"},  # an option before it was listed
+          {"d0": "2018-06-01", "d1": "2018-10-01", "s": "SR1U8"}]}}
+
+
+def test_databento_pulls_are_joined_before_finals_are_picked():
+    """A record is in the pull whose symbol its id was when it was published: SR1Q8's final for
+    Friday 2018-06-29 was sent on Sunday, after the roll, so it's in the front-two pull with its
+    preliminary in the other."""
+    front = stats(("2018-06-29T23:00Z", 2, "2018-06-29", 3, 3, 98.075, None),
+                  ("2018-07-01T16:06Z", 3, "2018-06-29", 3, 3, 98.075, None),
+                  ("2018-07-02T13:35Z", 3, "2018-06-29", 9, 0, None, 1581))
+    later = stats(("2018-06-29T19:13Z", 3, "2018-06-29", 3, 2, 98.075, None),
+                  ("2018-06-29T23:10Z", 4, "2018-06-29", 3, 3, 98.045, None),
+                  ("2018-05-30T23:00Z", 4, "2018-05-30", 3, 3, 0.0, None))  # placeholder before listing
+    rows, notes = futures_rows(pd.concat([front, later], ignore_index=True), merge_symbology([FRONT, MONTHS_3_TO_8]),
+                               "SR1")
+    assert [(r["asof"], r["contract"], r["settle"], r["open_interest"]) for r in rows] == [
+        (date(2018, 6, 29), "SR1N8", 98.075, None), (date(2018, 6, 29), "SR1Q8", 98.075, 1581),
+        (date(2018, 6, 29), "SR1U8", 98.045, None)]
+    assert notes == ["1 settlement(s) dated before 2018-06-01 skipped"]
+
+
+def test_merge_symbology():
+    merged = merge_symbology([FRONT, MONTHS_3_TO_8])
+    assert merged["start_date"] == "2018-06-01" and len(merged["result"]["3"]) == 2
+    clash = {"start_date": "2018-01-01", "result": {"3": [{"d0": "2018-06-15", "d1": "2018-06-20", "s": "SR1U8"}]}}
+    with pytest.raises(ValueError, match="instrument 3 is both 'SR1Q8' and 'SR1U8' from 2018-06-15"):
+        merge_symbology([MONTHS_3_TO_8, clash])
+
+
+def test_databento_futures_unit_holds_both_pulls(store):
+    for d, source, name in ((date(2026, 10, 22), "databento_fut_backfill", "SR1"),
+                            (date(2026, 10, 26), "databento_stir_backfill", "SR1_c2-c7")):
+        for kind in ("statistics_2016-01-01_2026-10-24.dbn.zst", "symbology_raw_symbol_2016-01-01_2026-10-24.json",
+                     "symbology_continuous_2016-01-01_2026-10-24.json"):
+            store.write(d, source, "SR1", f"{name}_{kind}", b"x", {})
+    store.write(date(2026, 10, 22), "databento_fut_backfill", "ZN", "ZN_statistics_x.dbn.zst", b"x", {})
+    units = futures.DATABENTO.units(store)
+    assert sorted(units) == ["SR1", "ZN"]
+    assert [(f["source"], f["name"].split("_symbology")[0].split("_statistics")[0]) for f in units["SR1"]] == [
+        ("databento_fut_backfill", "SR1"), ("databento_fut_backfill", "SR1"),
+        ("databento_stir_backfill", "SR1_c2-c7"), ("databento_stir_backfill", "SR1_c2-c7")]
 
 
 def test_final_settlements_keeps_the_last_in_the_window():

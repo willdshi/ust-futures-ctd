@@ -1,5 +1,6 @@
-"""Readers for the paid Databento backfills (data.md 5.11, 5.12). No fetcher: the files are pulled
-once by the scripts in ``scratch/`` and stored under ``raw/2026-10-22/``.
+"""Readers for the paid Databento backfills (data.md 5.11, 5.12, 5.13). No fetcher: the files are
+pulled once by the scripts in ``scratch/`` and stored under ``raw/2026-10-22/`` (``raw/2026-10-26/``
+for the extra SR1 and ZQ months).
 
 Statistics records (``stat_type`` 3 settlement, 6 cleared volume, 9 open interest) carry
 ``ts_ref``, the trading day they refer to, stamped at midnight UTC: its UTC date is the trading
@@ -24,6 +25,7 @@ from ctd.reference.contracts import MONTH_CODES, parse_contract
 from ctd.reference.options import LABELS, underlying_month
 
 FUT = "databento_fut_backfill"
+STIR_FUT = "databento_stir_backfill"  # SR1 and ZQ months 3 to 8, read with FUT as one source (data.md 5.13)
 OPT = "databento_opt_backfill"
 SETTLE, VOLUME, OPEN_INTEREST = 3, 6, 9
 UNDEF_TS = np.iinfo(np.uint64).max
@@ -122,16 +124,18 @@ def futures_rows(stats: pd.DataFrame, symbology: dict, product: str) -> tuple[li
     """Futures table rows (asof, product, month, contract, settle, open_interest) from one product's
     statistics (``stats_frame``) and its instrument id -> raw symbol lookup.
 
-    Final settlements (``final_settlements``) on and after the lookup's start. Open interest is the
-    last published for the date (a late-evening figure is revised the next morning, and the
-    revision is what CME's page shows), and null where none was (the last date: it's published the
-    next morning).
+    Final settlements (``final_settlements``) on and after the lookup's start. A final of 0.0 on an
+    id that wasn't a futures contract that day is a placeholder sent before the contract was listed
+    (SR1M9 on 2018-11-16, its id still a CAD option) and is skipped; any other final that doesn't map
+    to a futures contract is an error. Open interest is the last published for the date (a
+    late-evening figure is revised the next morning, and the revision is what CME's page shows),
+    and null where none was (the last date: it's published the next morning).
     """
     settle, notes = final_settlements(stats)
     oi = _last(stats[stats["stat_type"] == OPEN_INTEREST], "quantity")
     start = date.fromisoformat(symbology["start_date"])
     pattern = re.compile(rf"{re.escape(product)}[{''.join(MONTH_CODES)}]\d")
-    rows, early = [], 0
+    rows, early, placeholders = [], 0, 0
     for (d64, iid), price in settle.items():
         d = pd.Timestamp(d64).date()
         if d < start:
@@ -139,38 +143,70 @@ def futures_rows(stats: pd.DataFrame, symbology: dict, product: str) -> tuple[li
             continue
         sym = symbol_on(symbology["result"].get(str(iid), []), d)
         if sym is None or not pattern.fullmatch(sym):
+            if price == 0.0:
+                placeholders += 1
+                continue
             raise ValueError(f"{product}: instrument {iid} on {d} is {sym!r}, not a {product} futures contract")
         q = oi.get((d64, iid))
         rows.append({"asof": d, "product": product, "month": parse_contract(sym, d)[1], "contract": sym,
                      "settle": float(price), "open_interest": None if q is None else int(q)})
     if early:
         notes.append(f"{early} settlement(s) dated before {start} skipped")
+    if placeholders:
+        notes.append(f"{placeholders} settlement(s) of 0.0 on instruments not yet a {product} futures contract "
+                     f"skipped (placeholders before listing)")
     return rows, notes
 
 
-def fut_files(store, product: str) -> list[tuple[date, str, str]]:
+def fut_files(store, product: str, source: str = FUT) -> list[tuple[date, str, str]]:
     """(as-of, statistics file, raw-symbol lookup file) of each stored pull for ``product``."""
     out = []
     for asof in store.asofs():
-        names = store.names(asof, FUT, product)
+        names = store.names(asof, source, product)
         for stats in (n for n in names if "_statistics_" in n):
             sym = stats.replace("_statistics_", "_symbology_raw_symbol_").replace(".dbn.zst", ".json")
             if sym not in names:
-                raise FileNotFoundError(f"{FUT}/{product}: {stats} has no {sym}")
+                raise FileNotFoundError(f"{source}/{product}: {stats} has no {sym}")
             out.append((asof, stats, sym))
     return out
 
 
+def merge_symbology(lookups: list[dict]) -> dict:
+    """One raw-symbol lookup from several pulls': each id's date ranges from all of them, starting at
+    the earliest start. An id given two symbols over the same dates is an error."""
+    result = {}
+    for lookup in lookups:
+        for iid, intervals in lookup["result"].items():
+            result.setdefault(iid, []).extend(intervals)
+    for iid, intervals in result.items():
+        for i in intervals:
+            for j in intervals:
+                if i["s"] != j["s"] and i["d0"] < j["d1"] and j["d0"] < i["d1"]:
+                    raise ValueError(f"instrument {iid} is both {i['s']!r} and {j['s']!r} from {max(i['d0'], j['d0'])}")
+    return {"start_date": min(lookup["start_date"] for lookup in lookups), "result": result}
+
+
 def read_futures(store, product: str) -> tuple[list[dict], list[str]]:
-    """Every stored final settlement and open interest for ``product`` (front two contracts, 2016 on)."""
+    """Every stored final settlement and open interest for ``product``, 2016 on: the front two
+    contracts (``FUT``), and for SR1 and ZQ months 3 to 8 as well (``STIR_FUT``).
+
+    The pulls' records are joined before finals are picked. A pull holds a record if its id was one
+    of the requested symbols when the record was published, not on the trading date it refers to,
+    so near a roll one date's records are split between the pulls: SR1Q8's final for Friday
+    2018-06-29 was sent on Sunday, after the id moved from ``c.2`` to ``c.1``, and is in ``FUT``
+    with its preliminaries in ``STIR_FUT``.
+    """
     import databento as db
 
-    files = fut_files(store, product)
-    if len(files) != 1:
-        raise ValueError(f"{FUT}/{product}: expected one stored pull, found {len(files)}")
-    [(asof, stats, sym)] = files
-    a = db.DBNStore.from_bytes(store.read(asof, FUT, product, stats)).to_ndarray()
-    return futures_rows(stats_frame(a), json.loads(store.read(asof, FUT, product, sym)), product)
+    frames, lookups = [], []
+    for source in (FUT, STIR_FUT):
+        files = fut_files(store, product, source)
+        if len(files) > 1 or (source == FUT and not files):
+            raise ValueError(f"{source}/{product}: expected one stored pull, found {len(files)}")
+        for asof, stats, sym in files:
+            frames.append(stats_frame(db.DBNStore.from_bytes(store.read(asof, source, product, stats)).to_ndarray()))
+            lookups.append(json.loads(store.read(asof, source, product, sym)))
+    return futures_rows(pd.concat(frames, ignore_index=True), merge_symbology(lookups), product)
 
 
 # --- Options (data.md 5.12) --------------------------------------------------------------------

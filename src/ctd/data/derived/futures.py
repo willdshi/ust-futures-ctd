@@ -3,7 +3,10 @@
 One row per date, product and contract month, for the six Treasury futures and SR1, SR3 and ZQ.
 Sources and precedence:
 
-- ``databento_fut_backfill`` before 2026-10-14: front two contracts only (data.md 5.11);
+- ``databento_fut_backfill`` before 2026-10-14: front two contracts only (data.md 5.11), and for SR1
+  and ZQ months 3 to 8 too, from ``databento_stir_backfill`` (data.md 5.13). The two pulls are one
+  source, since precedence picks one source per date and product; their rows are all labelled
+  ``databento_fut_backfill``, and the month tells which pull a row came from;
 - ``cme_fut`` (Treasuries) and ``cme_stir`` (SR1, SR3, ZQ) from 2026-10-14: every listed month (data.md 5.8).
 
 ``open_interest`` is at the close of ``asof``. CME's page for day D shows the previous business
@@ -67,14 +70,15 @@ def _cme_source(source: str) -> Source:
 def _databento_units(store) -> dict[str, list[dict]]:
     out = {}
     for d in store.asofs():
-        for product in store.units(d, databento.FUT):
-            out.setdefault(product, []).extend(
-                file_ref(store, d, databento.FUT, product, n) for n in store.names(d, databento.FUT, product)
-                if "_statistics_" in n or "_symbology_raw_symbol_" in n)
+        for source in (databento.FUT, databento.STIR_FUT):
+            for product in store.units(d, source):
+                out.setdefault(product, []).extend(
+                    file_ref(store, d, source, product, n) for n in store.names(d, source, product)
+                    if "_statistics_" in n or "_symbology_raw_symbol_" in n)
     return out
 
 
-DATABENTO = Source(databento.FUT, 1, _databento_units, lambda store, key: databento.read_futures(store, key),
+DATABENTO = Source(databento.FUT, 2, _databento_units, lambda store, key: databento.read_futures(store, key),
                    lambda key: (key, None))
 STIR = ("SR1", "SR3", "ZQ")
 
