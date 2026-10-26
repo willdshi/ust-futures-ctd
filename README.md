@@ -31,7 +31,7 @@ Intended use is for monitoring duration exposure, not for relative value trading
 
 1. **Basket and forward prices.** Each deliverable bond is priced forward to the implied delivery date at term repo (from the one-month SOFR futures strip), and divided by its conversion factor.
 2. **Switch points.** Yields are shifted in parallel; the yield and futures levels at which the cheapest bond changes are found by exact root-finding.
-3. **Probabilities.** The probability of reaching each switch comes from two independent models: digitals from put and call spreads on the CME option settlements, and a normal distribution at the at-the-money implied vol.
+3. **Probabilities.** The probability of reaching each switch comes from two models: digitals from put and call spreads on the CME option settlements, and a normal distribution at the at-the-money implied vol. Both read CME settlement prices, which CME sets from its implied-vol skew whether or not a strike traded, so they are option-implied rather than traded prices; the report shows which strikes behind each probability traded that day.
 4. **Risk.** Each bond's DV01 and key rate DV01s (tent bumps on the Treasury par curve at 2, 5, 7, 10, 15, 20, 25 and 30 years) are weighted by the probability that it is CTD, and recomputed at every shifted state for the duration profile.
 
 All bond math (pricing, yields, accrued, conversion factors, forwards) is hand-written in one street-convention pricing function, and tested against QuantLib and CME's published conversion factor tables. The full specification is in [docs/design.md](docs/design.md). Outputs are specified in [docs/outputs.md](docs/outputs.md), and settled choices are recorded in [docs/decisions.md](docs/decisions.md).

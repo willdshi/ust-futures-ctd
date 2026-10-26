@@ -17,7 +17,12 @@ above one tick, 0 to one tick otherwise) and the bound is the widest slope those
 Two such strikes half a point apart give "≤ 3%" (1/64 over ½). So do two equal settlements, which
 wings often show (a floor: ZN puts from 98.5 to 100.5 all at 2/64 on 2026-10-16): once rounded
 they are at most one tick apart. A ``K`` beyond the listed strikes
-gets no value. Results are flagged where open interest is zero or the slope falls outside [0, 1].
+gets no value. Results are flagged where the slope falls outside [0, 1].
+
+Every settled strike is used, with open interest or without: all settlements come off CME's skew
+for the expiry, so open interest doesn't make a price more market-based (decisions.md, Option
+strikes with no open interest). Instead each digital records which of its strikes traded that day
+(volume above zero), the anchor a reader can judge it by, and which had no open interest.
 """
 
 from dataclasses import dataclass
@@ -41,6 +46,8 @@ class Digital:
     upper_bound: bool
     strikes_used: tuple[float, ...]
     flags: tuple[str, ...]
+    traded: tuple[float, ...] = ()  # strikes used that traded that day (an option with volume > 0)
+    no_open_interest: tuple[float, ...] = ()  # strikes used whose option had no open interest
 
 
 def _below_tick(o: OptionSettle, tick: float) -> bool:
@@ -95,9 +102,9 @@ def digital(chain: list[OptionSettle], strike: float, futures: float, df: float)
 
     options = {o for pair in used for o in pair}
     flags = []
-    if any(o.open_interest == 0 for o in options):
-        flags.append("zero open interest")
     if prob < 0 or prob > 1:
         flags.append(f"slope {prob:.3f} outside [0, 1], clipped")
         prob = min(max(prob, 0.0), 1.0)
-    return Digital(strike, side, prob, bound, tuple(sorted(o.strike for o in options)), tuple(flags))
+    return Digital(strike, side, prob, bound, tuple(sorted(o.strike for o in options)), tuple(flags),
+                   tuple(sorted(o.strike for o in options if o.volume > 0)),
+                   tuple(sorted(o.strike for o in options if o.open_interest == 0)))

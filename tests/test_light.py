@@ -151,7 +151,7 @@ def test_profile_is_the_headline_and_is_saved(tmp_path):
     assert "region-weighted (normal, ATM width; vol ±10%" in out
     assert "Shifted states" in out and "Change in key-rate DV01 from today" in out and "+2σ CTD-based" in out
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 9
+    assert rec["schema"] == 10
     half = pf.half_range(r.width)  # ±100bp, or wider to take in ±2σ
     assert len(rec["profile"]["curve"]["dv01"]) == len(r.profile.curve.centres) == 2 * half + 1
     assert r.profile.curve.centres[-1] == half >= 2 * r.width
@@ -220,10 +220,19 @@ def test_a_rising_strip_raises_repo_and_is_saved(tmp_path):
     assert r.repo.term > run(inputs()).repo.term
     assert "repo: SR1 strip" in format_run(r)
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 9 and rec["repo"]["path"] == "sr1"
+    assert rec["schema"] == 10 and rec["repo"]["path"] == "sr1"
     assert rec["repo"]["months"]["2026-12-01"] == pytest.approx(r.repo.months[date(2026, 12, 1)])
 
 
 def test_a_strip_short_of_the_last_delivery_day_falls_back_to_flat():
     r = run(inputs(sr1=dict.fromkeys(MONTHS[:2], 0.0388), fixings=KNOWN))
     assert r.repo.path == "flat" and "no SR1 settlement for Dec 2026" in r.repo.why_flat
+
+
+def test_traded_label():
+    from ctd.report.light import traded
+
+    assert traded((103.0, 104.0, 105.0), ()) == "none"
+    assert traded((103.0, 104.0, 105.0), (105.0,)) == "105"
+    assert traded((104.0, 105.0), (104.0, 105.0)) == "all"
+    assert traded((), ()) == "-"

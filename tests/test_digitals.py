@@ -98,10 +98,15 @@ def test_beyond_listed_strikes():
     assert d.prob is None and d.flags == ("beyond listed strikes",)
 
 
-def test_thin_inputs_are_flagged():
+def test_traded_and_no_open_interest_strikes_are_recorded_not_flagged():
+    # every settled strike is used (decisions.md, Option strikes with no open interest)
     rows = [o if o.strike != 104.0 else OptionSettle(o.product, o.label, o.right, o.strike, o.settle, None, 0, 0)
             for o in chain(step=1.0)]
-    assert "zero open interest" in digital(rows, 104.2, F, DF).flags
+    rows = [o if o.strike != 105.0 else OptionSettle(o.product, o.label, o.right, o.strike, o.settle, None, 7, 50)
+            for o in rows]
+    d = digital(rows, 104.2, F, DF)
+    assert d.strikes_used == (103.0, 104.0, 105.0) and d.flags == ()
+    assert d.no_open_interest == (104.0,) and d.traded == (105.0,)
 
 
 def test_chain_must_be_one_expiry():

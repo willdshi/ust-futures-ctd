@@ -15,9 +15,10 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 9  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
+SCHEMA = 10  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
 # 7: repo from the SR1 strip; 8: the delivery window and the carry behind the horizon; 9: inputs read
-# through a derived table are its raw files, each marked with the ``table``
+# through a derived table are its raw files, each marked with the ``table``; 10: per digital and for the ATM
+# vol, the strikes used that traded that day and those with no open interest (no longer a warning)
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
@@ -63,7 +64,8 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
         "vol": {"label": r.vol.label, "t_expiry": r.vol.t, "t_horizon": r.t_horizon,
                 "strikes": list(r.vol.strikes), "vols": list(r.vol.vols), "price_vol": r.vol.price_vol,
                 "yield_vol": r.yield_vol, "width": r.width, "expiry_width": r.expiry_width,
-                "flags": list(r.vol.flags),
+                "flags": list(r.vol.flags), "traded": list(r.vol.traded),
+                "no_open_interest": list(r.vol.no_open_interest),
                 "units": "price vols in points per √year, yield vol in bp per √year, widths in bp; "
                          "t in calendar days / 365"},
         "profile": {"width": r.profile.curve.width, "points_sigma": list(r.profile.POINTS),
@@ -83,7 +85,9 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
                         "sigmas": c.sigmas, "normal": c.normal,
                         "digital": {"side": c.digital.side, "prob": c.digital.prob,
                                     "upper_bound": c.digital.upper_bound,
-                                    "strikes_used": list(c.digital.strikes_used), "flags": list(c.digital.flags)},
+                                    "strikes_used": list(c.digital.strikes_used), "flags": list(c.digital.flags),
+                                    "traded": list(c.digital.traded),
+                                    "no_open_interest": list(c.digital.no_open_interest)},
                         "beyond": {"cusip": region[id(c.switch)].cusip, "lo": region[id(c.switch)].lo,
                                    "hi": region[id(c.switch)].hi}}
                        for c in r.crossovers],

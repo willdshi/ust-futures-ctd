@@ -213,3 +213,40 @@ A switch shows as the dark cell moving between rows: ZBZ6 on 2026-10-23 from 15y
 - **Not at the shifted states:** there the futures price would have to come from the model (today's settlement moved by the change in the expected envelope), which edges toward a model futures price. Leave duration to today until that is wanted, then label it as a scenario price.
 - **No duration axis on the charts:** along the shift the futures price changes, so DV01 and duration aren't one rescaling of each other.
 
+
+## Option strikes with no open interest (design §5.5, §5.11; phase 1d)
+
+**Status:** adopted (2026-10-26).
+
+**Decision:** keep every settled strike, including those with no open interest, in the chains the light model reads. Zero open interest stops being a warning. Instead each digital and the ATM vol record which of the strikes they used traded that day and which had no open interest (results schema 10), and every output shows the first. Call the digitals "option-implied, from CME settlements", never "market-implied".
+
+**The issue:** the Section 42 bulletin prints an option only if it has open interest or volume, so from 2026-10-16 those strikes never reach the model. Databento has every settled strike, so runs before 10-16 see them (UB on 2026-09-15: 140 DEC26 rows, 119 with no open interest; the bulletin on 10-16 had 34). They raised a "zero open interest" warning on about half of UB's and TN's September dates and none after 10-16.
+
+**What these prices are:** CME settles every listed strike. Per its daily option settlement procedure ([CME, CBOT, NYMEX, COMEX Daily Option Settlement Procedures](https://cmegroupclientsite.atlassian.net/wiki/spaces/EPICSANDBOX/pages/457412876/CME+CBOT+NYMEX+COMEX+Daily+Option+Settlement+Procedures), checked 2026-10-26), staff set the out-of-the-money settlements from market activity through the day on all venues, and once the futures are settled the implied volatility skews and the futures settlement price give each option's settlement; in-the-money options follow from put-call parity with a SOFR cost of carry. So every settlement, with open interest or without, comes off CME's skew for that expiry; open interest only records past positions, and most strikes with it don't trade on a given day either. The page says nothing about how the skew is extended to strikes with no activity, and no page specific to Treasury options was found (the 2016 CBOT filing 16-047 only changed the minimum settlement to a $1 cabinet). Near the money the skew is pinned by trades and quotes; far out it is more CME's curve shape than traded prices.
+
+**Measured effect:**
+- 2026-10-16 and 10-19, where both sources exist: the same inputs with the bulletin chain and the Databento chain give identical results for ZBZ6 and ZNZ6, and the same ATM vol, width and DV01 for UBZ6 and TNZ6; only far-wing digitals move (up to 1 point; one TNZ6 bound ≤1.5% against ≤5.8%, the bulletin's from interpolating across strikes 94 to 101.5).
+- Dropping the strikes with no open interest and no volume from every chain, 2026-09-01 to 10-15: ZBZ6 and ZNZ6 essentially unchanged (one P(CTD) moves 1 point); UBZ6 and TNZ6 keep their ATM vol (within 0.8%) and DV01 (within $10), but switches near the money lose their strikes and their probabilities become uninformative intervals (TNZ6 on 09-22: CTD 97–100% becomes 0–100%; UBZ6 on 10-02: 49–51% becomes 0–100%).
+
+**Why keep them:** they come off the same skew as the strikes with open interest, so dropping them makes the chain smaller, not more market-based; the headline numbers (DV01, KRDs, the profile and the charts) use only ATM vol, from the two strikes next to the futures price, so they don't depend on the wings; and dropping them turns UB's and TN's September digitals into 0–100%. The seam at 10-16 goes when live runs move to a daily Databento download (design §10, phase 1d item 1). Until then the bulletin is the weaker source for UB and TN, since it hides strikes.
+
+**How far to trust a digital:** a switch within about 1σ reads the well-anchored part of the skew; beyond about 1.5σ it reads CME's wing shape and is indicative.
+
+**Not a traded signal: Databento's settlement flag.** `stat_flags` 3 (final, "actual") against 1 doesn't say whether an option traded: every ZN DEC26 final on 2026-10-16 is 3, including the 190 of 232 with no volume, and in ZT's options 92–99% of finals are 3 each year since 2017 (2016: 68%), the 1s following a monthly cycle. data.md §5.12 is corrected.
+
+**Done: traded strikes marked by volume.** The day's cleared volume (`volume` > 0) says an option traded, and both sources have it (they agree on the overlap), so it works across the seam. `Digital.traded` and `AtmVol.traded` list the strikes used whose option traded that day (`no_open_interest` those with no open interest); `ctd run` and the report page show it next to each digital ("strikes traded": all, none, or which) and for the ATM vol. Over 2026-09-01 to 10-23 (37 dates per contract):
+
+| | digitals | all strikes traded | some | none | none and within 1σ | ATM vol with no traded strike |
+|---|---|---|---|---|---|---|
+| ZBZ6 | 298 | 275 | 13 | 10 | 0 | 0 dates |
+| ZNZ6 | 120 | 86 | 28 | 6 | 0 | 0 |
+| UBZ6 | 91 | 3 | 38 | 50 | 25 | 20 |
+| TNZ6 | 37 | 0 | 1 | 36 | 0 | 22 |
+
+ZB's and ZN's digitals rest on strikes that traded (ZB on 2026-09-15: half its 68 out-of-the-money DEC26 strikes traded, every one near the money). UB's and TN's mostly don't, including half of UB's switches within 1σ, and on over half the dates neither strike behind their ATM vol traded either: there the width, and so the headline DV01, rests on CME's skew rather than that day's trades.
+
+**Caveats carried into the outputs** (report page captions, `ctd run`'s notes, outputs.md Conventions, README):
+- All option-derived numbers (digitals, ATM vol, the width) come from CME settlement prices, which CME sets from its implied-vol skew whether or not a strike traded; they are option-implied, not traded prices.
+- "Strikes traded" says how well a digital is anchored that day. With none traded, it rests on CME's interpolation from other strikes: indicative. So is any digital beyond about 1.5σ.
+- Even a traded strike's settlement is CME's skew, informed by the day's trades, not the trade price.
+- Before 2026-10-16 the chains include strikes with no open interest that the bulletin leaves out from 10-16; their effect on the published numbers is measured above.

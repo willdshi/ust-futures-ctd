@@ -20,7 +20,7 @@ import numpy as np
 
 from ctd.reference.grades import Grade, grade_for
 from ctd.report import charts, results, series
-from ctd.report.light import money, prob
+from ctd.report.light import money, prob, traded
 from ctd.report.names import bond_name
 from ctd.risk.dv01 import dollars
 
@@ -191,7 +191,10 @@ def probability_table(rec: dict) -> str:
                      f"{b['cf']:.4f}", _k(b["dv01_cf"]), prob(lo, hi) if hi >= SHOWN else "", f"{n:.1%}"])
     return _table(["cusip", "bond", "CF", "DV01/CF $k", "option-implied", "normal (ATM)"], rows,
                   "CTD probabilities: option digitals at option expiry (the light model) against the ATM normal "
-                  "factor to implied delivery, which drives the charts; * the CTD today")
+                  "factor to implied delivery, which drives the charts; * the CTD today. Both are read from CME "
+                  "settlement prices, which CME sets from its implied-vol skew for the expiry whether or not a "
+                  "strike traded, so they are option-implied rather than traded prices; see the switch table for "
+                  "which strikes traded")
 
 
 def switch_table(rec: dict) -> str:
@@ -203,13 +206,16 @@ def switch_table(rec: dict) -> str:
         flag = ' <span class="flag">below 1σ</span>' if abs(c["sigmas"]) < 1 else ""
         rows.append([f"{names[c['from']]} → {names[c['to']]}", _signed(c["z_bp"], ".1f"),
                      _signed(c["sigmas"], ".2f") + flag, f"{c['strike']:.4f}", _signed(c["strike"] - rec["f_market"], ".4f"),
-                     ("P(F < K) " if d["side"] == "below" else "P(F > K) ") + digital, f"{c['normal']:.1%}"])
+                     ("P(F < K) " if d["side"] == "below" else "P(F > K) ") + digital,
+                     "n/a" if "traded" not in d else traded(d["strikes_used"], d["traded"]), f"{c['normal']:.1%}"])
     if not rows:
         return "<p>No switches within the profile's range.</p>"
     return _table(["switch, as yields rise", "shift bp", "σ", "futures price K", "K − F", "digital",
-                   "normal tail"], rows,
+                   "strikes traded", "normal tail"], rows,
                   "Distance to each switch: σ over the width to implied delivery; the digital and the normal tail are "
-                  "both at option expiry")
+                  "both at option expiry. Strikes traded: which of the option strikes behind the digital traded that "
+                  "day. A digital whose strikes didn't trade rests on CME's settlement skew, interpolated from other "
+                  "strikes; treat it, and any digital beyond about 1.5σ, as indicative")
 
 
 def diagnostics(rec: dict) -> str:
@@ -225,7 +231,9 @@ def diagnostics(rec: dict) -> str:
         f"Repo: {rp}",
         f"Vol: {rec['options']['product']} {v['label']} options, expiry {rec['options']['expiry']}; "
         f"{v['price_vol']:.2f} points per √year at the money, {v['yield_vol']:.1f}bp per √year through the CTD's "
-        f"DV01/CF; width {v['width']:.1f}bp to implied delivery, {v['expiry_width']:.1f}bp to option expiry",
+        f"DV01/CF; width {v['width']:.1f}bp to implied delivery, {v['expiry_width']:.1f}bp to option expiry"
+        + ("" if "traded" not in v else f"; strikes {v['strikes'][0]:g} and {v['strikes'][1]:g}, traded that day: "
+           f"{traded(v['strikes'], v['traded'])}"),
         f"Futures settlement {rec['f_market']:.4f}; recentring gap {_signed(rec['gap'], '.4f')} points",
         f"Key rates against the par curve of {rec['krd']['par_date']}",
         f"Run {rec['run_at']}, code {escape(str(rec['code']))}, {len(rec['inputs'])} raw files",

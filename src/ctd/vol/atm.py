@@ -65,6 +65,8 @@ class AtmVol:
     vols: tuple[float, float]  # their implied normal vols
     price_vol: float  # interpolated to the futures price, price points per √year
     flags: tuple[str, ...]
+    traded: tuple[float, ...] = ()  # of the two strikes, those whose option traded that day (volume > 0)
+    no_open_interest: tuple[float, ...] = ()  # of the two, those whose option had no open interest
 
 
 def atm(chain: list[OptionSettle], futures: float, df: float, t: float) -> AtmVol:
@@ -87,10 +89,9 @@ def atm(chain: list[OptionSettle], futures: float, df: float, t: float) -> AtmVo
     step = min(b - a for a, b in zip(strikes, strikes[1:])) if len(strikes) > 1 else hi.strike - lo.strike
     if hi.strike - lo.strike > step + 1e-9:
         flags.append(f"no priced strike between {lo.strike:g} and {hi.strike:g}")
-    if lo.open_interest == 0 or hi.open_interest == 0:
-        flags.append("zero open interest")
     return AtmVol(chain[0].label, futures, t, (lo.strike, hi.strike), vols, (1 - w) * vols[0] + w * vols[1],
-                  tuple(flags))
+                  tuple(flags), tuple(o.strike for o in (lo, hi) if o.volume > 0),
+                  tuple(o.strike for o in (lo, hi) if o.open_interest == 0))
 
 
 def yield_vol(price_vol: float, dv01_cf: float) -> float:

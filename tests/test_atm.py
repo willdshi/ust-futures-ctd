@@ -63,7 +63,15 @@ def test_missing_strike_and_thin_inputs_are_flagged():
     assert v.strikes == (116.5, 117.5)
     assert "no priced strike between 116.5 and 117.5" in v.flags
     assert v.price_vol == pytest.approx(VOL, abs=1e-9)  # still exact: the vol is flat
-    assert "zero open interest" in atm(chain(oi=0), F, DF, T).flags
+    thin = atm(chain(oi=0), F, DF, T)  # no open interest: recorded, not a warning
+    assert thin.no_open_interest == thin.strikes and thin.traded == () and thin.flags == ()
+
+
+def test_traded_strikes_are_recorded():
+    rows = [o if (o.right, o.strike) != ("C", 117.5) else OptionSettle(o.product, o.label, o.right, o.strike,
+                                                                       o.settle, None, 25, 100) for o in chain()]
+    v = atm(rows, F, DF, T)
+    assert v.strikes == (117.0, 117.5) and v.traded == (117.5,) and v.no_open_interest == ()
 
 
 def test_needs_options_on_both_sides():

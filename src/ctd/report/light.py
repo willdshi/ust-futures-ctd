@@ -58,6 +58,16 @@ def _repo(r: LightResult) -> str:
 NEXT_CHEAPEST = 3  # bonds listed beyond those with a probability: the cheapest of the rest at z = 0
 
 
+def traded(strikes_used, traded_strikes) -> str:
+    """Which of the strikes behind a digital or the ATM vol traded that day: ``"all"``, ``"none"``
+    or the strikes that did (decisions.md, Option strikes with no open interest)."""
+    if not strikes_used:
+        return "-"
+    if not traded_strikes:
+        return "none"
+    return "all" if set(traded_strikes) == set(strikes_used) else " ".join(f"{s:g}" for s in traded_strikes)
+
+
 def format_line(r: LightResult) -> str:
     """One line per run for ``ctd history``: the CTD and its probability, today's DV01 against the
     CTD-based, the recentring gap, the nearest switch each side and the number of warnings."""
@@ -96,7 +106,8 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
         f"{money(*(dollars(v) for v in r.dv01))} at today's yields with the option-implied probabilities; "
         f"CTD-based {money(dollars(r.ctd_dv01), dollars(r.ctd_dv01))} ({money(*[dollars(r.ctd_dv01, r.face)] * 2)})",
         f"ATM vol: {r.vol.price_vol:.2f} points per √year (put {r.vol.strikes[0]:g} {r.vol.vols[0]:.2f}, "
-        f"call {r.vol.strikes[1]:g} {r.vol.vols[1]:.2f}), {r.yield_vol:.1f}bp per √year through the CTD's DV01/CF; "
+        f"call {r.vol.strikes[1]:g} {r.vol.vols[1]:.2f}; traded that day: {traded(r.vol.strikes, r.vol.traded)}), "
+        f"{r.yield_vol:.1f}bp per √year through the CTD's DV01/CF; "
         f"width {r.width:.1f}bp to the horizon, {r.expiry_width:.1f}bp to option expiry",
         "distance to switch: " + "; ".join(_distance(side, c) for side, c in r.nearest().items()),
         "",
@@ -115,7 +126,8 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
                      "DV01/CF $k", "P(CTD)", "P normal"],
                     rows)
     lines.append("(P(CTD) from the option digitals, measured at option expiry; P normal from the ATM normal "
-                 "factor at the horizon, which spreads further)")
+                 "factor at the horizon, which spreads further. Both read CME settlement prices, which come off "
+                 "CME's skew for the expiry whether or not a strike traded: see 'traded' in the crossovers)")
     if len(basket) < len(r.basket):
         lines.append(f"(bonds with a probability and the next {NEXT_CHEAPEST} cheapest; "
                      f"{len(r.basket) - len(basket)} more with --all-bonds)")
@@ -149,7 +161,9 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
     lines += _table(["cluster", "P", *(f"{n:g}y" for n in NODES), "total", "eff. maturity"], rows)
 
     lines += ["", "Crossovers (as yields rise; K = futures price at the switch; σ = distance over the width to the "
-                  "horizon; normal = ATM normal tail at option expiry, to compare with the digital)"]
+                  "horizon; normal = ATM normal tail at option expiry, to compare with the digital; traded = the "
+                  "digital's strikes that traded that day: with none it rests on CME's skew from other strikes, "
+                  "so treat it as indicative, as any digital beyond about 1.5σ)"]
     region = {id(reg.switch): reg for reg in p.regions if reg.switch is not None}
     rows = []
     for c in r.crossovers:
@@ -160,8 +174,9 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
                      " ".join(f"{s:g}" for s in d.strikes_used) or "-",
                      ("P(F<K) " if d.side == "below" else "P(F>K) ")
                      + ("-" if d.prob is None else ("≤ " if d.upper_bound else "") + f"{d.prob:.1%}"),
-                     f"{c.normal:.1%}", f"{reg.cusip} {prob(reg.lo, reg.hi)}"])
-    lines += _table(["from → to", "side", "z bp", "σ", "K", "K − F", "strikes", "digital", "normal", "beyond"],
+                     traded(d.strikes_used, d.traded), f"{c.normal:.1%}", f"{reg.cusip} {prob(reg.lo, reg.hi)}"])
+    lines += _table(["from → to", "side", "z bp", "σ", "K", "K − F", "strikes", "digital", "traded", "normal",
+                     "beyond"],
                     rows) \
         if rows else ["(no switches between -100 and +150bp)"]
 
