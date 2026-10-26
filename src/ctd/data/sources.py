@@ -33,9 +33,8 @@ class RawFile:
 class SourceSpec:
     """A source is split into units (a product, a series, ...); each unit is fetched and tracked separately.
 
-    ``window`` is the recovery window: the most business days after the as-of date that the
-    source still serves that date (None = no limit). ``cme`` sources are only fetched
-    automatically when the CME switch is on; otherwise they come through the manual-drop folder.
+    A source with no ``fetch`` is manual-only: its files come through the bookmarklet and the
+    manual-drop folder (the CME settlements and the Daily Bulletin).
     ``schedule``: "daily" sources are expected every business day and flagged when missing;
     "backfill" ones run only via ``ctd backfill``; "occasional" ones only when asked for
     (``ctd fetch --source ...``) or dropped in the inbox, and are never flagged as gaps.
@@ -53,9 +52,7 @@ class SourceSpec:
     kind: Kind
     calendar: str
     units: Callable[[date, BusinessCalendar], list[str]]
-    fetch: Callable[[date, str, Http], Iterator[RawFile]]
-    window: int | None = None
-    cme: bool = False
+    fetch: Callable[[date, str, Http], Iterator[RawFile]] | None
     schedule: Literal["daily", "backfill", "occasional"] = "daily"
     validate: Callable[[date, str, bytes], str | None] | None = None
     provisional: Callable[[bytes], bool] | None = None

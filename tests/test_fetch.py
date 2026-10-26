@@ -1,6 +1,6 @@
 from datetime import date
 
-from fakes import FakeHttp, cme_routes, gov_routes, ok
+from fakes import FakeHttp, gov_routes, ok
 
 from ctd.data import manifest as mf
 from ctd.data import registry
@@ -51,26 +51,12 @@ def test_rerun_is_idempotent(store):
     assert statuses(man)["fred"] == mf.OK
 
 
-def test_cme_auto(store):
-    _, man = run(store, FakeHttp(gov_routes() + cme_routes()), cme_auto=True)
+def test_cme_sources_are_never_downloaded(store):
+    http = FakeHttp([])
+    _, man = run(store, http, sources=[registry.SOURCES[s] for s in sorted(CME_IDS)], fill_missing=False)
     assert set(man["sources"]["cme_fut"]["units"]) == {"ZT", "ZF", "ZN", "TN", "ZB", "UB"}
-    assert statuses(man)["cme_fut"] == statuses(man)["cme_bulletin"] == statuses(man)["cme_stir"] == mf.OK
-    assert store.names(FRI, "cme_bulletin", "Section42") == ["Section42.pdf"]
-    _, man = run(store, FakeHttp(cme_routes()), cme_auto=True, sources=[registry.SOURCES["cme_opt"]])
-    assert statuses(man)["cme_opt"] == mf.OK
-    zn_opt = store.names(FRI, "cme_opt", "ZN")
-    assert len(zn_opt) == 3 and "ZN_expirations_2026-10-16.json" in zn_opt  # expirations + 2 series
-
-
-def test_recovery_window(store):
-    srcs = [registry.SOURCES["cme_bulletin"], registry.SOURCES["cme_stir"]]
-    dec = date(2026, 12, 15)
-    _, man = run(store, FakeHttp(cme_routes()), asof=dec, today=date(2026, 12, 16), cme_auto=True, sources=srcs)
-    assert statuses(man)["cme_bulletin"] == mf.NOT_RECOVERABLE  # window 0
-    assert statuses(man)["cme_stir"] == mf.OK  # 1 business day back, within CME's window
-    _, man = run(store, FakeHttp(cme_routes()), asof=date(2026, 10, 15), today=date(2026, 10, 30), cme_auto=True,
-                 sources=srcs[1:])
-    assert statuses(man)["cme_stir"] == mf.NOT_RECOVERABLE  # 11 business days back
+    assert set(statuses(man).values()) == {mf.MANUAL_NEEDED}
+    assert http.calls == []
 
 
 def test_holidays_not_expected(store):

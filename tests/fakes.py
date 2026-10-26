@@ -61,17 +61,6 @@ def yahoo(url, params):
     return ok(url, json.dumps(body).encode(), "application/json")
 
 
-def cme_routes():
-    base = "https://www.cmegroup.com/CmeWS/mvc/Settlements/"
-    expirations = json.dumps([{"productId": 317, "expirations": [{"code": "Z6"}, {"code": "F7"}]}]).encode()
-    return [
-        ("GET", base + "Futures/", ok("x", b'{"settlements": []}', "application/json")),
-        ("GET", base + "Options/TradeDateAndExpirations/", ok("x", expirations, "application/json")),
-        ("GET", base + "Options/Settlements/", ok("x", b'{"settlements": []}', "application/json")),
-        ("GET", "https://www.cmegroup.com/daily_bulletin/", ok("x", bulletin_pdf("Fri, Oct 16, 2026"), "application/pdf")),
-    ]
-
-
 def make_pdf(*lines: str) -> bytes:
     """A minimal one-page PDF whose extractable text is ``lines``."""
     text = "BT /F1 10 Tf 20 750 Td 14 TL " + " ".join(f"({line}) Tj T*" for line in lines) + " ET"

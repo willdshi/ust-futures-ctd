@@ -1,24 +1,21 @@
 """CME Daily Bulletin sections: the daily source of option settlements (design section 3.1).
 
 Section 42 covers options on ZT, ZF, ZN, TN, ZB and UB, every listed expiry and strike, weeklies
-included. cmegroup.com blocks scripts, so the bulletin normally arrives through the browser
-bookmarklet and the inbox. CME's URL always serves the latest bulletin, so a file downloaded late
-for an earlier date is the wrong edition: ingest (and the automated fetch, if the CME switch is on)
-reads the trade date and FINAL flag printed on page 1 and rejects a bulletin that doesn't match.
+included. It's a manual-only source: the bulletin is saved from cmegroup.com in a browser
+(``ctd bookmarklet``) and arrives through the inbox. CME's URL always serves the latest bulletin,
+so a file downloaded late for an earlier date is the wrong edition: ingest reads the trade date
+and FINAL flag printed on page 1 and rejects a bulletin that doesn't match.
 """
 
 import io
 import re
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, datetime
 
 from ctd.data import refdata
 from ctd.reference.options import underlying_month
-from ctd.data.http import FetchError, Http
-from ctd.data.sources import Kind, RawFile, SourceSpec
+from ctd.data.sources import Kind, SourceSpec
 
-HEADERS = {"Referer": "https://www.cmegroup.com/"}
 # Page-1 header, e.g. "PG42 BULLETIN # 201@ 10YR NOTE, ... OPTIONS Mon, Oct 19, 2026 PG42"
 _HEADER = re.compile(r"BULLETIN\s*#\s*(\d+).*?((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [A-Z][a-z]{2} \d{1,2}, \d{4})", re.S)
 
@@ -53,14 +50,6 @@ def check(asof: date, name: str, content: bytes) -> str | None:
     if not final:
         return f"{name} is bulletin #{number} for {printed} but not FINAL yet; download it again later"
     return None
-
-
-def fetch(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
-    r = http.get(_sections()[unit]["url"], headers=HEADERS).ensure_ok()
-    reason = check(asof, f"{unit}.pdf", r.content)
-    if reason:
-        raise FetchError(reason)
-    yield RawFile(f"{unit}.pdf", r.content, r.url, r.status, r.content_type)
 
 
 # --- Reading Section 42: standard option settlements -------------------------------------------
@@ -338,5 +327,5 @@ def read_options(store, asof: date) -> list[OptionSettle]:
 
 SPECS = [
     SourceSpec("cme_bulletin", "CME Daily Bulletin sections (Section 42: Treasury options)", Kind.DATED, "cme",
-               units=lambda asof, cal: list(_sections()), fetch=fetch, window=0, cme=True, validate=check),
+               units=lambda asof, cal: list(_sections()), fetch=None, validate=check),
 ]

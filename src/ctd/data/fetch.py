@@ -31,8 +31,8 @@ def _provisional(spec: SourceSpec, store: RawStore, asof: date, unit: str, names
     return [n for n in names if spec.provisional(store.read(asof, spec.id, unit, n))]
 
 
-def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Http | None, cme_auto: bool,
-              lag: int, prev: dict | None, has_manual: bool) -> dict:
+def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Http | None, lag: int,
+              prev: dict | None, has_manual: bool) -> dict:
     names = store.names(asof, spec.id, unit)
     pending = _provisional(spec, store, asof, unit, names)
     if prev and prev["status"] == mf.OK and set(prev["files"]) <= set(names) and not pending:
@@ -41,11 +41,8 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
         return prev
     if names and any(store.meta(asof, spec.id, unit, n).get("origin") == "manual" for n in names):
         return _unit_entry(mf.OK, names, origin="manual")
-    if spec.cme and not cme_auto:
+    if spec.fetch is None:
         return _unit_entry(mf.MANUAL if has_manual else mf.MANUAL_NEEDED, names)
-    if spec.window is not None and lag > spec.window:
-        status = mf.MANUAL if has_manual else mf.NOT_RECOVERABLE
-        return _unit_entry(status, names, error=f"{lag} business days after as-of; window is {spec.window}")
     if http is None:  # offline refresh: report, don't fetch
         if prev and prev["status"] in (mf.FAILED, mf.OK):
             return prev
@@ -68,7 +65,7 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
     return _unit_entry(mf.OK, stored, origin="auto", provisional=_provisional(spec, store, asof, unit, stored))
 
 
-def _run_source(spec: SourceSpec, asof: date, store: RawStore, http: Http | None, cme_auto: bool, today: date,
+def _run_source(spec: SourceSpec, asof: date, store: RawStore, http: Http | None, today: date,
                 prev: dict | None) -> dict:
     cal = refdata.calendar(spec.calendar)
     entry = {"description": spec.description, "kind": str(spec.kind), "calendar": spec.calendar,
@@ -84,14 +81,13 @@ def _run_source(spec: SourceSpec, asof: date, store: RawStore, http: Http | None
     has_manual = bool(store.names(asof, spec.id, MANUAL_UNIT))
     prev_units = (prev or {}).get("units") or {}
     for unit in units:
-        entry["units"][unit] = _run_unit(spec, asof, unit, store, http, cme_auto, lag, prev_units.get(unit),
-                                         has_manual)
+        entry["units"][unit] = _run_unit(spec, asof, unit, store, http, lag, prev_units.get(unit), has_manual)
     entry["status"] = mf.worst(u["status"] for u in entry["units"].values())
     return entry
 
 
 def fetch_date(asof: date, store: RawStore, http: Http | None, *, sources: Iterable[SourceSpec] | None = None,
-               cme_auto: bool = False, today: date | None = None, fill_missing: bool = True,
+               today: date | None = None, fill_missing: bool = True,
                log: Callable[[str], None] = print) -> list[mf.Gap]:
     """Fetch what's missing for ``asof``, update its manifest and return its gaps.
 
@@ -105,7 +101,7 @@ def fetch_date(asof: date, store: RawStore, http: Http | None, *, sources: Itera
     entries = {}
     for spec in specs:
         log(f"{asof} {spec.id} ...")
-        entries[spec.id] = _run_source(spec, asof, store, http, cme_auto, today, man["sources"].get(spec.id))
+        entries[spec.id] = _run_source(spec, asof, store, http, today, man["sources"].get(spec.id))
         log(f"{asof} {spec.id}: {entries[spec.id]['status']}")
     man = mf.load(store, asof)  # re-read: another run may have updated other sources meanwhile
     man["sources"].update(entries)

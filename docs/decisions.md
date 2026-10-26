@@ -158,7 +158,7 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 ## Holiday calendar for 2016–2025 (data.md §2.5)
 
 **Decision** (settled 2026-10-24): derive past holidays from the stored data, not from CME or a calendar library.
-- CME publishes no structured archive of past holidays: each year's schedule, an online Trading Calendar for current dates, and old notices and press releases. Assembling ten years from those would be by hand, and cmegroup.com blocks scripts.
+- CME publishes no structured archive of past holidays: each year's schedule, an online Trading Calendar for current dates, and old notices and press releases. Assembling ten years from those would be by hand.
 - A calendar library (pandas_market_calendars, exchange_calendars) encodes holidays as rules, which is where special closures go wrong: CME settled on the 2018-12-05 day of mourning and on the 2021 and 2023 Good Fridays. It would also be a new dependency.
 - The data records what happened. `scripts/derive_holidays.py` marks a CME closure where none of the 15 Databento backfills has a settlement and a bond-market closure where TreasuryDirect has no prices; rule-based names only label the rows, and each row says what it rests on. Weekdays with no settlements that aren't holidays are gaps, confirmed by Yahoo volume or TreasuryDirect prices, and `ctd derive` lists every product's missing trading days, so skipped dates in history need no diagnosis.
 - Good Friday: TreasuryDirect publishes on every one, so the `sifma` calendar also uses Treasury's par curve, which is missing exactly on the full-close Good Fridays (2024, 2025; added 2026-10-25).

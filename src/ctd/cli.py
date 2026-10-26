@@ -1,6 +1,6 @@
 """Command-line entry point.
 
-    ctd fetch [--asof 2026-10-16] [--source cme_fut ...] [--cme-auto] [--catch-up] [--notify]
+    ctd fetch [--asof 2026-10-16] [--source cme_fut ...] [--catch-up] [--notify]
     ctd ingest
     ctd check [--from 2026-10-01] [--to 2026-10-16]
     ctd backfill
@@ -86,11 +86,10 @@ def cmd_fetch(args) -> int:
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
     dates = refdata.calendar("cme").trailing_business_days(asof, CATCH_UP_DAYS) if args.catch_up else [asof]
     specs = [registry.SOURCES[s] for s in args.source] if args.source else None
-    cme_auto = args.cme_auto or os.environ.get("CTD_CME_AUTO") == "1"
     http = RequestsHttp()
     gaps = []
     for d in dates:
-        gaps += fetch_date(d, store, http, sources=specs, cme_auto=cme_auto)
+        gaps += fetch_date(d, store, http, sources=specs)
     if args.notify:
         _alert(gaps, problems, max(dates))
     return _report(gaps)
@@ -363,7 +362,6 @@ def build_parser() -> argparse.ArgumentParser:
     f = sub.add_parser("fetch", help="snapshot every source for an as-of date")
     asof_args(f)
     f.add_argument("--source", action="append", choices=sorted(registry.SOURCES), help="only these sources")
-    f.add_argument("--cme-auto", action="store_true", help="fetch CME automatically (or set CTD_CME_AUTO=1)")
     f.add_argument("--catch-up", action="store_true",
                    help=f"also fill gaps in the {CATCH_UP_DAYS} business days ending on --asof")
     f.add_argument("--notify", action="store_true",

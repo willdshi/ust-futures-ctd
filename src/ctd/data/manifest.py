@@ -22,12 +22,11 @@ OK = "ok"
 MANUAL = "manual"                    # files dropped at source level; unit coverage not verified
 NOT_EXPECTED = "not_expected"        # holiday, or the source doesn't publish on this date
 MISSING = "missing"                  # not attempted yet
-MANUAL_NEEDED = "manual_needed"      # CME switch off and no manual file yet
+MANUAL_NEEDED = "manual_needed"      # manual-only source (CME) and no manual file yet
 FAILED = "failed"                    # fetch attempted and failed; retried on the next run
-NOT_RECOVERABLE = "not_recoverable"  # outside the source's recovery window and never stored
 
-GAPS = (MISSING, MANUAL_NEEDED, FAILED, NOT_RECOVERABLE)
-_RANK = {NOT_EXPECTED: 0, OK: 1, MANUAL: 2, MISSING: 3, MANUAL_NEEDED: 4, FAILED: 5, NOT_RECOVERABLE: 6}
+GAPS = (MISSING, MANUAL_NEEDED, FAILED)
+_RANK = {NOT_EXPECTED: 0, OK: 1, MANUAL: 2, MISSING: 3, MANUAL_NEEDED: 4, FAILED: 5}
 
 
 @dataclass(frozen=True)
