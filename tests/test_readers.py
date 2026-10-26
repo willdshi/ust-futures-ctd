@@ -94,9 +94,13 @@ def test_futures_settlements(store):
         cme_settlements.read_futures(store, ASOF, "ZB")
 
 
-def test_sofr_latest_known_on_the_evening(store):
+def test_sofr_latest_is_the_as_of_dates_own_once_stored(store):
     store.write(ASOF, "nyfed_rates", "sofr", "sofr_2026-10-07_2026-10-21.json", SOFR, {})
-    assert nyfed.read_latest(store, ASOF) == (date(2026, 10, 20), 0.0388)
+    assert nyfed.read_latest(store, ASOF) == (date(2026, 10, 20), 0.0388)  # the evening's file only
+    # the next morning's file has 21 October's fixing (and 22 October's, which is after the as-of date)
+    store.write(date(2026, 10, 22), "nyfed_rates", "sofr", "sofr_2026-10-08_2026-10-22.json",
+                sofr_file({"2026-10-21": 3.89, "2026-10-22": 3.95}), {})
+    assert nyfed.read_latest(store, ASOF) == (date(2026, 10, 21), pytest.approx(0.0389))
 
 
 SR1 = (b'{"settlements":[{"month":"OCT 26","open":"-","high":"-","low":"-","last":"-","change":"0",'
@@ -127,6 +131,6 @@ def test_sofr_fixings_reach_back_through_earlier_files(store):
     store.write(date(2026, 9, 1), "nyfed_rates", "sofr", "sofr_2026-08-18_2026-09-01.json",
                 sofr_file({"2026-08-31": 3.95}), {})
     rates, files = nyfed.read_known(store, ASOF, date(2026, 9, 30))
-    # the newer file wins a date both hold; the walk stops once the start is covered
+    # the newer file wins a date both hold; files more than two weeks before the start aren't read
     assert rates == pytest.approx({date(2026, 10, 20): 0.0388, date(2026, 10, 8): 0.0386, date(2026, 9, 30): 0.0391})
     assert [d for d, _, _ in files] == [ASOF, date(2026, 10, 9)]

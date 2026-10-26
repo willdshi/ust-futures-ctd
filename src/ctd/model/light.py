@@ -72,7 +72,7 @@ class LightInputs:
     par_curve: ParCurve  # Treasury par curve, latest on or before asof
     par_date: date
     sr1: dict[date, float] = field(default_factory=dict)  # SR1 month -> implied average (100 − settle) / 100
-    fixings: dict[date, float] = field(default_factory=dict)  # SOFR known on the evening, this month on
+    fixings: dict[date, float] = field(default_factory=dict)  # SOFR dated on or before asof, this month on
 
 
 @dataclass(frozen=True)
@@ -207,6 +207,9 @@ def run(x: LightInputs) -> LightResult:
 
     if x.par_date != x.asof:
         warnings.append(f"par curve is from {x.par_date}, not {x.asof} (none published for {x.asof})")
+    if x.sofr_date < x.repo_cal.latest_business_day(x.asof):
+        warnings.append(f"latest SOFR is {x.sofr_date}'s, not {x.asof}'s: it is published the next morning, "
+                        f"so run again once the next NY Fed file is stored")
     g_flat = flat(x.sofr, x.repo_cal)
     try:
         s = strip.solve(x.sr1, x.fixings, x.repo_cal.prev_business_day(x.last_delivery), x.repo_cal)

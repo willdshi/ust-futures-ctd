@@ -34,7 +34,7 @@ Phase 1b (the light model, design §5.11) is in progress. Status is tracked as c
   - `src/ctd/data/` is code: one fetcher module per source.
   - `/data/` at the repo root is the gitignored raw snapshot store.
   - Keep `.gitignore` anchored as `/data/*`.
-- **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. TreasuryDirect prices and CME settlements under an as-of date are that day's close (checked by hand for TreasuryDirect; data.md §5.1), but rates published the next morning (SOFR) aren't in that day's files yet. The model reads only from that store, never from the network directly, and re-running a past date must give the same answer.
+- **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. TreasuryDirect prices and CME settlements under an as-of date are that day's close (checked by hand for TreasuryDirect; data.md §5.1), but rates published the next morning (SOFR) aren't in that day's files yet. A run for a date uses data dated on or before it from any stored file, so it takes that day's SOFR from the next morning's file ([decisions.md](docs/decisions.md), Which data a run uses). The model reads only from that store, never from the network directly, and re-running a past date must give the same answer once the next day's files are stored.
 - **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
   - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
     - CME futures settlements for all six contracts, and their option settlements as the Daily Bulletin's Section 42 PDF (browser bookmarklet; cmegroup.com blocks scripts)

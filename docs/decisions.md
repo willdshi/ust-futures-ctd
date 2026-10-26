@@ -168,7 +168,15 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 **Decision** (settled 2026-10-25): a derived table built from a source whose every pull holds the whole series (Treasury's par curve year files, FRED) or overlapping windows of it (NY Fed) takes each value from the latest pull, and each build notes any value a newer pull changes.
 - Keeping each value as known on each as-of date would be the stricter match to the reproducibility rule, but nothing has been revised: across the stored pulls, 175,990 repeated FRED values and 5,684 par-curve values are unchanged, and the NY Fed's own revision flag is empty on all 8,852 records since 2018.
 - The revision notes mean a change would show in `ctd derive`'s output and `_build.json` rather than slip in; if revisions start, revisit.
-- Single-date runs are unaffected: `ctd run` reads the files stored under its own as-of date, plus, for the month's SOFR fixings, NY Fed files under earlier as-of dates (stored once, never changed; next entry).
+- Single-date runs are unaffected: `ctd run` reads the files stored under its own as-of date, plus NY Fed files under nearby as-of dates for the SOFR fixings (stored once, never changed; next entry).
+
+## Which data a run uses (design §3, §5.3)
+
+**Decision** (settled 2026-10-25): a run for date D uses **data dated on or before D, from any stored file**, whenever it was pulled. Runs are made after the fact (final output needs TreasuryDirect's end of day and the final Section 42 bulletin, both on D+1), not as a record of what was known on the evening of D.
+- **SOFR:** D's own fixing is used. It is the rate repo traded at on D, published the next morning, so it comes from D+1's NY Fed file (`nyfed.read_known`, `read_latest`). It enters only the flat fallback and the strip's month to date: repo runs from settlement, D+1. Until D+1's file is stored, the run uses D−1's and warns.
+- **Not realised repo after D.** Repo from settlement to the horizon is the SR1 strip on D, the market's expectation, never the fixings that followed: forward prices on D are priced off expected repo, and the backtest (phase 4) scores probabilities against the realised CTD, which later data would leak into.
+- **No point-in-time layer** for the historical runner: it reads the derived tables with the same rule. Open interest for D comes from D+1's page (design §4) and is fine to use under it.
+- **Reproducibility:** re-running D gives the same answer once D+1's files are stored; each result lists the raw files it read with their as-of dates.
 
 ## Repo path for the light model (design §5.3)
 
@@ -176,7 +184,7 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 
 **Decision:** repo is the **strip of 1-month SOFR futures** (§5.3 path 3, `funding/strip.py`) whenever it covers the last delivery day; otherwise flat at the latest SOFR (path 1), with a warning. This replaces §5.3's three-way rule (flat by default, stepped if an FOMC meeting falls before the horizon, strip if carry is close) with one default.
 - **Strip:** SR1 settles at 100 minus the arithmetic average of daily SOFR over its calendar month, each non-business day at the business day before it (which can be in the previous month). Months are solved in order, each with one flat rate on its unknown days; the current month's known fixings and the days carried in from the previous month are fixed. Each month then reprices its SR1 average exactly. **Verify the averaging rule against CME's SR1 rulebook chapter** when next on cmegroup.com.
-- **Fixings:** the current month's fixings come from the NY Fed files; a daily file holds two weeks, so files under earlier as-of dates are read too (each listed in the result's `inputs` with its `asof`). A known business day with no fixing (an early-close Good Friday) takes the one before it.
+- **Fixings:** the current month's fixings, the as-of date's own included (previous entry), come from the NY Fed files; a daily file holds two weeks, so files under other as-of dates are read too (each listed in the result's `inputs` with its `asof`). A known business day with no fixing (an early-close Good Friday) takes the one before it.
 - **Cross-check:** flat SOFR is still computed; a warning appears when it would put the horizon on the other delivery day.
 - **Effect** (2026-10-21, horizon 31 December): term repo 4.02% against 3.89% flat (the strip's months: October's remaining days 3.91%, November 3.94%, December 4.11%). Carry falls about 0.02 points per bond, the recentring gap widens about 0.026 points (ZBZ6 −0.424 to −0.450), horizon and CTD unchanged, futures DV01 +$40 per $100mm. ZBZ6 gains a near-tie switch at −19.4bp next to the one at −19.0bp.
 

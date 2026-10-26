@@ -206,10 +206,13 @@ def light_inputs(store, contract: str, asof: date):
     if month not in futures:
         raise ValueError(f"no {contract} settlement on {asof}")
     prices, _ = td_prices.read(store, asof)
-    sofr_date, sofr = nyfed.read_latest(store, asof)
-    # fixings from the latest one's month (the strip's current month is that one or the next);
-    # a 1st that isn't a business day takes the fixing before it
-    fixings, fixing_files = nyfed.read_known(store, asof, sifma.latest_business_day(sofr_date.replace(day=1)))
+    # SOFR dated on or before asof, from any stored file (asof's own is in the next morning's):
+    # this month's for the strip, plus the business day before a 1st that isn't one
+    fixings, fixing_files = nyfed.read_known(store, asof, sifma.latest_business_day(asof.replace(day=1)))
+    if not fixings:
+        raise ValueError(f"no SOFR stored for {asof}")
+    sofr_date = max(fixings)
+    sofr = fixings[sofr_date]
     try:
         sr1 = {m: (100 - s.settle) / 100
                for m, s in cme_settlements.read_futures(store, asof, "SR1", "cme_stir").items()}
@@ -233,7 +236,7 @@ def light_inputs(store, contract: str, asof: date):
             *(("par_curve", "daily_treasury_yield_curve", n)
               for n in store.names(asof, "par_curve", "daily_treasury_yield_curve"))]
     files = [{"source": s, "unit": u, "name": n, "sha256": store.meta(asof, s, u, n)["sha256"]} for s, u, n in read]
-    # SOFR fixings, some from earlier as-of dates' files (marked with their date)
+    # SOFR fixings, some from other as-of dates' files (marked with their date)
     files += [{"source": s, "unit": "sofr", "name": n, "sha256": store.meta(d, s, "sofr", n)["sha256"],
                **({"asof": d.isoformat()} if d != asof else {})} for d, s, n in fixing_files]
     return inputs, files

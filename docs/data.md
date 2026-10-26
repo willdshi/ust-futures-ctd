@@ -206,7 +206,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 - **What:** SOFR, TGCR, BGCR (secured) and EFFR (unsecured).
 - **How:** `GET https://markets.newyorkfed.org/api/rates/<secured|unsecured>/<rate>/search.json?startDate=...&endDate=...`.
-- **Files:** `<rate>_<start>_<end>.json`. The daily pull covers the two weeks ending on the as-of date, because a rate for day D is published the next morning; the file therefore holds every rate known that evening. `nyfed_rates_backfill` covers 2018-04-02 onwards.
+- **Files:** `<rate>_<start>_<end>.json`. The daily pull covers the two weeks ending on the as-of date, because a rate for day D is published the next morning; the file therefore holds every rate known that evening. A run for day D still uses D's own rate, from D+1's file (decisions.md, Which data a run uses). `nyfed_rates_backfill` covers 2018-04-02 onwards.
 - **Derived table:** `rates` (design §4), one row per date and rate from 2018-04-02, the latest pull of each date. `revisionIndicator` is empty on every record stored (8,852), and a few early records have `NA` percentiles. No SOFR, TGCR or BGCR is published on Good Friday.
 - **Fields** (`refRates[]`): `effectiveDate`, `type`, `percentRate`, `percentPercentile1/25/75/99`, `volumeInBillions`, `revisionIndicator`.
 
