@@ -67,7 +67,7 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 
 **Companion panel: DV01-weighted effective maturity**, i.e. Σₖ KRDₖ × Tₖ / Σₖ KRDₖ. Default view for ZB and for cross-contract comparison.
 - Answers "where on the curve" rather than "how much". Two exposures with the same DV01 can sit at 18y or 27y and hedge or track very differently.
-- It is a cleaner switch signal than duration because it barely moves for the non-switch reasons above.
+- It is a cleaner switch signal than duration because it moves much less for the non-switch reasons above: yield level moves it about 0.5 to 1y per 100bp with the same CTD (effect 3 below), against several years for a ZB switch.
 - Needs one sentence of explanation for less sophisticated readers, and depends on the key-rate grid and the par-curve tent bumps.
 
 **How the effective-maturity line behaves:**
@@ -75,8 +75,8 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 - It rises only when DV01 shifts toward longer tenors, which happens through:
   1. **Probability moving to a longer bond** (the switch effect; below 6%, as yields rise).
   2. **Basket or contract changes:** a longer bond entering with meaningful probability, or the roll moving to a contract whose likely CTD is longer.
-  3. **Yields falling with the CTD unchanged:** a bond's own key-rate weights tilt longer as distant cash flows gain relative present value. Rising yields do the reverse.
-- In a selloff toward a crossover, effects 1 and 3 oppose each other. Near the crossover the switch effect should dominate; far from it, effect 3 is a small drift that tracks yields.
+  3. **Yields rising with the CTD unchanged:** measured against the par curve, a bond below par sits beyond its maturity and one above par short of it (a par bond sits exactly on its maturity at any yield level). As yields rise, every fixed-coupon bond moves further below par, so its effective maturity lengthens; falling yields shorten it. About 1y per 100bp for a 2% 2050, 0.5y for a 4¾% 2045 (2026-10-21, horizon 31 December). A cash-flow-weighted maturity moves the other way, which is why this is easy to get backwards.
+- In a selloff toward a crossover, effects 1 and 3 push the same way, so a rising line is not by itself evidence of a switch. Near the crossover the switch effect dominates; far from it, effect 3 is a small drift that tracks yields. In a rally both shorten.
 - For a pure basket signal, hold each bond's key-rate shape fixed at a reference yield, or plot a constant-CTD effective maturity and read the gap.
 
 **Expected jumps:** the probability-weighted series is continuous in yields while there is time to delivery, so a switch shows as a smooth bend. Expect discrete moves only from:
