@@ -82,23 +82,6 @@ def _day(d: str) -> str:
     return f"{x.day} {x:%b %Y}"
 
 
-def _last_day(rec: dict) -> bool:
-    """Whether implied delivery is the last delivery day (positive carry) rather than the first."""
-    return rec["horizon"] == rec["delivery"]["last"]
-
-
-def delivery_note(rec: dict) -> str:
-    """Which delivery day the forwards are taken to, and the carry that picks it (``model.horizon``)."""
-    d, last = rec["delivery"], _last_day(rec)
-    why = ("its coupon income beats the repo cost of holding it, so the short delivers late" if last else
-           "the repo cost of holding it beats its coupon income, so the short delivers early")
-    return (f"<b>{rec['contract']}</b>: implied delivery {_day(rec['horizon'])}, the {'last' if last else 'first'} "
-            f"delivery day ({_day(d['first'])} to {_day(d['last'])}). The bond cheapest at the end of the month, the "
-            f"{_names(rec)[d['ctd']]}, has {'positive' if last else 'negative'} carry at {rec['repo']['term']:.2%} "
-            f"term repo (its forward price {'falls' if d['fwd_last'] <= d['fwd_first'] else 'rises'} from "
-            f"{d['fwd_first']:.4f} on {_day(d['first'])} to {d['fwd_last']:.4f} on {_day(d['last'])}): {why}.")
-
-
 def duration(dv01: float, f: float) -> float:
     """Futures modified duration in years: DV01 per 100 face over the futures price."""
     return dv01 / f * 1e4
@@ -158,22 +141,24 @@ def summary(recs: list[dict]) -> str:
         near = nearest(r)
         normal = pts["probs"].get(r["ctd"], [0.0] * len(pts["centres"]))[i]
         rows.append([f"<b>{r['contract']}</b>",
-                     f"{names[r['ctd']]} (options {prob(*r['ctd_keeps'])}, normal {normal:.1%})",
+                     f"{names[r['ctd']]} (O {prob(*r['ctd_keeps'])}, N {normal:.1%})", _day(r["horizon"]),
                      f"{r['f_market']:.4f}", _dv01_duration(pts["dv01"][i], r["f_market"]),
                      _dv01_duration(pts["label_dv01"][i], r["f_market"]),
                      f"{em:.1f}y / {pts['label_effective_maturity'][i]:.1f}y",
                      f"{r['vol']['width']:.1f}bp", _distance(near["rally"]), _distance(near["selloff"])])
-    table = _table(["contract", "CTD today, P(RCaD)", "futures settle", "DV01 per $100mm (duration)",
-                    "CTD-based DV01 (duration)",
+    table = _table(["contract", "CTD today, P(RCaD)<sup>1</sup>", "implied delivery<sup>2</sup>", "futures settle",
+                    "DV01 per $100mm (duration)", "CTD-based DV01 (duration)",
                     "eff. maturity / CTD-based", "width (1σ)", "nearest switch, rally", "nearest switch, sell-off"],
                    rows, cls="summary")
     expiries = ", ".join(sorted({_day(r["options"]["expiry"]) for r in recs}))
-    note = ("<p class='note'>P(RCaD): the probability that today's CTD remains CTD at the implied delivery date. "
-            f"<i>Options</i>: from the option digitals, which can only measure it at option expiry ({expiries}); "
-            "<i>normal</i>: the ATM normal factor to the implied delivery date, as in the charts. "
-            "Duration: the DV01 over the futures settlement price, in years (the futures' modified duration).</p>")
-    return (f"<div class='scroll'>{table}</div>{note}<ul class='diag'>"
-            + "".join(f"<li>{delivery_note(r)}</li>" for r in recs) + "</ul>")
+    note = ("<p class='note'><sup>1</sup> P(RCaD): the probability that today's CTD remains CTD at the implied "
+            f"delivery date. <b>O</b>: from the option digitals, which can only measure it at option expiry "
+            f"({expiries}); <b>N</b>: the ATM normal factor to the implied delivery date, as in the charts.</p>"
+            "<p class='note'><sup>2</sup> Implied delivery: the last delivery day if carry against term repo is "
+            "positive, the first if negative.</p>"
+            "<p class='note'>Duration: the DV01 over the futures settlement price, in years (the futures' modified "
+            "duration).</p>")
+    return f"<div class='scroll'>{table}</div>{note}"
 
 
 def states_table(rec: dict) -> str:

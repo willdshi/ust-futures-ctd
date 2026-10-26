@@ -99,24 +99,13 @@ def test_summary_gives_both_probabilities_and_the_carry_behind_implied_delivery(
     name = page.bond_name(*next((b["coupon"], b["maturity"]) for b in rec["basket"] if b["cusip"] == rec["ctd"]))
     i = rec["profile"]["points_sigma"].index(0)
     normal = rec["profile"]["points"]["probs"][rec["ctd"]][i]
-    assert f"{name} (options {rec['ctd_keeps'][0]:.1%}, normal {normal:.1%})" in html
-    assert "CTD today, P(RCaD)" in html and "remains CTD at the implied delivery date" in html
-    # 5.5% yields over 3.88% SOFR: positive carry, delivery on the last day
-    assert "(last day)" not in html  # the date is in the carry note below the table
+    # 5.5% yields over 3.88% SOFR: positive carry, delivery on the last day, in the column after the CTD
+    assert f"{name} (O {rec['ctd_keeps'][0]:.1%}, N {normal:.1%})</td><td>31 Dec 2026</td>" in html
+    assert "CTD today, P(RCaD)<sup>1</sup>" in html and "implied delivery<sup>2</sup>" in html
+    assert "<sup>1</sup> P(RCaD): the probability that today's CTD remains CTD at the implied delivery date" in html
+    assert "<sup>2</sup> Implied delivery: the last delivery day if carry against term repo is positive" in html
     i0 = rec["profile"]["points"]
     assert f"({page.duration(i0['dv01'][i], rec['f_market']):.2f}y)" in html and f"{rec['f_market']:.4f}" in html
-    assert "implied delivery 31 Dec 2026, the last delivery day (1 Dec 2026 to 31 Dec 2026)" in html
-    assert "has positive carry" in html and "so the short delivers late" in html
-    d = rec["delivery"]
-    assert d["fwd_last"] < d["fwd_first"] and f"from {d['fwd_first']:.4f} on 1 Dec 2026" in html
-
-
-def test_negative_carry_delivers_on_the_first_day(rec):
-    d = rec["delivery"]
-    early = {**rec, "horizon": d["first"], "delivery": {**d, "fwd_first": d["fwd_last"] - 0.1}}
-    note = page.delivery_note(early)
-    assert "the first delivery day" in note and "negative carry" in note and "rises from" in note
-    assert "delivers early" in note
 
 
 def test_grades_in_words():
