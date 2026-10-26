@@ -15,11 +15,19 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 5  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch
+SCHEMA = 6  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
     return Path(root) / "results" / "light" / contract / f"{asof.isoformat()}.json"
+
+
+def _states(s) -> dict:
+    return {"centres": s.centres.tolist(), "percentiles": s.percentiles.tolist(),
+            "probs": {c: v.tolist() for c, v in s.probs.items() if v.max() >= 1e-4},
+            "dv01": s.dv01.tolist(), "krd": s.krd.tolist(), "effective_maturity": s.effective_maturity.tolist(),
+            "label": list(s.label), "label_dv01": s.label_dv01.tolist(), "label_krd": s.label_krd.tolist(),
+            "label_effective_maturity": s.label_effective_maturity.tolist()}
 
 
 def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
@@ -49,6 +57,12 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
                 "flags": list(r.vol.flags),
                 "units": "price vols in points per √year, yield vol in bp per √year, widths in bp; "
                          "t in calendar days / 365"},
+        "profile": {"width": r.profile.curve.width, "points_sigma": list(r.profile.POINTS),
+                    "points": _states(r.profile.points), "curve": _states(r.profile.curve),
+                    "band_dv01": {"vol_down": r.profile.band_dv01[0].tolist(),
+                                  "vol_up": r.profile.band_dv01[1].tolist()},
+                    "units": "shifts in bp of every forward yield (β = 1); DV01 and KRDs as dv01; probs of bonds "
+                             "reaching 1e-4; bands at width × 0.9 and × 1.1 on the curve's centres"},
         "basket": [{"cusip": b.cusip, "coupon": b.coupon, "maturity": b.maturity.isoformat(), "cf": b.cf,
                     "price": b.price, "price_from": b.price_from, "fwd": b.fwd, "fwd_yield": b.fwd_yield,
                     "carry": b.carry, "converted": b.converted, "dv01_cf": b.dv01_cf,

@@ -33,6 +33,14 @@ def _table(header: list[str], rows: list[list[str]]) -> list[str]:
     return [_row(header, widths), _row(["-" * w for w in widths], widths), *(_row(r, widths) for r in rows)]
 
 
+def _k(v: float) -> str:
+    """A DV01 per 100 face of futures as $k per $100mm."""
+    return f"{dollars(v) / 1000:,.1f}"
+
+
+STATE = {-2: "−2σ", -1: "−1σ", 0: "today", 1: "+1σ", 2: "+2σ"}
+
+
 def _distance(side: str, c) -> str:
     if c is None:
         return f"{side} none in range"
@@ -47,7 +55,10 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
     (``NEXT_CHEAPEST``), or every bond with ``all_bonds``."""
     p = r.probabilities
     by_bond = p.by_bond()
-    shown = set(by_bond)
+    pts, curve = r.profile.points, r.profile.curve
+    today, i0 = r.profile.point(0), int(abs(curve.centres).argmin())
+    normal = {c: float(v[today]) for c, v in pts.probs.items() if v[today] >= 5e-4}
+    shown = set(by_bond) | set(normal)
     rest = sorted((b for b in r.basket if b.cusip not in shown), key=lambda b: b.converted)
     shown |= {b.cusip for b in rest[:NEXT_CHEAPEST]}
     basket = r.basket if all_bonds else [b for b in r.basket if b.cusip in shown]
@@ -58,8 +69,10 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
         f"options: {r.expiry.product} {r.expiry.label}, expiry {r.expiry.expiry}, DF {r.df:.6f}",
         f"futures settlement {r.f_market:.4f}, envelope E(0) {r.e0:.4f}, "
         f"recentring gap {r.gap:+.4f} ({r.gap * 32:+.1f}/32)",
-        f"futures DV01 per bp: {money(*(dollars(v) for v in r.dv01))} per $100mm "
-        f"({money(*(dollars(v, r.face) for v in r.dv01))} per contract), probability-weighted; "
+        f"futures DV01 per bp: {money(*[dollars(pts.dv01[today])] * 2)} per $100mm "
+        f"({money(*[dollars(pts.dv01[today], r.face)] * 2)} per contract), region-weighted (normal, ATM width; "
+        f"vol ±10%: {money(*(dollars(b[i0]) for b in r.profile.band_dv01))}); "
+        f"{money(*(dollars(v) for v in r.dv01))} at today's yields with the option-implied probabilities; "
         f"CTD-label {money(dollars(r.ctd_dv01), dollars(r.ctd_dv01))} ({money(*[dollars(r.ctd_dv01, r.face)] * 2)})",
         f"ATM vol: {r.vol.price_vol:.2f} points per √year (put {r.vol.strikes[0]:g} {r.vol.vols[0]:.2f}, "
         f"call {r.vol.strikes[1]:g} {r.vol.vols[1]:.2f}), {r.yield_vol:.1f}bp per √year through the CTD's DV01/CF; "
@@ -75,19 +88,39 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
                      f"{b.cf:.4f}", f"{b.price:.4f}" + ("" if b.price_from == "eod" else f" ({b.price_from})"),
                      f"{b.fwd:.4f}", f"{b.fwd_yield:.4%}", f"{b.carry:+.4f}", f"{b.converted:.4f}",
                      f"{dollars(b.dv01_cf) / 1000:,.1f}",
-                     prob(lo, hi) if b.cusip in by_bond else ""])
+                     prob(lo, hi) if b.cusip in by_bond else "",
+                     f"{normal[b.cusip]:.1%}" if b.cusip in normal else ""])
     lines += _table(["cusip", "coupon maturity", "cf", "price", "fwd", "fwd yield", "carry", "converted",
-                     "DV01/CF $k", "P(CTD)"],
+                     "DV01/CF $k", "P(CTD)", "P normal"],
                     rows)
+    lines.append("(P(CTD) from the option digitals, measured at option expiry; P normal from the ATM normal "
+                 "factor at the horizon, which spreads further)")
     if len(basket) < len(r.basket):
         lines.append(f"(bonds with a probability and the next {NEXT_CHEAPEST} cheapest; "
                      f"{len(r.basket) - len(basket)} more with --all-bonds)")
 
     lines += ["", f"Key-rate DV01 per $100mm, $k (par curve of {r.par_date}; can be negative)"]
     rows = [[name, *(f"{dollars(v) / 1000:,.1f}" for v in k), f"{dollars(k.sum()) / 1000:,.1f}", f"{m:.1f}y"]
-            for name, k, m in (("probability-weighted", r.krd, r.effective_maturity),
+            for name, k, m in (("region-weighted (normal)", pts.krd[today], pts.effective_maturity[today]),
+                               ("option-implied at z = 0", r.krd, r.effective_maturity),
                                ("CTD-label", r.ctd_krd, r.ctd_effective_maturity))]
     lines += _table(["", *(f"{n:g}y" for n in NODES), "total", "eff. maturity"], rows)
+
+    lines += ["", f"Shifted states (normal factor, β = 1, width {r.width:.1f}bp to the horizon; percentile of "
+                  f"today's distribution of the move; DV01 $k per $100mm)"]
+    rows = [[STATE[k], f"{pts.centres[j]:+.1f}", f"{pts.percentiles[j]:.1%}", pts.label[j], _k(pts.dv01[j]),
+             _k(pts.label_dv01[j]), f"{pts.effective_maturity[j]:.1f}y", f"{pts.label_effective_maturity[j]:.1f}y"]
+            for j, k in enumerate(r.profile.POINTS)]
+    lines += _table(["state", "shift bp", "pct", "CTD at shift", "DV01", "CTD-label", "eff. maturity",
+                     "CTD-label eff. maturity"], rows)
+    lines += ["", "Change in key-rate DV01 from today, $k per $100mm"]
+    rows = []
+    for k in (-2, -1, 1, 2):
+        j = r.profile.point(k)
+        rows += [[STATE[k], *(_k(v) for v in pts.krd[j] - pts.krd[today]), _k(pts.dv01[j] - pts.dv01[today])],
+                 [f"{STATE[k]} CTD-label", *(_k(v) for v in pts.label_krd[j] - pts.label_krd[today]),
+                  _k(pts.label_dv01[j] - pts.label_dv01[today])]]
+    lines += _table(["", *(f"{n:g}y" for n in NODES), "total"], rows)
 
     lines += ["", "Clusters (same dominant key rate, DV01 within 5%): key-rate DV01 if delivered, $k per $100mm"]
     rows = [[f"{cl.node:g}y: {', '.join(cl.members)}", prob(*cl.prob), *(f"{dollars(v) / 1000:,.1f}" for v in cl.krd),

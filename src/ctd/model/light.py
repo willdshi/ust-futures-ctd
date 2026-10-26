@@ -16,6 +16,10 @@ prices, the futures settlement, the latest SOFR and the contract's quarterly opt
 6. ATM vol of the same options (``vol.atm``), converted to yield vol with the CTD's DV01/CF: the
    width of the shift distribution to the horizon, each switch's distance in σ, and its normal tail
    at the width to option expiry, comparable with its digital (the gap is skew, phase 1c item 3).
+7. Shifted states with that width (``model.profile``): the duration profile from −100 to +100bp,
+   its ±1σ and ±2σ points and vol ±10% bands, with normal probabilities and region-weighted DV01
+   and KRDs, each bond evaluated where it is CTD (phase 1c item 4). Its state at 0 is the headline
+   DV01; step 5's weighting at z = 0 with the option-implied probabilities is the cross-check.
 
 ``F_market − E(0)`` is reported as the recentring gap: the net basis the model holds constant
 (delivery options, specialness, the timing of the price snapshots).
@@ -31,6 +35,7 @@ from ctd.curve.par import ParCurve, key_rate_curves
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.td_prices import BondPrice
 from ctd.funding.repo import flat
+from ctd.model import profile as pf
 from ctd.model.envelope import BasketBond, Switch, envelope, switches
 from ctd.model.horizon import light_horizon
 from ctd.model.probabilities import Probabilities, assemble, strike
@@ -124,6 +129,7 @@ class LightResult:
     vol: atm.AtmVol
     yield_vol: float  # bp per √year, through the CTD's DV01/CF
     t_horizon: float  # years from the as-of date to the horizon
+    profile: pf.Profile  # shifted states with the width to the horizon
     warnings: tuple[str, ...]
 
     @property
@@ -200,7 +206,7 @@ def run(x: LightInputs) -> LightResult:
 
     e, ctd = envelope(bonds, horizon, 0)
     e0, ctd0 = float(e[0]), ctd[0]
-    sws = switches(bonds, horizon)
+    sws = switches(bonds, horizon)  # the crossover table's range, −100 to +150bp
     df = 1 / g(x.settle, x.expiry.expiry)
     chain = [o for o in x.chain if o.product == x.expiry.product and o.label == x.expiry.label]
     if not chain:
@@ -211,6 +217,8 @@ def run(x: LightInputs) -> LightResult:
     warnings += [f"ATM vol: {f}" for f in vol.flags]
     sigma_y = atm.yield_vol(vol.price_vol, per[ctd0])
     s_h, s_e = atm.width(sigma_y, t_h), atm.width(sigma_y, vol.t)
+    span = pf.reach(s_h)
+    prof = pf.profile(bonds, horizon, x.par_curve, switches(bonds, horizon, -span, span), s_h)
     crossovers = []
     for sw in sws:
         k = strike(sw, x.f_market, e0)
@@ -229,4 +237,4 @@ def run(x: LightInputs) -> LightResult:
                        x.expiry, df, tuple(rows), tuple(crossovers), probs,
                        dv01.weighted(per, by_bond), per[ctd0], x.face,
                        krd.weighted(krds, krd.point_weights(by_bond)), krds[ctd0], x.par_date,
-                       tuple(krd.clusters(krds, by_bond)), vol, sigma_y, t_h, tuple(warnings))
+                       tuple(krd.clusters(krds, by_bond)), vol, sigma_y, t_h, prof, tuple(warnings))
