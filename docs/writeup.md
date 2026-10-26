@@ -138,21 +138,28 @@ Within $\pm1.5\sigma$, the two agree to about 2 percentage points, inside the no
 
 # Validation
 
-<!-- TODO: bond math vs QuantLib; CFs vs CME tables; the two probability
-estimates agree; historical backtest not yet done. -->
+- **Bond math.** All prices, yields, accrued interest and DV01s come from one hand-written street-convention pricing function. Price and yield round trips agree to $10^{-10}$, and prices match QuantLib, used only as an independent test.
+- **Conversion factors and baskets.** Conversion factors from CME's formula match every row of CME's published tables collected so far. Baskets are rebuilt from the eligibility rules and checked against the same tables, including bonds crossing the ZN grade change in 2023 and the 25-year boundary between ZB and UB.
+- **The model's mechanics.** Switch points are tested on a two-bond basket with a known answer. On a flat 6% curve every converted price is close to 100. The probability-weighted DV01 matches the slope of the expected envelope computed by finite differences.
+- **Probabilities.** The two independent estimates agree to within the noise of the option settlements (Table 1). Where the same day's options are available from two sources, CME's daily bulletin and a commercial data history, they give the same vol and DV01; only far-wing probabilities differ, by up to a percentage point.
+
+**Not yet done: a historical backtest.** The real test of the probabilities is whether bonds given a 30% chance of being CTD turn out to be CTD about 30% of the time. The plan is to run the model over past delivery cycles with large moves, such as the 2022–23 sell-off. Its probabilities would then be scored against the bond actually cheapest at delivery, with a Brier score and a reliability plot, contract by contract.
 
 # Further work
 
-<!-- TODO, one short paragraph each:
-- Betas: non-parallel moves; sell-off betas; shrinkage; daily re-estimation;
-  20y sector reference; residual slope variance widens probabilities.
-- SABR smile: normal SABR per expiry; digitals from the fitted put curve;
-  monotone tails; convolution from expiry to delivery; wing caveat.
-- Interest rate model: two-factor or term-structure model for slope risk;
-  horizon at delivery; timing options and fair value.
-- Bond-specific spreads (brief): rich/cheap issues and special repo move
-  switch points; mean-reverting spreads, bond-level betas, CTD repo. -->
+**Betas.** The model shifts every forward yield by the same amount. In practice yields across a 10-year basket don't move one-for-one: the curve tends to steepen or flatten as its level changes. The next step regresses yield changes at each published tenor on one reference yield per contract (the 20-year for ZB). Each bond then moves by its own beta, interpolated at its maturity. Betas would be re-estimated daily, so the DV01 series doesn't jump when they are refitted; shrunk slightly towards 1; and also estimated on sell-off days alone, in case those differ. Switch points depend on differences in beta between bonds. For ZB, a beta error of 0.03 moves a switch 30bp away by about 1bp. The leftover curve noise the betas don't explain also widens the probabilities around switch points that are close together.
+
+**The option smile.** The normal model uses one at-the-money vol and ignores skew. The planned replacement fits a normal SABR smile to each option expiry and takes the probabilities from the fitted curve's slope across strikes. This gives one consistent distribution for every switch point, with skew, and tail probabilities that can't be negative. Unlike today's digitals, it also gives a density, so the DV01 profile and key rate DV01s would reflect the skew too. The distribution would be extended from option expiry to delivery by adding normally distributed yield moves over the remaining time. The raw put-spread digitals then become the check on the fit. Far wings need care: when far out-of-the-money options are priced rich or at their minimum tick, the fitted tails come out too fat.
+
+**An interest rate model.** One factor can't represent slope moves independent of the level. Yet for a basket that spans 15 to 25 years, slope moves alone can cause a switch. A two-factor model of the curve (or a full term structure model), calibrated to the options, would price those switches directly. It would give probabilities at delivery rather than at option expiry, and is the route to valuing the end-of-month and wildcard options and a futures fair value, all of which are out of scope today.
+
+**Bond-specific spreads.** Individual bonds trade rich or cheap to the curve, and a bond in demand can be special in repo, with financing well below general collateral. The model prices each bond from its own price and funds all of them at general collateral repo. A few basis points of richness, or special repo on one bond, can move a switch point. Modelling spreads as mean-reverting, and adding bond-specific repo where a data source exists, would address this.
 
 # Limitations
 
-<!-- TODO: risk-neutral probabilities; lagged, rounded free prices; thin UB options. -->
+Beyond what the further work above addresses:
+
+- **The probabilities are risk-neutral.** They come from option prices, which include a risk premium, so they are the market's pricing of a switch, not a forecast of one.
+- **Free prices are imperfect.** Treasury's published end-of-day prices are rounded and aren't struck at the same moment as the futures settlement. A few ticks of noise can move a switch point by a basis point or two.
+- **Thin options for UB and TN.** Few of their option strikes trade on a given day, so their probabilities, and often their at-the-money vol, rest on CME's settlement curve rather than that day's trades.
+- **No calibration history yet.** Until the backtest is done, the probabilities are option-implied but unscored.
