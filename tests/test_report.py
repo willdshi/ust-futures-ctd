@@ -43,6 +43,14 @@ def test_chart_2_drops_only_the_end_buckets_nothing_loads_on():
     assert charts.used_buckets(pts, 0) == slice(1, 7)  # 2y's 1e-4 is under 0.5% of the DV01; 30y is empty
 
 
+def test_chart_1_rows_drop_only_the_end_buckets_nothing_loads_on():
+    # % shares at three shifts: 2y and 25y under 0.5%, 5y loaded only negatively, 15y empty but inside the range
+    shares = np.array([[0.1, -3.0, 60.0, 43.0, 0.0, 0.0, 0.0, 0.0],
+                       [0.2, -1.0, 40.0, 50.0, 0.0, 11.0, 0.0, 0.0],
+                       [0.0, 0.0, 20.0, 60.0, 0.0, 20.0, 0.4, 0.0]])
+    assert charts.share_rows(shares) == slice(1, 6)
+
+
 def test_chart_2_keeps_a_bucket_loaded_only_negatively(rec):
     # the 2% 2050 bond's short buckets are negative but still a load: kept
     pts = rec["profile"]["points"]

@@ -143,9 +143,16 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 **Decision:** matplotlib PNGs, embedded (base64) in one self-contained HTML page per as-of date under the gitignored `/output/`, written by `report/` from saved results. Plain string formatting for the HTML; no template engine.
 
 **Why:**
-- matplotlib is already a dependency and covers every chart feature: two panels on a shared x-axis, a secondary x-axis in percentiles (`secondary_xaxis` with bp↔percentile functions), a staircase overlay, diverging bars in small multiples, and the bucket-share panel with negative shares (positives stacked above zero, negatives below, or a heatmap).
+- matplotlib is already a dependency and covers every chart feature: two panels on a shared x-axis, a secondary x-axis in percentiles (`secondary_xaxis` with bp↔percentile functions), a staircase overlay, diverging bars in small multiples, and the bucket-share panel with negative shares (a heatmap, below).
 - Static PNGs are what a rates note, email or post takes, and the same result file always draws the same chart (reproducibility).
 - Plotly's static export needs `kaleido` (often flaky on Windows) and makes the dual bp/percentile axis awkward; interactivity isn't what readers need. Altair has the same export problem and handles shared-axis panels poorly. An interactive view can be added later for exploration.
+
+**Chart 1's bucket shares as a heatmap (2026-10-26).** The bottom panel was first drawn as stacked bands, one per key-rate bucket, in eight steps of one blue ramp. Eight ordered buckets need eight steps a reader can tell apart, and one hue holds about five: six of the seven neighbouring pairs were under the 0.06 OKLab lightness step the palette's ordinal check asks for, so 7y, 10y and 15y ran together, and the negative shares stacked below zero couldn't be read at all. As a heatmap, the row names the bucket, so color only carries the share:
+- one row per bucket (end buckets under 0.5% of the DV01 at every shift left out, as in chart 2), on the same shift axis as the DV01 panel;
+- positive shares in the blue ramp up from a neutral gray, negative shares in gray; full gray at −50% and full blue at +100%, since shares run from about −25% to about 140%; one scale for every contract;
+- not blue ↔ red, which chart 2 already uses for rally ↔ sell-off.
+
+A switch shows as the dark cell moving between rows: ZBZ6 on 2026-10-23 from 15y through 20y to 25y as yields rise.
 
 ## When December options expire (design §5.11, §10)
 

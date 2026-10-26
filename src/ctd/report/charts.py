@@ -6,8 +6,8 @@ global figure state; style through ``rc_context``.
 
 - Chart 1: region-weighted futures DV01 against the shift (vol ±10% band, the CTD-based staircase,
   the ±1σ and ±2σ states as points), percentiles of the move to implied delivery on the top axis; below
-  on the same x-axis, each key-rate bucket's share of the DV01, positives stacked up and negatives
-  down.
+  on the same x-axis, a heatmap of each key-rate bucket's share of the DV01 (one row per bucket,
+  positive shares in the blue ramp, negative ones in gray, on one scale for every contract).
 - Chart 2: the change in each key-rate DV01 from today at −2σ, −1σ, +1σ and +2σ, with the
   CTD-based change as a marker on each bar.
 - Chart 3: one contract's series (``report.series``) by trading day: the model DV01 with its ±1σ
@@ -19,6 +19,7 @@ import io
 
 import matplotlib
 import numpy as np
+from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FuncFormatter
@@ -27,11 +28,21 @@ from scipy.special import ndtr, ndtri
 from ctd.report.series import CTD, Row
 from ctd.risk.dv01 import dollars
 
-# reference palette (dataviz skill, light surface): chrome, slot-1 blue, the blue ordinal ramp from
-# step 250 for the eight buckets (short tenors light, long dark), blue ↔ red for rally ↔ sell-off
+# reference palette (dataviz skill, light surface): chrome, slot-1 blue, blue ↔ red for rally ↔ sell-off.
+# Chart 1's bucket shares are a heatmap, so the row names the bucket and color only has to carry the
+# share: the sequential blue ramp up from the neutral gray for positive shares, gray down for negative
+# ones (blue ↔ red would clash with chart 2's rally ↔ sell-off). Eight buckets as stacked bands needed
+# eight distinguishable steps of one hue, more than the ramp holds (decisions.md, Chart rendering).
 SURFACE, INK, INK2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 SERIES = "#2a78d6"
-BUCKETS = ("#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#104281")
+NEUTRAL = "#f0efec"
+SHARE_CMAP = LinearSegmentedColormap.from_list(
+    "share", [(0.0, INK2), (0.5, NEUTRAL), (0.6, "#cde2fb"), (0.7, "#86b6ef"), (0.8, "#3987e5"),
+              (0.9, "#1c5cab"), (1.0, "#0d366b")])
+# % of DV01, the same scale for every contract. Shares run from about −25% (the short buckets of
+# low-coupon bonds) to about 140% (UBZ6's 25y), so gray is full at −50% and blue at +100%; beyond
+# either, the end color.
+SHARE_NORM = TwoSlopeNorm(vcenter=0, vmin=-50, vmax=100)
 STATES = {-2: "#1c5cab", -1: "#86b6ef", 1: "#f0a09f", 2: "#e34948"}
 SIGMA = {-2: "−2σ", -1: "−1σ", 0: "today", 1: "+1σ", 2: "+2σ"}
 
@@ -112,32 +123,34 @@ def profile_chart(rec: dict) -> bytes:
 
         dv01 = np.array(curve["dv01"])
         shares = 100 * np.array(curve["krd"]) / dv01[:, None]
-        nodes = rec["krd"]["nodes"]
-        labels = [f"{n:g}y" for n in nodes]
-        up = bottom.stackplot(x, np.clip(shares, 0, None).T, colors=BUCKETS, edgecolor=SURFACE, linewidth=0.5,
-                              labels=labels)
-        bottom.stackplot(x, np.clip(shares, None, 0).T, colors=BUCKETS, edgecolor=SURFACE, linewidth=0.5)
-        bottom.axhline(0, color=AXIS, linewidth=0.8)
-        _label_bands(bottom, x, np.clip(shares, 0, None), labels)
-        bottom.set_ylabel("share of DV01 by key rate (%)")
+        keep = share_rows(shares)
+        nodes = rec["krd"]["nodes"][keep]
+        xe = np.r_[x[0], (x[1:] + x[:-1]) / 2, x[-1]]  # cell edges around each centre
+        mesh = bottom.pcolormesh(xe, np.arange(len(nodes) + 1) - 0.5, shares[:, keep].T, cmap=SHARE_CMAP,
+                                 norm=SHARE_NORM, shading="flat")
+        bottom.grid(False)
+        for y in np.arange(1, len(nodes)) - 0.5:  # a surface gap between rows
+            bottom.axhline(y, color=SURFACE, linewidth=1)
+        bottom.set_yticks(np.arange(len(nodes)), [f"{n:g}y" for n in nodes])
+        bottom.tick_params(axis="y", length=0)
+        bottom.set_ylabel("key rate")
         bottom.set_xlabel(LIGHT_MODEL_SHIFT_AXIS)
         bottom.set_xlim(x[0], x[-1])
         bottom.xaxis.set_major_formatter(FuncFormatter(_bp))
-        bottom.legend(up[::-1], labels[::-1], loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=7.5,
-                      handlelength=1.0)
+        bar = fig.colorbar(mesh, ax=[top, bottom], location="right", shrink=0.38, anchor=(0.0, 0.0), aspect=14,
+                           extend="both")
+        bar.set_label("share of DV01 (%)", color=INK2)
+        bar.outline.set_visible(False)
+        bar.set_ticks([-50, -25, 0, 50, 100])
+        bar.ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:+.0f}".replace("-", "−") if v else "0"))
         return _png(fig)
 
 
-def _label_bands(ax, x: np.ndarray, pos: np.ndarray, labels: list[str]) -> None:
-    """Name each positive band where it is thickest, if it is thick enough to hold the label."""
-    base = np.cumsum(pos, axis=1) - pos
-    for i, label in enumerate(labels):
-        j = int(pos[:, i].argmax())
-        if pos[j, i] < 9:
-            continue
-        j = min(max(j, 8), len(x) - 9)  # keep the label off the edges
-        ax.text(x[j], base[j, i] + pos[j, i] / 2, label, ha="center", va="center", fontsize=7.5,
-                color=INK if i < 3 else SURFACE)
+def share_rows(shares: np.ndarray) -> slice:
+    """The key-rate buckets chart 1 shows: all but the end ones the contract never loads on at any
+    shift (under ``EMPTY_BUCKET`` of the DV01, as in chart 2), so ZN's chart has no 15y to 30y rows."""
+    used = np.flatnonzero(np.abs(shares).max(axis=0) >= 100 * EMPTY_BUCKET)
+    return slice(int(used.min()), int(used.max()) + 1)
 
 
 def used_buckets(pts: dict, today: int) -> slice:
