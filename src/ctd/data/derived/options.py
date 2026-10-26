@@ -77,6 +77,18 @@ def winner(asof: date, product: str) -> str:
     return "cme_bulletin" if asof >= BULLETIN_FROM else "databento_opt_backfill"
 
 
+def chain(dstore, product: str, asof: date) -> tuple[list[cme_bulletin.OptionSettle], list[str]]:
+    """``product``'s standard option settlements on ``asof`` from the derived table, as the
+    bulletin reader gives them (no delta: the table doesn't keep it), and the sources the rows
+    came from. Volume or open interest not yet published (null) is an error, not a 0."""
+    t = dstore.read("options", products=[product], start=asof, end=asof)
+    if t[["volume", "open_interest"]].isna().any(axis=None):
+        raise ValueError(f"{product} options on {asof}: volume or open interest not yet published")
+    settles = [cme_bulletin.OptionSettle(product, r.label, r.right, r.strike, None if r.cabinet else r.settle, None,
+                                         int(r.volume), int(r.open_interest)) for r in t.itertuples()]
+    return settles, sorted(set(t["source"]))
+
+
 TABLE = Table("options", 1, SCHEMA, key=("asof", "product", "label", "right", "strike"),
               compare=("expiry", "underlying_month", "settle", "cabinet", "volume", "open_interest"),
               sources=(DATABENTO, BULLETIN), winner=winner)

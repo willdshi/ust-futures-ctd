@@ -12,7 +12,7 @@ import pytest
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.databento import (IDENTITY, UNDEF_PRICE, UNDEF_TS, final_settlements, futures_rows,
                                  merge_symbology, option_label, option_rows, stats_frame)
-from ctd.data.derived import bonds, futures, rates
+from ctd.data.derived import bonds, futures, options, rates
 from ctd.data.derived.bonds import price_rows, securities_rows
 from ctd.data.derived.options import bulletin_rows
 from ctd.data.derived.quality import chain_quality
@@ -493,3 +493,56 @@ def test_nyfed_rows_keep_the_latest_pull_and_note_revisions():
     assert (rows[1]["target_from"], rows[1]["target_to"]) == pytest.approx((0.0225, 0.025))
     assert notes == ["1 value(s) revised by a later pull"]
     assert rates.fred_values(b"observation_date,DFF\n2026-10-10,3.88\n2026-10-11,.\n") == {date(2026, 10, 10): 0.0388}
+
+
+def put_part(dstore: DerivedStore, table: str, schema: pa.Schema, key: str, value: str, rows: list[dict]) -> None:
+    """One merged partition of a derived table, written directly."""
+    t = pa.Table.from_pylist(rows, schema=schema)
+    dstore.write_part(dstore.table_dir(table), value, rows[0]["asof"].year, t, key)
+
+
+def test_light_inputs_from_the_derived_tables(tmp_path):
+    """The derived-path readers (design 10, phase 1d) give what the raw readers give."""
+    dstore = DerivedStore(tmp_path)
+    d, dec, mar = date(2026, 9, 15), date(2026, 12, 1), date(2027, 3, 1)
+    fut = [{"asof": d, "product": "ZB", "month": dec, "contract": "ZBZ6", "settle": 115.5, "open_interest": 1,
+            "source": "databento_fut_backfill"},
+           {"asof": d, "product": "ZB", "month": mar, "contract": "ZBH7", "settle": 115.0, "open_interest": None,
+            "source": "databento_fut_backfill"},
+           {"asof": date(2026, 9, 16), "product": "ZB", "month": dec, "contract": "ZBZ6", "settle": 116.0,
+            "open_interest": 1, "source": "databento_fut_backfill"}]
+    put_part(dstore, "futures", futures.SCHEMA, "product", "ZB", fut)
+    assert futures.settlements(dstore, "ZB", d) == ({dec: 115.5, mar: 115.0}, ["databento_fut_backfill"])
+
+    opt = dict(asof=d, product="ZB", label="DEC26", expiry=date(2026, 11, 20), underlying_month=dec,
+               source="databento_opt_backfill")
+    put_part(dstore, "options", options.SCHEMA, "product", "ZB", [
+        {**opt, "right": "C", "strike": 116.0, "settle": 1.25, "cabinet": False, "volume": 5, "open_interest": 10},
+        {**opt, "right": "P", "strike": 100.0, "settle": None, "cabinet": True, "volume": 0, "open_interest": 0}])
+    chain, src = options.chain(dstore, "ZB", d)
+    assert chain == [OptionSettle("ZB", "DEC26", "C", 116.0, 1.25, None, 5, 10),
+                     OptionSettle("ZB", "DEC26", "P", 100.0, None, None, 0, 0)]
+    assert chain[1].cabinet and src == ["databento_opt_backfill"]
+
+    par = {c: None for c in rates.TENORS.values()}
+    put_part(dstore, "par_curve", rates.PAR_SCHEMA, "curve", "par", [
+        {"asof": date(2026, 9, 14), "curve": "par", **par, "y_1m": 0.04, "y_30y": 0.047, "source": "par_curve"},
+        {"asof": d, "curve": "par", **par, "y_1m": 0.041, "y_1_5m": 0.0411, "y_30y": 0.048, "source": "par_curve"}])
+    assert rates.par_latest(dstore, d) == (d, {1 / 12: 0.041, 1.5 / 12: 0.0411, 30.0: 0.048}, ["par_curve"])
+    assert rates.par_latest(dstore, date(2026, 9, 14))[0] == date(2026, 9, 14)
+
+    sofr = [{"asof": date(2026, 8, 31), "rate": "sofr", "value": 0.0435},
+            {"asof": date(2026, 9, 1), "rate": "sofr", "value": 0.0433},
+            {"asof": d, "rate": "sofr", "value": 0.0431},
+            {"asof": date(2026, 9, 16), "rate": "sofr", "value": 0.0429}]  # after the as-of date
+    put_part(dstore, "rates", rates.RATES_SCHEMA, "rate", "sofr", [{**r, "source": "nyfed_rates"} for r in sofr])
+    assert rates.fixings(dstore, date(2026, 8, 31), d) == (
+        {date(2026, 8, 31): 0.0435, date(2026, 9, 1): 0.0433, d: 0.0431}, ["nyfed_rates"])
+
+
+def test_which_dates_read_the_derived_tables():
+    from ctd.cli import LIVE_FROM, uses_derived
+
+    before = date(2026, 10, 15)
+    assert uses_derived(before) and not uses_derived(LIVE_FROM)
+    assert uses_derived(LIVE_FROM, "derived") and not uses_derived(before, "raw")

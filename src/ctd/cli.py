@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 CATCH_UP_DAYS = 5  # CME settlement pages show 5 trailing business days
+LIVE_FROM = date(2026, 10, 16)  # first date with every live raw source; runs before it read the derived tables
 
 
 def data_root() -> Path:
@@ -188,11 +189,21 @@ def _report(gaps) -> int:
     return 1 if gaps else 0
 
 
-def light_inputs(store, contract: str, asof: date):
-    """Everything the light model needs for ``contract`` on ``asof``, from the raw store only, and
-    the raw files read (source, unit, name, sha256)."""
+def uses_derived(asof: date, inputs: str = "auto") -> bool:
+    """Whether a run reads futures, SR1, options, the par curve and SOFR from the derived tables:
+    by date unless forced (``inputs`` "raw" or "derived"; design 10, phase 1d)."""
+    return inputs == "derived" or (inputs == "auto" and asof < LIVE_FROM)
+
+
+def light_inputs(store, contract: str, asof: date, inputs: str = "auto"):
+    """Everything the light model needs for ``contract`` on ``asof``, from the store only, and what
+    was read: raw files (source, unit, name, sha256) and, on the derived path (``uses_derived``),
+    derived tables (table, sources). TreasuryDirect prices and the TCF basket are always the raw
+    files stored under ``asof``."""
     from ctd.curve.par import ParCurve
     from ctd.data import cme_bulletin, cme_settlements, cme_tcf, nyfed, par_curve, refdata, td_prices
+    from ctd.data.derived import futures as d_futures, options as d_options, rates as d_rates
+    from ctd.data.derived.store import DerivedStore
     from ctd.model.light import LightInputs
     from ctd.reference.contracts import MONTH_CODES, parse_contract
     from ctd.reference.delivery import delivery_for
@@ -201,44 +212,62 @@ def light_inputs(store, contract: str, asof: date):
     product, month = parse_contract(contract, asof)
     sifma = refdata.calendar("sifma")
     cal = delivery_for(refdata.delivery_calendar(), product, month)
-    futures = cme_settlements.read_futures(store, asof, product)
+    # SOFR dated on or before asof, whenever it was pulled (asof's own is in the next morning's
+    # file): this month's for the strip, plus the business day before a 1st that isn't one
+    since = sifma.latest_business_day(asof.replace(day=1))
+    if uses_derived(asof, inputs):
+        dstore = DerivedStore(store.root)
+        futures, fut_src = d_futures.settlements(dstore, product, asof)
+        sr1, sr1_src = d_futures.settlements(dstore, "SR1", asof)
+        sr1 = {m: (100 - s) / 100 for m, s in sr1.items()}  # none: the model warns and falls back to flat SOFR
+        fixings, fix_src = d_rates.fixings(dstore, since, asof)
+        par_date, par_points, par_src = d_rates.par_latest(dstore, asof)
+        chain, opt_src = d_options.chain(dstore, product, asof)
+        derived = [{"table": "futures", "product": product, "sources": fut_src},
+                   {"table": "futures", "product": "SR1", "sources": sr1_src},
+                   {"table": "rates", "rate": "sofr", "sources": fix_src},
+                   {"table": "par_curve", "asof": par_date.isoformat(), "sources": par_src},
+                   {"table": "options", "product": product, "sources": opt_src}]
+    else:
+        futures = {m: s.settle for m, s in cme_settlements.read_futures(store, asof, product).items()}
+        fixings, fixing_files = nyfed.read_known(store, asof, since)
+        try:
+            sr1 = {m: (100 - s.settle) / 100
+                   for m, s in cme_settlements.read_futures(store, asof, "SR1", "cme_stir").items()}
+        except FileNotFoundError:
+            sr1 = {}  # the model warns and falls back to flat SOFR
+        par_date, par_points = par_curve.read_latest(store, asof)
+        chain = cme_bulletin.read_options(store, asof)
     if month not in futures:
         raise ValueError(f"no {contract} settlement on {asof}")
-    prices, _ = td_prices.read(store, asof)
-    # SOFR dated on or before asof, from any stored file (asof's own is in the next morning's):
-    # this month's for the strip, plus the business day before a 1st that isn't one
-    fixings, fixing_files = nyfed.read_known(store, asof, sifma.latest_business_day(asof.replace(day=1)))
     if not fixings:
         raise ValueError(f"no SOFR stored for {asof}")
     sofr_date = max(fixings)
     sofr = fixings[sofr_date]
-    try:
-        sr1 = {m: (100 - s.settle) / 100
-               for m, s in cme_settlements.read_futures(store, asof, "SR1", "cme_stir").items()}
-    except FileNotFoundError:
-        sr1 = {}  # the model warns and falls back to flat SOFR
-    par_date, par_points = par_curve.read_latest(store, asof)
+    prices, _ = td_prices.read(store, asof)
     label = f"{LABELS[month.month - 1]}{month.year % 100:02d}"
     expiry = expiry_for(refdata.option_expiries(), product, label)
     assert expiry.underlying[-2] == MONTH_CODES[month.month - 1]
-    inputs = LightInputs(
+    x = LightInputs(
         contract, asof, sifma.add_business_days(asof, 1), cal.first_delivery, cal.last_delivery,
-        cme_tcf.read_basket(store, asof, product, month), prices, futures[month].settle, sofr, sofr_date,
-        expiry, cme_bulletin.read_options(store, asof), sifma,
-        {p["code"]: p["face"] for p in refdata.cme_products()["treasury"]}[product],
+        cme_tcf.read_basket(store, asof, product, month), prices, futures[month], sofr, sofr_date,
+        expiry, chain, sifma, {p["code"]: p["face"] for p in refdata.cme_products()["treasury"]}[product],
         ParCurve.from_points(par_points), par_date, sr1, fixings)
     read = [("td_prices", "securityprice", f"securityprice_{asof.isoformat()}.csv"),
-            ("cme_tcf", "csv", cme_tcf.file_name(asof, "csv")),
-            ("cme_fut", product, store.names(asof, "cme_fut", product)[0]),
-            *(("cme_stir", "SR1", n) for n in store.names(asof, "cme_stir", "SR1")[:1]),
-            ("cme_bulletin", "Section42", "Section42.pdf"),
-            *(("par_curve", "daily_treasury_yield_curve", n)
-              for n in store.names(asof, "par_curve", "daily_treasury_yield_curve"))]
+            ("cme_tcf", "csv", cme_tcf.file_name(asof, "csv"))]
+    if not uses_derived(asof, inputs):
+        read += [("cme_fut", product, store.names(asof, "cme_fut", product)[0]),
+                 *(("cme_stir", "SR1", n) for n in store.names(asof, "cme_stir", "SR1")[:1]),
+                 ("cme_bulletin", "Section42", "Section42.pdf"),
+                 *(("par_curve", "daily_treasury_yield_curve", n)
+                   for n in store.names(asof, "par_curve", "daily_treasury_yield_curve"))]
     files = [{"source": s, "unit": u, "name": n, "sha256": store.meta(asof, s, u, n)["sha256"]} for s, u, n in read]
+    if uses_derived(asof, inputs):
+        return x, files + derived
     # SOFR fixings, some from other as-of dates' files (marked with their date)
     files += [{"source": s, "unit": "sofr", "name": n, "sha256": store.meta(d, s, "sofr", n)["sha256"],
                **({"asof": d.isoformat()} if d != asof else {})} for d, s, n in fixing_files]
-    return inputs, files
+    return x, files
 
 
 def code_version() -> str | None:
@@ -263,7 +292,7 @@ def cmd_run(args) -> int:
 
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
     try:
-        inputs, files = light_inputs(RawStore(args.data_root), args.contract, asof)
+        inputs, files = light_inputs(RawStore(args.data_root), args.contract, asof, args.inputs)
         result = light.run(inputs)
     except (FileNotFoundError, KeyError, ValueError) as e:
         print(f"ctd run {args.contract} {asof}: {e}", file=sys.stderr)
@@ -391,6 +420,9 @@ def build_parser() -> argparse.ArgumentParser:
     asof_args(r)
     r.add_argument("--no-save", action="store_true", help="print only; don't write data/results/light/...")
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
+    r.add_argument("--inputs", choices=["auto", "raw", "derived"], default="auto",
+                   help=f"where futures, SR1, options, par curve and SOFR come from: derived tables before "
+                        f"{LIVE_FROM}, raw pages from it (auto), or forced (design 10, phase 1d)")
     r.set_defaults(func=cmd_run)
     o = sub.add_parser("report", help="the single-date HTML page (charts 1 and 2, tables) from saved results")
     asof_args(o)

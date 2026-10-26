@@ -21,8 +21,9 @@ newer pull changes, so a revision would show rather than slip in.
 import csv
 import io
 import json
-from datetime import date
+from datetime import date, timedelta
 
+import pandas as pd
 import pyarrow as pa
 
 from ctd.data import par_curve
@@ -120,6 +121,29 @@ def _fred_read(rows):
             notes.append(f"{n} value(s) revised since the {refs[1]['asof']} pull")
         return rows(key, latest), notes
     return read
+
+
+LOOKBACK_DAYS = 31  # how far back to look for the latest par curve
+
+
+def par_latest(dstore, asof: date) -> tuple[date, dict[float, float], list[str]]:
+    """The latest par curve on or before ``asof`` from the derived table (its date, tenor in years
+    -> yield, the sources), as ``par_curve.read_latest`` gives it: tenors not published that date
+    left out, and tenors in years computed as the reader does (1 Mo is 1/12, not a rounded 0.083333)."""
+    t = dstore.read("par_curve", products=[CURVE], start=asof - timedelta(days=LOOKBACK_DAYS), end=asof)
+    if t.empty:
+        raise ValueError(f"no par curve in the derived table in the {LOOKBACK_DAYS} days to {asof}")
+    row = t.loc[t["asof"].idxmax()]
+    years = {c: par_curve._tenor_years(k) for k, c in TENORS.items()}
+    return row["asof"], {years[c]: float(row[c]) for c in TENORS.values() if pd.notna(row[c])}, [row["source"]]
+
+
+def fixings(dstore, since: date, asof: date, rate: str = "sofr") -> tuple[dict[date, float], list[str]]:
+    """Every ``rate`` fixing dated ``since`` to ``asof`` from the derived table, as
+    ``nyfed.read_known`` gives them, and the sources."""
+    t = dstore.read("rates", products=[rate], start=since, end=asof)
+    t = t[t["value"].notna()]
+    return dict(zip(t["asof"], t["value"])), sorted(set(t["source"]))
 
 
 PAR_CURVE = Table(

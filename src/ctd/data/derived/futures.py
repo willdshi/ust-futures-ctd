@@ -89,5 +89,12 @@ def winner(asof: date, product: str) -> str:
     return "cme_stir" if product in STIR else "cme_fut"
 
 
+def settlements(dstore, product: str, asof: date) -> tuple[dict[date, float], list[str]]:
+    """Contract month -> ``product``'s settlement on ``asof`` from the derived table, and the
+    sources the rows came from. Empty when the date has no rows."""
+    t = dstore.read("futures", products=[product], start=asof, end=asof)
+    return dict(zip(t["month"], t["settle"])), sorted(set(t["source"]))
+
+
 TABLE = Table("futures", 1, SCHEMA, key=("asof", "product", "month"), compare=("contract", "settle", "open_interest"),
               sources=(DATABENTO, _cme_source("cme_fut"), _cme_source("cme_stir")), winner=winner)
