@@ -43,11 +43,9 @@ Conversion factors price every bond at a 6% yield. If every bond in the basket y
 - **Yields above 6%**: high-duration bonds (long maturity, low coupon) lose the most value, and become cheapest to deliver.
 - **Yields below 6%**: low-duration bonds become cheapest.
 
-Coupons and the shape of the curve shift these boundaries, but the rule of thumb holds. So which bond is cheapest depends on the level of yields, and the short's right to choose is an option: the **quality option**. Figure 1 shows how it works. Each bond's converted forward price falls as yields rise, at a rate set by its duration. The futures price follows the lowest of them (the envelope), and each kink in the envelope is a **switch point** where the CTD changes.
+Coupons and the shape of the curve shift these boundaries, but the rule of thumb holds. So which bond is cheapest depends on the level of yields, and the short's right to choose is an option: the **quality option**. Each bond's converted forward price falls as yields rise, at a rate set by its duration, so the bonds' price lines cross. The futures price follows the lowest of them (the envelope), and each place where the lowest line changes is a **switch point**. Figure 1 shows this for ZBZ6, with each bond's converted price measured above the cheapest one: the CTD sits on the zero line, and a switch point is where another bond's line comes down to meet it.
 
-<!-- TODO: Figure 1. Converted forward price against parallel yield shift for
-3-4 ZBZ6 bonds, envelope highlighted, switch points marked.
-![Converted forward prices of four ZBZ6 deliverables against a parallel shift in yields. The futures price follows the lower envelope; the CTD changes at each kink.](images/zbz6-envelope-2026-10-23.png) -->
+![ZBZ6 on 2026-10-23: the converted forward price of each bond that is cheapest somewhere within ±100bp, in 32nds above the cheapest bond, against a parallel shift in forward yields. Labels name the CTD in each region (the 2.25% of August 2049, CTD for under 2bp around +47bp, is unlabelled). Dotted lines are switch points; the shaded band is $\pm 1\sigma$ of the move to delivery.](images/zbz6-envelope-2026-10-23.png){width=90%}
 
 The quality option matters most when:
 
@@ -105,19 +103,38 @@ What the model leaves out is deliberate. It has no futures fair value and no imp
 
 # Results: ZB, December 2026
 
+Figure 2 is the main output: the futures DV01 across parallel shifts in yields, from the model (blue) and from the CTD alone (grey).
+
+- **Today** the model's DV01 is \$137.0k per bp per \$100mm, against \$126.0k CTD-based. The model is higher because the next switch, to a longer bond, is only 4bp of sell-off away and carries a 45% probability. The model already counts the duration the future would gain there.
+- **Within $\pm1\sigma$** (46bp), the model's DV01 moves smoothly between \$134.2k and \$147.5k. The CTD-based figure steps through six bonds over the same range, and within 3bp past $+1\sigma$ it jumps from \$142.6k to \$174.2k.
+- **At $\pm2\sigma$**, the gap narrows. At $-2\sigma$ almost all the probability is on one bond, and the two agree (\$139.7k against \$139.0k). At $+2\sigma$ the CTD-based figure is now the higher one (\$158.9k against \$152.1k), because the model still gives weight to the shorter bonds a rally back would restore.
+
+The model's DV01 is lowest about 35bp below today's yields. In a rally, each bond's own DV01 rises, but the CTD also moves to shorter bonds; near today's level the second effect wins.
+
 ![ZBZ6 DV01 profile on 2026-10-23. Top: futures DV01 across parallel shifts in basket forward yields, probability-weighted (blue, with the band for vol ±10%) against CTD-based (grey). Bottom: the share of DV01 at each key rate.](images/zbz6-dv01-profile-heatmap-2026-10-23.png){width=90%}
 
 ![ZBZ6 key rate DV01 change from today at $\pm 1\sigma$ and $\pm 2\sigma$, 2026-10-23: probability-weighted (bars) against CTD-based (dashes).](images/zbz6-krd-change-2026-10-23.png){width=90%}
 
-<!-- TODO:
-- Walk through the two figures. Numbers ($k per bp per $100mm, prob-weighted /
-  CTD-based): -2sigma (-92bp) 139.7 / 139.0; -1sigma (-46bp) 134.2 / 129.8;
-  today 137.0 / 126.0; +1sigma (+46bp) 147.5 / 142.6; +2sigma (+92bp) 152.1 / 158.9.
-  CTD-based jumps 142.6 -> 154.4 at +47bp and -> 174.2 at +49bp.
-- Key rates: weight moves from 15y to 20-25y in a sell-off; CTD-based moves in jumps.
-- Distance to next switch: +3.8bp (0.08 sigma) sell-off, -14.2bp rally; width 46bp.
-- Table per switch point: K_k, digital, normal, gap.
-- Optional: ZN or UB contrast. -->
+The key rate split matters as much as the total (Figure 2, bottom, and Figure 3). Today the CTD, the 4.625% of November 2044, has no 25-year exposure at all: \$53.3k at 15 years and \$75.7k at 20 years. The model puts \$29.4k at 25 years, because the bonds a sell-off would make cheapest mature in 2045 to 2050. After a $+1\sigma$ sell-off, the CTD-based split puts \$171.1k at 20 years and still nothing at 25 years; the model has \$93.1k at 25 years and \$70.9k at 20 years. A curve hedge sized on the CTD alone would miss the long end in a sell-off, and then overcorrect when the CTD finally switches.
+
+Table 1 compares the two probability estimates at each switch point. For a like-for-like comparison, the normal model here uses the width to option expiry (29bp), not to delivery.
+
+| Switch (bp) | Futures price $K_k$ | CTD beyond the switch | Digital | Normal | Gap |
+|-------:|----------:|------------------:|------:|------:|-----:|
+| $-39.6$ | 112.34 | 4.75% Nov 2043 | 7.3% | 8.9% | $-1.6$ |
+| $-14.2$ | 109.06 | 4.625% May 2044 | 29.2% | 31.4% | $-2.2$ |
+| $+3.8$ | 106.78 | 4.875% Aug 2045 | 45.8% | 44.9% | $+0.9$ |
+| $+16.8$ | 105.14 | 2.875% Aug 2045 | 27.4% | 28.4% | $-1.0$ |
+| $+34.0$ | 102.80 | 2.25% Aug 2046 | 10.8% | 12.3% | $-1.5$ |
+| $+46.6$ | 100.98 | 2.25% Aug 2049 | 4.7% | 5.6% | $-0.9$ |
+| $+48.3$ | 100.71 | 1.375% Aug 2050 | 4.7% | 5.0% | $-0.3$ |
+| $+126.1$ | 88.21 | 1.25% May 2050 | 1.6% | 0.0% | $+1.6$ |
+
+: ZBZ6 switch points on 2026-10-23: probability of the futures price passing each switch point by option expiry (20 November), from put and call spreads (digital) and from the normal model at the at-the-money vol; the gap is in percentage points. The futures settlement was 107.25.
+
+Within $\pm1.5\sigma$, the two agree to about 2 percentage points, inside the noise of a single put spread. The only real gap is in the far wing: the switch at $+126$bp is more than $4\sigma$ away at the width to option expiry, where the normal model gives nothing and the option settlements still price 1.6%. That is skew, though at that distance it rests on how CME extrapolates its settlement curve, so it is only indicative.
+
+<!-- TODO: optional ZN or UB contrast. -->
 
 # Validation
 
