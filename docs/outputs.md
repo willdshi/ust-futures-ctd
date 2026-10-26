@@ -90,9 +90,24 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 
 **Event flags:** tag each date with basket change, roll and re-estimation events so any step can be attributed immediately. This is the first version of attribution.
 
+**Not yet in the generated chart (2026-10-26):** the chart (`report.charts.dv01_series_chart`, from `report.series`) differs from the above in these ways.
+- *Deliberate:* a figure per contract, each on its own axes, not one shared axis; ±1σ as two lines (one colour, ▲ and ▽), not a band, because near a crossover both can sit above today (ZNZ6, October 2026: the profile is U-shaped, with convexity raising DV01 in a rally and the switch to the 2034 notes raising it in a sell-off); a CTD-change flag added, naming the new CTD.
+- *Missing:*
+  - The roll. The series is one contract (ZBZ6), not the product series that rolls at option expiry, so it has no roll step or roll flag. Needs the March results.
+  - The re-estimation flag. Nothing is estimated yet (β = 1, ATM vol read daily); comes with phase 2.
+  - Effective maturity across contracts on one axis. Only today's values sit side by side, in the summary table.
+  - Key-rate shape held at a reference yield. Needs model re-runs; the constant-CTD effective maturity covers the same question from saved results.
+- *Other Tier 1 series not drawn anywhere:* distance to switch and CTD probabilities exist only for the as-of date (summary, probability and switch tables). The series rows already carry `nearest_sigmas` and `p_ctd`. How to draw them, and what reading each should support, is open.
+  - CTD probabilities over time are the more distinctive gap: chart 1 shows a day's probabilities only through the smoothing. Candidate uses: attributing a bend in chart 3 to the bond gaining probability, showing the expected collapse toward 0 or 1 near expiry, and the normal-model and option-digital probabilities side by side as a check on the model before the calibration backtest.
+  - Distance to switch over time is lower priority (see Other Tier 1 outputs).
+
 ### Other Tier 1 outputs
 
-- **Distance to switch:** shift needed for the next switch, in bp and σ (z-score), as a time series per contract, flagged when it falls below 1σ.
+- **Distance to switch:** shift needed for the next switch, in bp and σ (z-score), as a time series per contract, flagged when it falls below 1σ. **Lower priority** (2026-10-26):
+  - For the current day, chart 1 already answers it: the CTD-based staircase steps at each switch on a bp axis with percentiles above and ±1σ and ±2σ marked, and it also shows what a distance can't, each switch's consequence (the step height in DV01, the shift in key-rate shares).
+  - Distance to *any* switch misleads when neighbouring bonds are near-twins: ZNZ6 on 2026-10-21 was 0.2σ from a switch between 4½% and 3⅞% Aug-33 ($0.6k DV01 apart), while the switch that matters, to 3⅞% Aug-34 (about $8k), was 1.2σ away. If built, measure distance to the next *material* switch (DV01 jump above a threshold, to be set).
+  - What only a time series adds is direction: whether a switch is approaching (yields drifting toward it, or the width shrinking as delivery nears) or has sat at the same distance for weeks. That matters mostly in hindsight, to explain chart 3 and for the backtest.
+  - Cheapest form: a mark on chart 3 on dates when a material switch is within 1σ, rather than a separate chart. If a chart is wanted, the CTD's forward yield over time with its ±1σ and ±2σ cone and each switch at its yield level (the CTD's `fwd_yield` plus the switch's `z_bp`) shows both the yield and the time effect, and an approaching switch.
 - **CTD probabilities:** the engine of the model, published as a supporting time series rather than the headline.
 - **Probability-weighted versus CTD-based DV01:** the most distinctive output for asset managers, showing when their vendor numbers will jump.
 
