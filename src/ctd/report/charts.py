@@ -1,4 +1,4 @@
-"""Charts 1 and 2 of the single-date report (outputs.md Tier 1; phase 1c item 5), as PNG bytes.
+"""Charts 1 to 3 of the report (outputs.md Tier 1; phase 1c item 5), as PNG bytes.
 
 Drawn from a saved result (``report.results``), so the same file always draws the same chart:
 the PNGs carry no timestamp or version metadata. matplotlib's object API (no pyplot), so no
@@ -10,6 +10,9 @@ global figure state; style through ``rc_context``.
   down.
 - Chart 2: the change in each key-rate DV01 from today at −2σ, −1σ, +1σ and +2σ, with the
   CTD-based change as a marker on each bar.
+- Chart 3: one contract's series (``report.series``) by trading day: the model DV01 with its ±1σ
+  states, the CTD-based staircase (each switch named) and the constant-CTD DV01; below, effective
+  maturity for the same three. A guide through both panels at each event-flagged date.
 """
 
 import io
@@ -21,6 +24,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FuncFormatter
 from scipy.special import ndtr, ndtri
 
+from ctd.report.series import CTD, Row
 from ctd.risk.dv01 import dollars
 
 # reference palette (dataviz skill, light surface): chrome, slot-1 blue, the blue ordinal ramp from
@@ -177,4 +181,58 @@ def krd_change_chart(rec: dict) -> bytes:
         ax.set_ylim(lo, hi + 0.2 * (hi - lo))  # room for the legend
         ax.set_title(f"{rec['contract']} key-rate DV01 change at shifted states, {rec['asof']}", loc="left",
                      fontsize=10.5, color=INK, pad=8)
+        return _png(fig)
+
+
+def _day_ticks(ax, days: list) -> None:
+    """Trading days at even spacing, named ``16 Oct``; at most about ten names."""
+    step = max(1, -(-len(days) // 10))
+    ix = range(0, len(days), step)
+    ax.set_xticks(list(ix), [f"{days[i].day} {days[i]:%b}" for i in ix])
+    ax.set_xlim(-0.5, len(days) - 0.5)
+
+
+def dv01_series_chart(contract: str, rows: list[Row]) -> bytes:
+    """Chart 3 for one contract: DV01 and effective maturity by date."""
+    x = np.arange(len(rows))
+    days = [r.asof for r in rows]
+    marker = {"marker": "o", "markersize": 3.5} if len(rows) <= 60 else {}
+    with matplotlib.rc_context(STYLE):
+        fig = Figure(figsize=(6.6, 5.6), layout="constrained")
+        top, bottom = fig.subplots(2, 1, sharex=True, height_ratios=(3, 2))
+
+        for s, m in ((1, "^"), (-1, "v")):  # one colour, told apart by the marker: up for +1σ, down for −1σ
+            top.plot(x, _k([r.states[s] for r in rows]), color=STATES[-1], linewidth=1, marker=m, markersize=4,
+                     label=SIGMA[s])
+        top.plot(x, _k([r.ctd_dv01 for r in rows]), color=MUTED, linewidth=1, drawstyle="steps-mid",
+                 label="CTD-based")
+        top.plot(x, _k([r.constant_dv01 for r in rows]), color=INK2, linewidth=1, linestyle=(0, (4, 2)),
+                 label=f"constant CTD ({rows[0].constant_name})")
+        top.plot(x, _k([r.dv01 for r in rows]), color=SERIES, linewidth=2, label="probability-weighted", **marker)
+        for i, r in enumerate(rows):
+            if r.events:
+                for ax in (top, bottom):
+                    ax.axvline(i, color=AXIS, linewidth=0.8, zorder=1.5)
+            if CTD in r.events:  # name the new CTD where the staircase steps
+                top.annotate(r.ctd_name, (i, float(_k(r.ctd_dv01))), xytext=(-3, 4), textcoords="offset points",
+                             ha="right", fontsize=7, color=INK2)
+            other = [e for e in r.events if e != CTD]
+            if other:
+                top.annotate(", ".join(other), (i, 1), xycoords=("data", "axes fraction"), xytext=(3, -2),
+                             textcoords="offset points", va="top", fontsize=7, color=INK2)
+        lo, hi = top.get_ylim()
+        top.set_ylim(lo - 0.06 * (hi - lo), hi + 0.06 * (hi - lo))
+        top.set_ylabel("futures DV01 ($k per bp per $100mm)")
+        top.set_title(f"{contract} DV01 through time, {days[0]} to {days[-1]}", loc="left", fontsize=10.5,
+                      color=INK, pad=8)
+
+        bottom.plot(x, [r.ctd_em for r in rows], color=MUTED, linewidth=1, drawstyle="steps-mid")
+        bottom.plot(x, [r.constant_em for r in rows], color=INK2, linewidth=1, linestyle=(0, (4, 2)))
+        bottom.plot(x, [r.em for r in rows], color=SERIES, linewidth=2, **marker)
+        bottom.set_ylabel("effective maturity (years)")
+        _day_ticks(bottom, days)
+
+        handles, names = top.get_legend_handles_labels()
+        order = [4, 0, 1, 2, 3]  # probability-weighted first, then +1σ, −1σ, CTD-based, constant
+        fig.legend([handles[i] for i in order], [names[i] for i in order], loc="outside lower center", ncol=3)
         return _png(fig)

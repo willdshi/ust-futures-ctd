@@ -4,7 +4,8 @@
 
 Built from the saved results of every contract run on that date (``report.results``), never from a
 model run, so the page can be redrawn from the files alone. Charts 1 and 2 (``report.charts``) as
-base64 PNGs, as small multiples across contracts; then, per contract, the tables: the shifted
+base64 PNGs, as small multiples across contracts; chart 3 from each contract's results up to that
+date (``report.series``), so a past date's page never sees later runs; then, per contract, the tables: the shifted
 states (DV01 against CTD-based DV01), the key-rate changes behind chart 2, CTD probabilities from
 both models, and the distance to each switch. Plain string formatting, no template engine
 (decisions.md, Chart rendering).
@@ -18,25 +19,13 @@ from pathlib import Path
 import numpy as np
 
 from ctd.reference.grades import Grade, grade_for
-from ctd.report import charts, results
+from ctd.report import charts, results, series
 from ctd.report.light import money, prob
+from ctd.report.names import bond_name
 from ctd.risk.dv01 import dollars
 
 MIN_SCHEMA = 8  # the profile (6), the repo record (7), the delivery window (8)
 SHOWN = 5e-4  # bonds listed in the probability table: either model gives at least this
-EIGHTHS = {0: "", 1: "⅛", 2: "¼", 3: "⅜", 4: "½", 5: "⅝", 6: "¾", 7: "⅞"}
-
-
-def bond_name(coupon: float, maturity: str) -> str:
-    """``4¾% Feb-45`` (coupon in eighths where it is one, else in decimals)."""
-    m = date.fromisoformat(maturity)
-    eighths = coupon * 800
-    if abs(eighths - round(eighths)) < 1e-6:
-        whole, frac = divmod(round(eighths), 8)
-        c = f"{whole if whole or not frac else ''}{EIGHTHS[frac]}"
-    else:
-        c = f"{coupon * 100:g}"
-    return f"{c}% {m:%b-%y}"
 
 
 def _k(v) -> str:
@@ -279,12 +268,35 @@ ul.diag { color: var(--ink2); padding-left: 20px; }
 """
 
 
-def render(asof: date, recs: list[dict]) -> str:
-    """The page for ``asof`` from that date's results, in contract order."""
+def check_schema(recs: list[dict]) -> None:
     for r in recs:
         if r.get("schema", 0) < MIN_SCHEMA:
             raise ValueError(f"{r['contract']} {r['asof']}: results schema {r.get('schema')}, the report needs "
                              f"{MIN_SCHEMA} or later; re-run ctd run")
+
+
+def through_time(history: dict[str, list[series.Row]]) -> list[str]:
+    """Chart 3's section: contracts with at least two dates."""
+    shown = {c: rows for c, rows in history.items() if len(rows) >= 2}
+    if not shown:
+        return []
+    return [
+        "<h2>DV01 through time</h2>",
+        "<p class='note'>Top: futures DV01 on each date with its −1σ and +1σ states, against the CTD-based DV01, "
+        "which steps at each switch (the new CTD named), and the DV01 of the first date's CTD held throughout. "
+        "The gap between that constant-CTD line and the probability-weighted line is the part of the change "
+        "caused by the basket. Bottom: effective maturity, where on the curve the DV01 sits (the key rates' "
+        "maturities weighted by their DV01); with the CTD unchanged it still lengthens a little as yields rise. "
+        "Guides mark dates with an event flag.</p>",
+        "<div class='grid'>" + "".join(f"<figure>{_img(charts.dv01_series_chart(c, rows), c + ' DV01 through time')}"
+                                       "</figure>" for c, rows in shown.items()) + "</div>",
+    ]
+
+
+def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | None = None) -> str:
+    """The page for ``asof`` from that date's results, in contract order; ``history`` holds each
+    contract's series up to ``asof`` for chart 3."""
+    check_schema(recs)
     contracts = ", ".join(r["contract"] for r in recs)
     parts = [
         f"<h1>Treasury futures duration profile, {asof}</h1>",
@@ -302,6 +314,7 @@ def render(asof: date, recs: list[dict]) -> str:
         "Markers: the same change for the CTD-based figures, which jump at each switch.</p>",
         "<div class='grid'>" + "".join(f"<figure>{_img(charts.krd_change_chart(r), r['contract'] + ' key-rate change')}"
                                        "</figure>" for r in recs) + "</div>",
+        *through_time(history or {}),
     ]
     for r in recs:
         parts += [f"<h2>{r['contract']}</h2>",
@@ -340,5 +353,10 @@ def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = N
         recs.append(json.loads(path.read_text(encoding="utf-8")))
     out = Path(out_dir) / f"{asof.isoformat()}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(asof, recs), encoding="utf-8")
+    history = {}
+    for c in contracts:
+        past = [r for r in results.read_light(root, c) if date.fromisoformat(r["asof"]) <= asof]
+        check_schema(past)
+        history[c] = series.series(past)
+    out.write_text(render(asof, recs, history), encoding="utf-8")
     return out
