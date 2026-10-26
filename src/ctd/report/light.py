@@ -58,6 +58,19 @@ def _repo(r: LightResult) -> str:
 NEXT_CHEAPEST = 3  # bonds listed beyond those with a probability: the cheapest of the rest at z = 0
 
 
+def format_line(r: LightResult) -> str:
+    """One line per run for ``ctd history``: the CTD and its probability, today's DV01 against the
+    CTD-based, the recentring gap, the nearest switch each side and the number of warnings."""
+    lo, hi = r.probabilities.by_bond().get(r.probabilities.ctd, (0.0, 0.0))
+    p = f"{lo:.0%}" if round(lo, 2) == round(hi, 2) else f"{lo:.0%}–{hi:.0%}"
+    dv01 = r.profile.points.dv01[r.profile.point(0)]
+    near = r.nearest()
+    switch = "/".join(f"{c.switch.z_bp:+.0f}bp" if c else "none" for c in (near["rally"], near["selloff"]))
+    return (f"{r.asof}  {r.contract}  CTD {r.probabilities.ctd} {p:>7}  DV01 {money(dollars(dv01), dollars(dv01))} "
+            f"(CTD-based {money(dollars(r.ctd_dv01), dollars(r.ctd_dv01))})  gap {r.gap * 32:+.1f}/32  "
+            f"switches {switch}  {len(r.warnings)} warning(s)")
+
+
 def format_run(r: LightResult, all_bonds: bool = False) -> str:
     """The run as text. The basket lists the bonds with a probability and the next few cheapest
     (``NEXT_CHEAPEST``), or every bond with ``all_bonds``."""

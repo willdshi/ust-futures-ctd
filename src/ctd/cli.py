@@ -8,7 +8,7 @@
     ctd run --contract ZBZ6 [--asof 2026-10-16]
     ctd report [--asof 2026-10-16] [--contract ZBZ6 ...] [--out output]
     ctd derive [--table options] [--full] [--notify]
-    ctd history --contract ZB --from ... --to ...  (not implemented yet)
+    ctd history --contract ZBZ6 [--contract ZNZ6 ...] --from 2026-09-01 [--to 2026-10-23] [--no-save]
 
 ``fetch`` and ``check`` exit 1 when there are gaps; ``derive`` when a raw file fails to read. ``fetch --notify`` also shows a desktop alert.
 """
@@ -306,6 +306,61 @@ def cmd_run(args) -> int:
     return 0
 
 
+def warning_kind(w: str) -> str:
+    """A warning with its numbers, dates and CUSIPs blanked, so the same kind counts once."""
+    import re
+
+    w = re.sub(r"\b9128[0-9A-Z]{5}\b", "<cusip>", w)
+    return re.sub(r"[-+]?\d[\d.,:/%-]*", "#", w)
+
+
+def cmd_history(args) -> int:
+    """``ctd run`` for every ``cme`` business day from ``--from`` to ``--to`` (design 10, phase 1d):
+    each result saved, a failed date reported and skipped, then a summary. Days the bond market is
+    closed (``sifma``; Columbus and Veterans Day) are skipped: there are no TreasuryDirect prices."""
+    from collections import Counter
+
+    from ctd.data import refdata
+    from ctd.data.store import RawStore
+    from ctd.model import light
+    from ctd.report import results
+    from ctd.report.light import format_line
+
+    end = args.date_to or default_asof(datetime.now(), args.cutoff_hour)
+    cme, sifma = refdata.calendar("cme"), refdata.calendar("sifma")
+    store, code = RawStore(args.data_root), code_version()
+    days = [args.date_from + timedelta(days=k) for k in range((end - args.date_from).days + 1)]
+    closed = [d for d in days if cme.is_business_day(d) and not sifma.is_business_day(d)]
+    days = [d for d in days if cme.is_business_day(d) and sifma.is_business_day(d)]
+    if closed:
+        print(f"skipped (bond market closed, no TreasuryDirect prices): {', '.join(map(str, closed))}\n")
+    failed = 0
+    for contract in args.contract:
+        ran, errors, kinds = 0, {}, Counter()
+        for d in days:
+            try:
+                x, files = light_inputs(store, contract, d, args.inputs)
+                r = light.run(x)
+            except (FileNotFoundError, KeyError, ValueError) as e:
+                errors[d] = str(e)
+                print(f"{d}  {contract}  FAILED: {e}")
+                continue
+            if not args.no_save:
+                results.write_light(args.data_root, results.light_record(r, files, code))
+            print(format_line(r))
+            ran += 1
+            kinds.update(warning_kind(w) for w in r.warnings)
+        print(f"\n{contract}: {ran} of {len(days)} business day(s) from {args.date_from} to {end} run"
+              f"{'' if args.no_save else ' and saved'}, {len(errors)} failed")
+        for d, e in errors.items():
+            print(f"  failed {d}: {e}")
+        for kind, n in kinds.most_common():
+            print(f"  {n:4d} x {kind}")
+        print()
+        failed += len(errors)
+    return 1 if failed else 0
+
+
 def output_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "output"
 
@@ -372,11 +427,6 @@ def cmd_derive(args) -> int:
     return 1 if problems else 0
 
 
-def cmd_not_implemented(args) -> int:
-    print(f"ctd {args.command}: not implemented yet", file=sys.stderr)
-    return 2
-
-
 def build_parser() -> argparse.ArgumentParser:
     from ctd.data import registry
 
@@ -437,11 +487,16 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--full", action="store_true", help="rebuild from scratch (must give the same tables)")
     d.add_argument("--notify", action="store_true", help="desktop alert when a raw file fails to read")
     d.set_defaults(func=cmd_derive)
-    h = sub.add_parser("history", help="historical mode (not implemented yet)")
-    h.add_argument("--contract")
-    h.add_argument("--from", dest="date_from", type=date.fromisoformat)
-    h.add_argument("--to", dest="date_to", type=date.fromisoformat)
-    h.set_defaults(func=cmd_not_implemented)
+    h = sub.add_parser("history", help="ctd run for every business day in a range, saving each result")
+    h.add_argument("--contract", action="append", required=True, help="e.g. ZBZ6; repeat for several")
+    h.add_argument("--from", dest="date_from", type=date.fromisoformat, required=True)
+    h.add_argument("--to", dest="date_to", type=date.fromisoformat,
+                   help="last date (default: latest settled business day)")
+    h.add_argument("--cutoff-hour", type=int, default=int(os.environ.get("CTD_FETCH_CUTOFF_HOUR", "18")),
+                   help="as for run, for the default --to")
+    h.add_argument("--no-save", action="store_true", help="print only")
+    h.add_argument("--inputs", choices=["auto", "raw", "derived"], default="auto", help="as for run")
+    h.set_defaults(func=cmd_history)
     return p
 
 

@@ -33,8 +33,23 @@ def test_run_on_an_empty_store_reports_what_is_missing(tmp_path, capsys):
     assert "no ZB futures settlements stored for 2026-10-21" in capsys.readouterr().err
 
 
-def test_history_not_implemented():
-    assert main(["history", "--contract", "ZB"]) == 2
+def test_history_carries_on_past_failed_dates(tmp_path, capsys):
+    # 2026-09-07 is Labor Day; the dates before 10-16 read the derived tables, which don't exist here
+    assert main(["--data-root", str(tmp_path), "history", "--contract", "ZBZ6", "--from", "2026-09-04",
+                 "--to", "2026-09-08"]) == 1
+    out = capsys.readouterr().out
+    assert out.count("FAILED: no derived futures table") == 2 and "2026-09-07" not in out
+    assert "ZBZ6: 0 of 2 business day(s) from 2026-09-04 to 2026-09-08 run and saved, 2 failed" in out
+
+
+def test_warning_kinds_group_by_wording():
+    from ctd.cli import warning_kind
+
+    a = warning_kind("no TreasuryDirect price for 912810UL0: left out of the basket")
+    b = warning_kind("no TreasuryDirect price for 91282CRJ2: left out of the basket")
+    assert a == b == "no TreasuryDirect price for <cusip>: left out of the basket"
+    assert warning_kind("par curve of 2026-10-22 predates 2026-10-23 by 1 day(s)") == \
+        "par curve of # predates # by # day(s)"
 
 
 def test_output_is_utf8_on_a_cp1252_stream(monkeypatch):
