@@ -6,7 +6,9 @@ This project models the cheapest-to-deliver (CTD) bond for CBOT Treasury futures
 
 **[Sample report](https://willdshi.github.io/ust-futures-ctd/)** · **[Model writeup (PDF)](docs/writeup.pdf)**
 
-<!-- TODO: screenshot of chart 1 from the published report -->
+![ZBZ6 DV01 profile on 2026-10-23: the probability-weighted futures DV01 rises smoothly across yield shifts while the CTD-based DV01 jumps at each switch, with the key-rate split below](docs/images/zbz6-dv01-profile-2026-10-23.png)
+
+*ZBZ6 on 2026-10-23: futures DV01 across parallel yield shifts, probability-weighted (blue) against CTD-based (grey, jumping at each switch), and its split by key rate.*
 
 ## Why it matters
 
