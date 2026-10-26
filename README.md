@@ -1,8 +1,10 @@
 # UST Futures CTD
 
-How stable is the duration you hold through Treasury futures, and how does it change as interest rates move?
+How stable is the duration you hold through Treasury futures, and how does it change as interest rates move? 
 
-This project models the cheapest-to-deliver (CTD) bond for CBOT Treasury futures, with primary focus on the 10-year note (ZN) and the T-bond (ZB). From that it computes what a futures position's interest-rate risk really is: futures DV01, key rate DV01s and how both move as yields move. It runs end of day, from free public data only.
+This project models the cheapest-to-deliver (CTD) bond for CBOT Treasury futures. From that it computes what a futures position's interest-rate risk really is: futures DV01, key rate DV01s and how both move as yields move. It runs end of day, from free public data only.
+
+The impact of the quality option on futures duration is particularly important as rates approach 6% in a volatile interest rate environment. Impact is particularly acute for the ZB contract with a 15-25yr maturity delivery basket.
 
 **[Sample report](https://willdshi.github.io/ust-futures-ctd/)** · **[Model writeup (PDF)](docs/writeup.pdf)**
 
