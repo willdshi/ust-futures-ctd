@@ -546,3 +546,17 @@ def test_which_dates_read_the_derived_tables():
     before = date(2026, 10, 15)
     assert uses_derived(before) and not uses_derived(LIVE_FROM)
     assert uses_derived(LIVE_FROM, "derived") and not uses_derived(before, "raw")
+
+
+def test_raw_files_behind_derived_rows(store):
+    """A derived input names the raw files of the units its rows came from (results schema 9)."""
+    dstore = DerivedStore(store.root)
+    for d, settle in ((date(2026, 10, 21), "105'035"), (date(2026, 10, 22), "106'130")):
+        store.write(d, "cme_fut", "ZN", "ZN.json", page(f"{d:%m/%d/%Y}", [("DEC 26", settle, "1")]), {})
+    build(dstore, store, futures.TABLE, log=quiet)
+    files = dstore.raw_files("futures", "ZN", date(2026, 10, 21), date(2026, 10, 21), ["cme_fut"])
+    # the 21st's unit is its own page and the next day's (for open interest)
+    assert [(f["asof"], f["source"], f["name"]) for f in files] == [
+        ("2026-10-21", "cme_fut", "ZN.json"), ("2026-10-22", "cme_fut", "ZN.json")]
+    assert all(len(f["sha256"]) == 64 for f in files)
+    assert dstore.raw_files("futures", "ZN", date(2026, 10, 23), date(2026, 10, 23), ["cme_fut"]) == []

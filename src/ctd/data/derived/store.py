@@ -163,6 +163,26 @@ class DerivedStore:
         return t.to_pandas(types_mapper={pa.int64(): pd.Int64Dtype()}.get)
 
 
+    def raw_files(self, table: str, value: str, start: date, end: date, sources: list[str]) -> list[dict]:
+        """The raw files (``file_ref`` dicts) behind ``sources``' rows of ``table`` for one partition
+        value (``product``, ``rate``, ...) from ``start`` to ``end``: the units the rows were read
+        from (staging), and each unit's files as last built (``_build.json``)."""
+        state, key = self.state(table), self.partition_key(self.table_dir(table))
+        lo, hi = pa.scalar(start, pa.date32()), pa.scalar(end, pa.date32())
+        refs = {}
+        for src in sources:
+            units = set()
+            for year in range(start.year, end.year + 1):
+                part = self.read_part(self.staging_dir(table, src), value, year, key)
+                if part is not None:
+                    within = pc.and_(pc.greater_equal(part["asof"], lo), pc.less_equal(part["asof"], hi))
+                    units |= set(part.filter(within)[UNIT].to_pylist())
+            for u in sorted(units):
+                for r in state["sources"][src]["units"][u]:
+                    refs[(r["asof"], r["source"], r["unit"], r["name"])] = r
+        return list(refs.values())
+
+
 @dataclass
 class Report:
     table: str

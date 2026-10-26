@@ -15,8 +15,9 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 8  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
-# 7: repo from the SR1 strip; 8: the delivery window and the carry behind the horizon
+SCHEMA = 9  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
+# 7: repo from the SR1 strip; 8: the delivery window and the carry behind the horizon; 9: inputs read
+# through a derived table are its raw files, each marked with the ``table``
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:

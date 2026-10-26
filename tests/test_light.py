@@ -151,7 +151,7 @@ def test_profile_is_the_headline_and_is_saved(tmp_path):
     assert "region-weighted (normal, ATM width; vol ±10%" in out
     assert "Shifted states" in out and "Change in key-rate DV01 from today" in out and "+2σ CTD-based" in out
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 8
+    assert rec["schema"] == 9
     half = pf.half_range(r.width)  # ±100bp, or wider to take in ±2σ
     assert len(rec["profile"]["curve"]["dv01"]) == len(r.profile.curve.centres) == 2 * half + 1
     assert r.profile.curve.centres[-1] == half >= 2 * r.width
@@ -220,7 +220,7 @@ def test_a_rising_strip_raises_repo_and_is_saved(tmp_path):
     assert r.repo.term > run(inputs()).repo.term
     assert "repo: SR1 strip" in format_run(r)
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 8 and rec["repo"]["path"] == "sr1"
+    assert rec["schema"] == 9 and rec["repo"]["path"] == "sr1"
     assert rec["repo"]["months"]["2026-12-01"] == pytest.approx(r.repo.months[date(2026, 12, 1)])
 
 

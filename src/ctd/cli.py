@@ -196,10 +196,11 @@ def uses_derived(asof: date, inputs: str = "auto") -> bool:
 
 
 def light_inputs(store, contract: str, asof: date, inputs: str = "auto"):
-    """Everything the light model needs for ``contract`` on ``asof``, from the store only, and what
-    was read: raw files (source, unit, name, sha256) and, on the derived path (``uses_derived``),
-    derived tables (table, sources). TreasuryDirect prices and the TCF basket are always the raw
-    files stored under ``asof``."""
+    """Everything the light model needs for ``contract`` on ``asof``, from the store only, and the
+    raw files read (source, unit, name, sha256; ``asof`` when stored under another date). On the
+    derived path (``uses_derived``) a table's inputs are the raw files its rows were built from,
+    marked with the ``table``. TreasuryDirect prices and the TCF basket are always the raw files
+    stored under ``asof``."""
     from ctd.curve.par import ParCurve
     from ctd.data import cme_bulletin, cme_settlements, cme_tcf, nyfed, par_curve, refdata, td_prices
     from ctd.data.derived import futures as d_futures, options as d_options, rates as d_rates
@@ -223,11 +224,12 @@ def light_inputs(store, contract: str, asof: date, inputs: str = "auto"):
         fixings, fix_src = d_rates.fixings(dstore, since, asof)
         par_date, par_points, par_src = d_rates.par_latest(dstore, asof)
         chain, opt_src = d_options.chain(dstore, product, asof)
-        derived = [{"table": "futures", "product": product, "sources": fut_src},
-                   {"table": "futures", "product": "SR1", "sources": sr1_src},
-                   {"table": "rates", "rate": "sofr", "sources": fix_src},
-                   {"table": "par_curve", "asof": par_date.isoformat(), "sources": par_src},
-                   {"table": "options", "product": product, "sources": opt_src}]
+        # the raw files behind the rows read, each tagged with the table it came through
+        derived = [{**f, "table": table} for table, value, start, end, sources in (
+            ("futures", product, asof, asof, fut_src), ("futures", "SR1", asof, asof, sr1_src),
+            ("options", product, asof, asof, opt_src), ("par_curve", d_rates.CURVE, par_date, par_date, par_src),
+            ("rates", "sofr", since, asof, fix_src))
+            for f in dstore.raw_files(table, value, start, end, sources)]
     else:
         futures = {m: s.settle for m, s in cme_settlements.read_futures(store, asof, product).items()}
         fixings, fixing_files = nyfed.read_known(store, asof, since)
