@@ -1,8 +1,8 @@
 # UST Futures CTD
 
-How stable is the duration you hold through Treasury futures, and what would change it?
+How stable is the duration you hold through Treasury futures, and how does it  change it as interest rates move?
 
-This project models the cheapest-to-deliver (CTD) bond for CBOT Treasury futures, starting with the 10-year note (ZN) and the T-bond (ZB). From that it computes what a futures position's interest-rate risk really is: futures DV01, key rate DV01s and how both move as yields move. It runs end of day, from free public data only.
+This project models the cheapest-to-deliver (CTD) bond for CBOT Treasury futures, with primary focus on the 10-year note (ZN) and the T-bond (ZB). From that it computes what a futures position's interest-rate risk really is: futures DV01, key rate DV01s and how both move as yields move. It runs end of day, from free public data only.
 
 **[Sample report](https://willdshi.github.io/ust-futures-ctd/)** · **[Model writeup (PDF)](docs/writeup.pdf)**
 
@@ -23,7 +23,7 @@ The market already prices the chance of a switch, so the risk you hold changes s
 
 For example, on 2026-10-21 ZBZ6 (December T-bond futures) carried $137,000 of DV01 per $100mm notional. CTD-based it carried $124,000. After a 1σ sell-off, the model's DV01 rises to $147,800, while the CTD-based figure jumps to $172,100 as the CTD moves to a longer, low-coupon bond.
 
-The audience is asset managers and rates users who hold duration through futures, not basis traders. There is no futures fair value, no implied repo and no delivery-option valuation.
+Intended use is for monitoring duration exposure, not for relative value trading. There is no futures fair value, no implied repo and no delivery-option valuation. See the write-up for a more detailed explanation.
 
 ## How it works
 
@@ -53,7 +53,7 @@ Every file is stored exactly as downloaded, keyed by its as-of date, and the mod
 
 ## Status
 
-Working now, for the December 2026 ZN and ZB contracts:
+Working now, for the December 2026 Futures contracts:
 - daily data collection for six Treasury futures contracts and their options, with gap alerts
 - the light model: switch points and CTD probabilities from option digitals
 - futures DV01, key rate DV01s and the duration profile
