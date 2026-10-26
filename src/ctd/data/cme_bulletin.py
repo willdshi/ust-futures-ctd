@@ -130,13 +130,16 @@ def decode_premium(product: str, code: str) -> float:
     return int(digits[:-2] or 0) + int(digits[-2:]) / 64
 
 
-def _row(product: str, label: str, right: str, line: str) -> OptionSettle:
+def _row(product: str, label: str, right: str, line: str) -> tuple[OptionSettle, bool]:
+    """The row's settlement, and False where none is printed ("----": an expiring option that
+    settled worthless on its last trading day, the change being its whole prior premium)."""
     t = line.split()
     i = 6 + (2 if t[6] in "+-" else 1)  # change: "- 13", "+ NEW", "UNCH" or "----"
     delta, volume, oi = t[i], t[i + 2], t[i + 3]
-    settle = None if t[5] == "CAB" else decode_premium(product, t[5])
-    return OptionSettle(product, label, right, decode_strike(product, t[0]), settle,
-                        None if delta.startswith("-") else float(delta), _int(volume), _int(oi))
+    settle = None if t[5] in ("CAB", "----") else decode_premium(product, t[5])
+    return (OptionSettle(product, label, right, decode_strike(product, t[0]), settle,
+                         None if delta.startswith("-") else float(delta), _int(volume), _int(oi)),
+            t[5] != "----")
 
 
 @dataclass(frozen=True)
@@ -151,10 +154,10 @@ class _TNRow:
 
 def _tn_row(line: str) -> _TNRow:
     t = line.split()
-    settle = t[5].rstrip("+-")
+    settle = t[5].rstrip("+-")  # "----", or "-----" with the change's sign attached, is no settlement
     delta, volume, oi = t[7], t[9], t[10]
-    price = None if settle in ("CAB", "----") else decode_premium("TN", settle[1:])
-    return _TNRow(decode_strike("TN", t[0]), price, settle != "----",
+    price = None if settle in ("CAB", "") else decode_premium("TN", settle[1:])
+    return _TNRow(decode_strike("TN", t[0]), price, settle != "",
                   None if delta.startswith("-") else float(delta), _int(volume), _int(oi))
 
 
@@ -222,7 +225,9 @@ def parse_options(text: str) -> list[OptionSettle]:
 
     Each block is checked: strikes strictly increasing (TN: at most a call and a put per strike),
     and its volume and open interest equal its TOTAL line. A block that fails raises ValueError
-    (the layout may have changed). TN's rights come from put-call parity (``tn_rights``), with the
+    (the layout may have changed). A row with no settlement printed ("----", expiring options
+    on their last trading day) counts toward the TOTAL but isn't returned; so does a TN chain
+    with no deltas printed (expiry day), whose calls and puts can't be told apart. TN's rights come from put-call parity (``tn_rights``), with the
     futures price implied by the chain, or by another chain on the same futures where it has no
     strike priced both ways (FEB27 next to JAN27); calls must then fall and puts rise with strike,
     or ValueError.
@@ -256,19 +261,19 @@ def parse_options(text: str) -> list[OptionSettle]:
             tn_block.append(row)
         elif _ROW.match(line) and product and label:
             row = _row(product, label, right, line)
-            if block and row.strike <= block[-1].strike:
+            if block and row[0].strike <= block[-1][0].strike:
                 raise ValueError(f"{product} {label} {right}: strikes not increasing at {line!r}")
             block.append(row)
         elif (m := _TOTAL.match(line)) and product and label:
             volume, oi = _int(m[1]), _int(m[2])
-            rows = tn_block if product == "TN" else block
+            rows = tn_block if product == "TN" else [r for r, _ in block]
             if (sum(r.volume for r in rows), sum(r.open_interest for r in rows)) != (volume, oi):
                 name = f"{product} {label}" + (f" {right}" if right else "")
                 raise ValueError(f"{name}: rows don't add up to {line!r}")
-            if product == "TN":
+            if product != "TN":
+                out += [r for r, priced in block if priced]
+            elif any(r.delta is not None for r in tn_block):  # none on expiry day
                 tn.append((label, tn_block))
-            else:
-                out += block
             label, block, tn_block = None, [], []
     forwards: dict = {}
     for lab, rows in tn:

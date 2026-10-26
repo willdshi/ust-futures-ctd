@@ -128,6 +128,33 @@ def test_block_checks():
         parse_options(swapped)
 
 
+EXPIRY_DAY = """10 YEAR NOTE CALLS
+10Y NOTE CALL
+NOV26 10Y NOTE CALL
+1060 26 32 5 ---- 10 - 20 ---- ---- 33448 ---- 109658 362B 35A
+1062 15 18B ---- ---- ---- - 19 ---- ---- 49491 ---- 33201 ---- ----
+TOTAL 82939 0 -142859
+TN OPT
+NOV26 TN OPT (FUTURES SETT. .00)
+1072 ---- .45B .16A ---- .22- .22 ---- ---- ---- ---- 1500 ---- ----
+1072 ---- .3B .1A ---- ----- ---- ---- ---- ---- ---- 1525 ---- ----
+1075 .6 .32B .1 ---- .6- .26 ---- ---- 5772 ---- 4637 .443B .49A
+TOTAL 5772 0 - 7662
+"""
+
+
+def test_expiry_day():
+    """Rows from the 2026-10-23 bulletin, the NOV26 options' last trading day: worthless ones print
+    no settlement ("----"), and TN prints no deltas, so its chain is checked but not returned."""
+    rows = parse_options(EXPIRY_DAY)
+    assert [(r.product, r.label, r.right, r.strike, r.settle) for r in rows] == [
+        ("ZN", "NOV26", "C", 106.0, 10 / 64)]
+    with pytest.raises(ValueError, match="ZN NOV26 C: rows don't add up"):
+        parse_options(EXPIRY_DAY.replace("TOTAL 82939", "TOTAL 82940"))
+    with pytest.raises(ValueError, match="TN NOV26: rows don't add up"):
+        parse_options(EXPIRY_DAY.replace("TOTAL 5772", "TOTAL 5773"))
+
+
 TN_BLOCK = f"""ADDITIONAL CBT FINANCIAL OPTIONS
 GBO OPT
 OCT26 GBO OPT (FUTURES SETT. .00)
