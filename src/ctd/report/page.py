@@ -290,10 +290,10 @@ def through_time(history: dict[str, list[series.Row]]) -> list[str]:
         return []
     return [
         "<h2>DV01 through time</h2>",
-        "<p class='note'>Top: futures DV01 on each date with its −1σ and +1σ states, against the CTD-based DV01, "
+        "<p class='note'><b>Top:</b> futures DV01 on each date with its −1σ and +1σ states, against the CTD-based DV01, "
         "which steps at each switch (the new CTD named), and the DV01 of the first date's CTD held throughout. "
         "The gap between that constant-CTD line and the probability-weighted line is the part of the change "
-        "caused by the basket. Bottom: effective maturity, where on the curve the DV01 sits (the key rates' "
+        "caused by the basket. <b>Bottom:</b> effective maturity, where on the curve the DV01 sits (the key rates' "
         "maturities weighted by their DV01); with the CTD unchanged it still lengthens a little as yields rise. "
         "Guides mark dates with an event flag.</p>",
         "<div class='grid'>" + "".join(f"<figure>{_img(charts.dv01_series_chart(c, rows), c + ' DV01 through time')}"
@@ -312,8 +312,8 @@ def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | 
         contracts_table(recs),
         summary(recs),
         "<h2>DV01 profile</h2>",
-        "<p class='note'>Top: futures DV01 at each shift, with the vol ±10% band and the CTD-based staircase. "
-        "Bottom: each key rate's share of that DV01. Key rates are measured against the Treasury par curve, so "
+        "<p class='note'><b>Top:</b> futures DV01 at each shift, with the vol ±10% band and the CTD-based staircase. "
+        "<b>Bottom:</b> each key rate's share of that DV01. Key rates are measured against the Treasury par curve, so "
         "low-coupon bonds load more than 100% at their own maturity and negatively at shorter tenors.</p>",
         "<div class='grid'>" + "".join(f"<figure>{_img(charts.profile_chart(r), r['contract'] + ' DV01 profile')}"
                                        "</figure>" for r in recs) + "</div>",
