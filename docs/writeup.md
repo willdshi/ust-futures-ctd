@@ -54,37 +54,54 @@ The quality option matters most when:
 - **The basket is wide.** ZB's basket spans 15 to 25 years of maturity, so its bonds' durations differ widely and a switch changes the futures DV01 a lot. TN's basket is under a year wide, and UB's switches are between 30-year bonds of similar duration, so both stay stable. ZN sits in between; its basket narrowed from 6.5–10 years to 6.5–8 years from the September 2023 contract.
 - **Yields are near 6%.** Converted prices bunch together, so small moves reorder them and switch points sit close to the current yield level.
 
-ZB at the end of October 2026 shows both effects. Its December contract (ZBZ6) has 59 deliverable bonds maturing between 2042 and 2051. With forward yields around 5.4%, the CTD is a mid-basket bond, the 4.625% of November 2044. The next switch, to a longer bond, is only 4bp of sell-off away. Five switches lie within 50bp on the sell-off side, each to a longer, lower-coupon bond, and two lie within 40bp on the rally side. The expected move in yields to delivery is about 46bp (one standard deviation, implied by options). The option market puts the chance of crossing the next switch alone at about 45%, and gives today's CTD only a 25% chance of still being cheapest at delivery.
+ZB at the end of October 2026 shows both effects. Its December contract (ZBZ6) has 59 deliverable bonds maturing between 2042 and 2051. With forward yields around 5.4%, the CTD is a mid-basket bond, the 4.625% of November 2044. The next switch, to a longer bond, is only 4bp of sell-off away. Five switches lie within 50bp on the sell-off side, each to a longer, lower-coupon bond, and two lie within 40bp on the rally side. The expected move in yields to delivery is about 46bp (one standard deviation, implied by options). The option market puts the chance of crossing the next switch alone at about 45%, and gives today's CTD only a 25% chance of still being cheapest when the options expire in late November (about 15% by delivery at the end of December).
 
 Each switch changes the bond that the future tracks, and with it the futures DV01 and its spread across maturities. A risk number based on today's CTD alone jumps at each switch point.
 
 # How futures risk is usually reported
 
-<!-- TODO:
-- Standard practice: futures DV01 = CTD DV01 / CF; futures KRDs = CTD KRDs / CF,
-  at today's CTD. Default in many vendor risk systems and dealer runs.
-- Simple, transparent, right while the CTD is stable (TN, usually UB).
-- Fails at switches: DV01 jumps (ZBZ6 1-sigma sell-off example), key-rate
-  exposure jumps between buckets; ignores the switch probability the market
-  already prices.
-- Option-adjusted vendor measures: mention only with a citation.
-- Hand-off: replace "the CTD" with "each bond, weighted by its probability of being CTD". -->
+The standard approach treats the future as its CTD. The futures DV01 is the CTD's forward DV01 divided by its conversion factor, and the futures key rate DV01s are the CTD's key rate DV01s divided by the same factor. Many vendor risk systems and dealer risk runs report futures risk this way by default.
+
+It is simple and transparent, and it is right while the CTD is stable: for TN, usually for UB, and for ZB when yields are far from 6%. It fails when a switch is near:
+
+- **The DV01 jumps.** For ZBZ6 on 23 October 2026, the CTD-based DV01 is \$126.0k per bp per \$100mm. A 47bp sell-off moves the CTD to a longer bond and the figure to \$154.4k; two basis points further, it is \$174.2k.
+- **The key rate exposure jumps between maturities.** At each switch, risk moves from one key rate to another, for ZB from 15 years to 20 and 25 years. A curve hedge built on today's CTD is wrong on both sides of a switch.
+- **It ignores what the market prices.** Options on the futures put a 75% chance on today's ZBZ6 CTD being replaced by option expiry, and more by delivery. A CTD-based number assigns that a weight of zero until the switch happens.
+
+<!-- TODO: option-adjusted vendor measures: mention only with a citation. -->
+
+This write-up replaces "the CTD" with every deliverable bond, each weighted by its probability of being cheapest at delivery.
 
 # Approach
 
-<!-- TODO:
-1. Forward prices / CF at GC term repo (SOFR futures).
-2. Switch points by parallel shift, as yield shifts and futures prices K_k.
-3. Switch probabilities, two independent estimates:
-   - Digitals from put/call spread settlements:
-     P(F < K_k) ~ [Put(K_hi) - Put(K_lo)] / (K_hi - K_lo) / DF.
-     Model-free, includes skew; noisy (64ths, about +/-3pp); at option expiry.
-   - Normal model: sigma_y ~ sigma_price * F / (100 * D_F); S = sigma_y sqrt(T);
-     Q_k = Phi(-|z_k| / S). Smooth, gives a density; no skew.
-   - Agreement = skew matters little; the gap shows the wings' contribution.
-4. Probability-weighted DV01 and key rate DV01s; recomputed at each shifted
-   state for the duration profile.
-Exclusions: no fair value, implied repo, end-of-month or wildcard options; GC funding. -->
+The model runs at the end of each day from public data: Treasury prices, CME futures and option settlements, conversion factors, SOFR futures and the Treasury par curve. It has four steps.
+
+**Forward prices.** Each deliverable bond is priced forward to delivery at term repo, built from the SOFR futures strip, and divided by its conversion factor. Delivery is assumed on the last day of the month when carry is positive (as for ZBZ6, on 31 December 2026), and on the first day when it is negative.
+
+**Switch points.** Every bond's forward yield is shifted in parallel by $z$ basis points, and each bond is repriced. The envelope $E(z) = \min_i P_i(z)/\text{CF}_i$ is the model's futures price at delivery, and the shifts $z_k$ where its minimum changes bond are the switch points, found exactly by root-finding. Each switch point is also expressed as a futures price, recentred on the market settlement:
+
+$$K_k = F_\text{market} + E(z_k) - E(0).$$
+
+**Switch probabilities.** The probability of reaching each switch point is estimated in two ways, both from CME's option settlements.
+
+- *Digitals from option settlements.* The slope of put prices across strikes is the probability that the futures price finishes below the strike. Taking the listed strikes either side of $K_k$,
+  $$P(F < K_k) \approx \frac{\text{Put}(K_\text{hi}) - \text{Put}(K_\text{lo})}{K_\text{hi} - K_\text{lo}} \cdot \frac{1}{\text{DF}},$$
+  with $\text{DF}$ the discount factor to expiry, and calls on the rally side. It needs no option pricing model of its own and keeps the skew in the settlements. It is noisy, though: premiums settle in 64ths, so a single put spread is uncertain by up to about 3 percentage points. It also measures the probability at option expiry (20 November for ZBZ6), not at delivery. Differences of successive digitals give each bond's probability of being CTD.
+- *Normal model.* The at-the-money price vol of the same options is converted to a yield vol with the CTD's DV01: $\sigma_y = \sigma_\text{price} / (\text{DV01}_\text{CTD}/\text{CF}_\text{CTD})$. Scaled to delivery, it gives the width of the yield distribution, $S = \sigma_y\sqrt{T}$ (46bp for ZBZ6), and the probability of passing switch point $k$ is
+  $$Q_k = \Phi\!\left(-\frac{|z_k|}{S}\right).$$
+  This ignores skew, but it is smooth and gives a full distribution of yields at delivery, which the risk calculation needs.
+
+Where the two agree, skew matters little; the gap between them measures how much the option smile adds.
+
+Option probabilities and the ATM vol come from CME settlement prices, which CME sets from its implied-vol skew whether or not a strike traded; they are option-implied, not traded prices. The report shows which strikes behind each one traded that day. For ZB and ZN nearly all did; for UB and TN most did not, so their probabilities, and often their at-the-money vol, rest on CME's skew rather than that day's trades.
+
+**Risk.** Yields at delivery are taken as normal around today's forwards, $z \sim N(0, S^2)$. At each $z$, the futures DV01 is the DV01 of the bond that is cheapest there, divided by its conversion factor and evaluated at those shifted yields. The model's futures DV01 is its average over the distribution:
+
+$$\text{DV01}_F = \mathbb{E}\left[\frac{\text{DV01}_{\text{CTD}(z)}(z)}{\text{CF}_{\text{CTD}(z)}}\right].$$
+
+Each bond therefore counts in proportion to its probability of being CTD, at the yields where it would be. This equals the sensitivity of the expected futures price at delivery to a parallel shift in yields. Key rate DV01s are averaged the same way, from tent-shaped bumps to the Treasury par curve at 2, 5, 7, 10, 15, 20, 25 and 30 years. For the duration profile, the centre of the distribution is moved from $-100$ to $+100$bp and everything is recomputed, including the switch probabilities, with $\pm1\sigma$ and $\pm2\sigma$ marked.
+
+What the model leaves out is deliberate. It has no futures fair value and no implied repo, and it doesn't value the end-of-month or wildcard delivery options. Every bond is funded at general collateral repo.
 
 # Results: ZB, December 2026
 
