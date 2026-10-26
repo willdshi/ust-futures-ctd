@@ -81,7 +81,7 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
         f"({money(*[dollars(pts.dv01[today], r.face)] * 2)} per contract), region-weighted (normal, ATM width; "
         f"vol ±10%: {money(*(dollars(b[i0]) for b in r.profile.band_dv01))}); "
         f"{money(*(dollars(v) for v in r.dv01))} at today's yields with the option-implied probabilities; "
-        f"CTD-label {money(dollars(r.ctd_dv01), dollars(r.ctd_dv01))} ({money(*[dollars(r.ctd_dv01, r.face)] * 2)})",
+        f"CTD-based {money(dollars(r.ctd_dv01), dollars(r.ctd_dv01))} ({money(*[dollars(r.ctd_dv01, r.face)] * 2)})",
         f"ATM vol: {r.vol.price_vol:.2f} points per √year (put {r.vol.strikes[0]:g} {r.vol.vols[0]:.2f}, "
         f"call {r.vol.strikes[1]:g} {r.vol.vols[1]:.2f}), {r.yield_vol:.1f}bp per √year through the CTD's DV01/CF; "
         f"width {r.width:.1f}bp to the horizon, {r.expiry_width:.1f}bp to option expiry",
@@ -111,7 +111,7 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
     rows = [[name, *(f"{dollars(v) / 1000:,.1f}" for v in k), f"{dollars(k.sum()) / 1000:,.1f}", f"{m:.1f}y"]
             for name, k, m in (("region-weighted (normal)", pts.krd[today], pts.effective_maturity[today]),
                                ("option-implied at z = 0", r.krd, r.effective_maturity),
-                               ("CTD-label", r.ctd_krd, r.ctd_effective_maturity))]
+                               ("CTD-based", r.ctd_krd, r.ctd_effective_maturity))]
     lines += _table(["", *(f"{n:g}y" for n in NODES), "total", "eff. maturity"], rows)
 
     lines += ["", f"Shifted states (normal factor, β = 1, width {r.width:.1f}bp to the horizon; percentile of "
@@ -119,14 +119,14 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
     rows = [[STATE[k], f"{pts.centres[j]:+.1f}", f"{pts.percentiles[j]:.1%}", pts.label[j], _k(pts.dv01[j]),
              _k(pts.label_dv01[j]), f"{pts.effective_maturity[j]:.1f}y", f"{pts.label_effective_maturity[j]:.1f}y"]
             for j, k in enumerate(r.profile.POINTS)]
-    lines += _table(["state", "shift bp", "pct", "CTD at shift", "DV01", "CTD-label", "eff. maturity",
-                     "CTD-label eff. maturity"], rows)
+    lines += _table(["state", "shift bp", "pct", "CTD at shift", "DV01", "CTD-based", "eff. maturity",
+                     "CTD-based eff. maturity"], rows)
     lines += ["", "Change in key-rate DV01 from today, $k per $100mm"]
     rows = []
     for k in (-2, -1, 1, 2):
         j = r.profile.point(k)
         rows += [[STATE[k], *(_k(v) for v in pts.krd[j] - pts.krd[today]), _k(pts.dv01[j] - pts.dv01[today])],
-                 [f"{STATE[k]} CTD-label", *(_k(v) for v in pts.label_krd[j] - pts.label_krd[today]),
+                 [f"{STATE[k]} CTD-based", *(_k(v) for v in pts.label_krd[j] - pts.label_krd[today]),
                   _k(pts.label_dv01[j] - pts.label_dv01[today])]]
     lines += _table(["", *(f"{n:g}y" for n in NODES), "total"], rows)
 

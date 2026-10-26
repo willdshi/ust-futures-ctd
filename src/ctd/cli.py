@@ -6,6 +6,7 @@
     ctd backfill
     ctd bookmarklet [--print]
     ctd run --contract ZBZ6 [--asof 2026-10-16]
+    ctd report [--asof 2026-10-16] [--contract ZBZ6 ...] [--out output]
     ctd derive [--table options] [--full] [--notify]
     ctd history --contract ZB --from ... --to ...  (not implemented yet)
 
@@ -272,6 +273,23 @@ def cmd_run(args) -> int:
     return 0
 
 
+def output_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "output"
+
+
+def cmd_report(args) -> int:
+    from ctd.report import page
+
+    asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
+    try:
+        path = page.write(args.data_root, args.out, asof, args.contract)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"ctd report {asof}: {e}", file=sys.stderr)
+        return 1
+    print(f"wrote {path}")
+    return 0
+
+
 def cmd_derive(args) -> int:
     from ctd.data import alert
     from ctd.data.derived import baskets, bonds, futures, options, quality, rates
@@ -373,6 +391,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-save", action="store_true", help="print only; don't write data/results/light/...")
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
     r.set_defaults(func=cmd_run)
+    o = sub.add_parser("report", help="the single-date HTML page (charts 1 and 2, tables) from saved results")
+    asof_args(o)
+    o.add_argument("--contract", action="append", help="only these contracts (default: every one saved for the date)")
+    o.add_argument("--out", type=Path, default=output_dir(), help="output directory (default: <repo>/output)")
+    o.set_defaults(func=cmd_report)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
     d.add_argument("--table", action="append", choices=["options", "futures", "bond_prices", "par_curve", "rates"],
                    help="only these tables (bond_prices also brings securities and baskets up to date)")

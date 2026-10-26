@@ -20,12 +20,13 @@ A **duration-drift monitor for Treasury futures users**: how stable is the durat
 |---|---|
 | DV01 units | $/bp per $100mm notional by default; per contract also available |
 | Futures risk | Probability-weighted: Σ pᵢ × DV01ᵢ / CFᵢ (same for KRDs) |
-| Comparison measure | CTD-label DV01 (what many vendor and internal systems report) |
+| Comparison measure | CTD-based DV01 (what many vendor and internal systems report) |
 | Factor shifts | Shown in both bp and percentiles of the move-to-delivery distribution (σ√T) |
 | Scenario recompute | Full model recompute at each shifted state, with the same remaining vol. Never read off the CTD at the shifted yield. |
 | Key-rate grid | 2, 5, 7, 10, 15, 20, 25, 30. Long-end resolution is needed so a ZB switch (about 15y to about 25y) is visible. Tent bumps to the Treasury par curve (linear between published tenors), scaled to each bond's DV01. Fixed ([decisions.md](decisions.md)). |
 | Negative KRDs (published note) | Key-rate exposures are measured against the Treasury par curve: each bucket is how much of a par bond at that tenor would hedge the position. For low-coupon bonds, the hedge is more than 100% at the bond's own maturity and slightly short at earlier tenors, so short-tenor buckets can be negative, and effective maturity can exceed the bond's maturity. |
-| Delivery timing | Last delivery day if carry is positive, first if negative (documented rule) |
+| Delivery timing | Last delivery day if carry is positive, first if negative (documented rule); published as the *implied delivery date*, with the carry that picks it |
+| P(RCaD) | Probability that today's CTD remains CTD at the implied delivery date. Shown from both models: the ATM normal factor (to implied delivery, as in the charts) and the option digitals (at option expiry, the latest date they can measure) |
 | Contract in the series | The contract whose quarterly options are the nearest not yet expired: roll at option expiry (December to March on 2026-11-20). See [decisions.md](decisions.md). |
 | Probabilities in charts (first milestone) | Normal factor with ATM vol and β = 1, so they can be recomputed at shifted states; the option-implied (light model) probabilities are shown alongside as a cross-check. No skew until the smile-implied distribution (phase 3). |
 | Rendering | matplotlib PNGs embedded in one self-contained HTML page per date ([decisions.md](decisions.md)) |
@@ -41,7 +42,7 @@ The headline chart. It separates **level** (how much DV01) from **shape** (where
 
 - **Top panel:** total probability-weighted DV01 against factor shift (about −100 to +100bp, dual-labelled in percentiles). Shows the switch staircase smoothed by vol. ±1σ and ±2σ marked as points on the curve.
 - **Bottom panel (same x-axis):** stacked share or heatmap of each key-rate bucket's share of total DV01. A switch appears as a band bending toward longer buckets, for example ZB risk sliding from 20y into 30y.
-- **Overlay:** faint CTD-label DV01 step line on the top panel.
+- **Overlay:** faint CTD-based DV01 step line on the top panel.
 - One chart per contract, as small multiples.
 
 ### Chart 2: Diverging key-rate change bars
@@ -50,7 +51,7 @@ The actionable drill-down for asset managers.
 
 - Change in KRD versus today, per bucket, in $/bp per $100mm, at ±1σ and ±2σ (or the 5th, 25th, 75th and 95th percentiles).
 - Positive and negative bars from zero. Example reading: "at +1σ your ZB position loses $X/bp at 20y and gains $Y/bp at 30y."
-- Faint marker for the CTD-label change, so readers see when vendor numbers would jump and the model's wouldn't.
+- Faint marker for the CTD-based change, so readers see when vendor numbers would jump and the model's wouldn't.
 - Small multiples per contract.
 
 ### Chart 3: DV01 time series, with effective maturity as companion
@@ -58,7 +59,7 @@ The actionable drill-down for asset managers.
 **Primary panel: DV01 per $100mm over time, one line per contract.**
 - Band: ±1σ scenario values.
 - **Constant-CTD DV01** line alongside. The gap between it and the probability-weighted line is the part of the duration change caused by the basket, in units the audience already uses.
-- **CTD-label DV01** line, which jumps at label flips.
+- **CTD-based DV01** line, which jumps when the CTD changes.
 
 Why DV01 is primary: it is the number people act on. But duration on its own mixes in changes unrelated to switches:
 - Yield level: with the same CTD, duration falls as yields rise (ordinary convexity).
@@ -84,7 +85,7 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 2. The contract roll (December to March): a discrete step by construction, and one to highlight.
 3. Near expiry: as σ√T shrinks, probabilities collapse toward 0 or 1, and daily yield moves near a crossover can look like jumps.
 4. Parameter re-estimation, if betas or vol update in steps. Avoid with daily EWMA or rolling estimates.
-5. The CTD-label comparison series, which is a staircase by design.
+5. The CTD-based comparison series, which is a staircase by design.
 
 **Event flags:** tag each date with basket change, roll and re-estimation events so any step can be attributed immediately. This is the first version of attribution.
 
@@ -92,7 +93,7 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 
 - **Distance to switch:** shift needed for the next switch, in bp and σ (z-score), as a time series per contract, flagged when it falls below 1σ.
 - **CTD probabilities:** the engine of the model, published as a supporting time series rather than the headline.
-- **Probability-weighted versus CTD-label DV01:** the most distinctive output for asset managers, showing when their vendor numbers will jump.
+- **Probability-weighted versus CTD-based DV01:** the most distinctive output for asset managers, showing when their vendor numbers will jump.
 
 ---
 

@@ -130,11 +130,11 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 **Decision:** the CTD on the contract's first date in the series, held for the whole contract and reset at each roll (the March basket and CFs differ). Built in phase 2 with the time series, as post-processing over the saved results: the first file's `ctd`, then that CUSIP's `dv01_cf` and `krd_shares` (for the constant-CTD effective maturity) from every later file. Not part of the single-date output.
 
 **Why:**
-- The alternative, today's CTD carried back, redraws the whole history whenever the label flips, so past charts would change. The start-of-series bond keeps every past value fixed, and the gap to the probability-weighted line reads as the cumulative basket effect since the start.
-- On a single date it equals the CTD-label DV01, and it stays equal until the first label flip. It is the only Tier 1 number that depends on another date, and `ctd run` reads one date only, so it belongs with the series code.
+- The alternative, today's CTD carried back, redraws the whole history whenever the CTD changes, so past charts would change. The start-of-series bond keeps every past value fixed, and the gap to the probability-weighted line reads as the cumulative basket effect since the start.
+- On a single date it equals the CTD-based DV01, and it stays equal until the CTD first changes. It is the only Tier 1 number that depends on another date, and `ctd run` reads one date only, so it belongs with the series code.
 - It needs no model work: the bond stays in the basket for the whole contract (new issues can join, none leave), and every saved result already holds its DV01/CF and KRD shares.
 
-**Expect:** on a short live series with no flip (ZBZ6, 2026-10-16 to 11-19) the constant-CTD and CTD-label lines coincide. Its value shows in the long histories (phase 4). If flips turn out rare there, reading the basket effect from probability-weighted against CTD-label between flips may be enough.
+**Expect:** on a short live series with no flip (ZBZ6, 2026-10-16 to 11-19) the constant-CTD and CTD-based lines coincide. Its value shows in the long histories (phase 4). If flips turn out rare there, reading the basket effect from probability-weighted against CTD-based between flips may be enough.
 
 ## Chart rendering (design §6, outputs.md)
 
@@ -187,3 +187,14 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 - steps solved month by month (rate before and after each decision, a month with no meeting priced flat as the consistency check) and the year-end spike placed on 31 December. Spread over December, the turn lifts repo to a 31 December horizon by about 1bp, although that day's rate is not part of that repo.
 
 **To do: buy extra SR1 months (Databento).** The futures backfill keeps the front two contracts only (data.md §5.11), but a horizon is up to five months out early in a cycle (August for a 31 December horizon), so historical mode needs about the front six SR1 months from May 2018. Until bought, historical dates fall back to flat SOFR (or front SR3, with a solve over its IMM quarter). Before May 2018 there is no SR1 or SOFR: decide between flat repo and fed funds futures (ZQ) plus an assumed SOFR–fed funds spread when historical mode is built.
+
+## Futures duration in the report (outputs.md, design §6)
+
+**Status:** adopted (2026-10-25).
+
+**Decision:** the report's summary shows today's futures duration next to each DV01, probability-weighted and CTD-based: the DV01 per 100 face over the **market futures settlement**, in years (the futures' modified duration), with the settlement itself. DV01 stays the headline: charts, key rates and the states table remain in $/bp per $100mm.
+- **Why:** duration compares contracts at a glance (on 2026-10-22: ZNZ6 5.8y, ZBZ6 12.8y) and is how overlay managers size exposure; DV01 is what hedges are sized in and what the key rates add up to.
+- **Why the market settlement:** it only rescales the model's DV01, so it brings no model futures price or fair value (design §1, §5.8). The CTD-based duration is close to the CTD's own forward modified duration, since the futures price is about the CTD's forward price over its CF.
+- **Not at the shifted states:** there the futures price would have to come from the model (today's settlement moved by the change in the expected envelope), which edges toward a model futures price. Leave duration to today until that is wanted, then label it as a scenario price.
+- **No duration axis on the charts:** along the shift the futures price changes, so DV01 and duration aren't one rescaling of each other.
+

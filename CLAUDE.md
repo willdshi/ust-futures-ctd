@@ -53,6 +53,7 @@ Phase 1b (the light model, design §5.11) is in progress. Status is tracked as c
     - `ctd fetch --asof 2026-10-16`
     - `ctd run --contract ZBZ6 --asof 2026-10-16`
     - `ctd derive` (derived Parquet tables under `/data/derived/`, design §4; incremental, and must equal `--full`)
+    - `ctd report --asof 2026-10-16` (the single-date HTML page in `/output/`, from saved results)
     - `ctd history --contract ZB --from 2022-01-01 --to 2026-10-16`
 - **Bond math is hand-written (§5.1).** One street-convention pricing function (`ctd.bonds.pricing`) is used for every price, yield and duration calculation. QuantLib is a test-only dependency, used as an independent check.
   - Coupons and yields are decimals (0.045); prices are per 100 face. The price functions accept a numpy array of yields.
@@ -78,7 +79,7 @@ Phase 1b (the light model, design §5.11) is in progress. Status is tracked as c
 - **Grid centring.** Centre everything on forward yields at the horizon. The per-bond convexity adjustment `c_i` (so that `E[P_i(z)]` equals the forward price) is optional and off by default in v1; add it only if backtests show a bias (§5.6).
 - **Slope-adjusted widths.** The slope-adjusted width `S_eff` is used for **probabilities only**, never for DV01 or KRDs (§5.7).
 - **Vol mapping.** Convert each option expiry's price vol with the CTD duration of *that expiry's* underlying contract, then interpolate total variance to the horizon (§5.5). Use quarterly and serial options only; weeklies are stored in the bulletin but not used (§2). If UB options are too thin, map vol from ZB through betas (TN from ZN), then fall back to realised vol (§3.1).
-- **No fair value (§1, §5.8).** There is no model futures price, no comparison with the market settlement and no implied CTD repo. The end-of-month and wildcard options aren't modelled. Every bond is funded at GC. Market futures prices are used only for vol conversion and open interest.
+- **No fair value (§1, §5.8).** There is no model futures price, no comparison with the market settlement and no implied CTD repo. The end-of-month and wildcard options aren't modelled. Every bond is funded at GC. Market futures prices are used only for vol conversion, open interest and, in the report, to express today's futures DV01 as a duration.
 - **Key rate durations.** KRDs are forward KRDs at the horizon, divided by CF and probability-weighted. Also report them per cluster, for jump risk (§5.9). The key-rate grid is fixed at 2, 5, 7, 10, 15, 20, 25 and 30 years: tent bumps to the linearly interpolated Treasury par curve, each bond's shares scaled to its DV01 from `ctd.bonds.pricing` ([decisions.md](docs/decisions.md)). Short-tenor KRDs of low-coupon bonds are negative by design; units are $/bp per $100mm notional.
 - **Scenarios.** Recompute crossovers and probabilities at each shifted state (±1σ, ±2σ, the duration profile). Never read off the CTD at the shifted yield (§5.9).
 

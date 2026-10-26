@@ -131,7 +131,7 @@ def test_futures_dv01_is_the_probability_weighted_dv01_over_cf():
     assert r.ctd_krd.sum() == pytest.approx(r.ctd_dv01, rel=1e-12)
     assert min(b.maturity for b in r.basket).year - 2026 < r.effective_maturity < 24
     assert "Key-rate DV01" in format_run(r)
-    assert "with the option-implied probabilities; CTD-label" in format_run(r)
+    assert "with the option-implied probabilities; CTD-based" in format_run(r)
 
 
 def test_profile_is_the_headline_and_is_saved(tmp_path):
@@ -148,9 +148,9 @@ def test_profile_is_the_headline_and_is_saved(tmp_path):
     assert pts.label_dv01[today] == pytest.approx(r.ctd_dv01)
     out = format_run(r)
     assert "region-weighted (normal, ATM width; vol ±10%" in out
-    assert "Shifted states" in out and "Change in key-rate DV01 from today" in out and "+2σ CTD-label" in out
+    assert "Shifted states" in out and "Change in key-rate DV01 from today" in out and "+2σ CTD-based" in out
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 7
+    assert rec["schema"] == 8
     assert len(rec["profile"]["curve"]["dv01"]) == len(r.profile.curve.centres) == 201
     assert rec["profile"]["points"]["centres"] == pytest.approx(list(pts.centres))
 
@@ -217,7 +217,7 @@ def test_a_rising_strip_raises_repo_and_is_saved(tmp_path):
     assert r.repo.term > run(inputs()).repo.term
     assert "repo: SR1 strip" in format_run(r)
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 7 and rec["repo"]["path"] == "sr1"
+    assert rec["schema"] == 8 and rec["repo"]["path"] == "sr1"
     assert rec["repo"]["months"]["2026-12-01"] == pytest.approx(r.repo.months[date(2026, 12, 1)])
 
 

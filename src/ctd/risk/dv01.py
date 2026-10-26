@@ -6,7 +6,7 @@ bond's price at the horizon for a 1bp rise in its forward yield (``ctd.bonds.pri
 
 - Probability-weighted: ``Σ p_i · DV01_i / CF_i`` at z = 0 (phase 1c item 1). Region-weighting
   over shifts (5.9) replaces this when the shifted-state model exists.
-- CTD-label: ``DV01 / CF`` of the single CTD at z = 0, the number vendor systems report.
+- CTD-based: ``DV01 / CF`` of the single CTD at z = 0, the number vendor systems report.
 
 Probabilities can be intervals (``model.probabilities``); the DV01 is then the range over every
 probability vector they allow that sums to 1. Values per 100 face of futures are converted to

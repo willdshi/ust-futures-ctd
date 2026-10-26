@@ -14,7 +14,7 @@ one set of cells:
   of ``Φ`` between switch points, and the region-weighted DV01 and KRDs (design 5.9: each bond
   evaluated where it is CTD) are a midpoint rule within each region.
 
-The CTD-label values at a centre are those of the single CTD at ``z = c``, evaluated there: the
+The CTD-based values at a centre are those of the single CTD at ``z = c``, evaluated there: the
 staircase vendor systems show.
 """
 
@@ -81,7 +81,7 @@ def weights(c: Cells, centres, s_bp: float) -> np.ndarray:
 
 @dataclass(frozen=True)
 class States:
-    """Region-weighted values and CTD-label values at each centre."""
+    """Region-weighted values and CTD-based values at each centre."""
 
     centres: np.ndarray  # bp
     width: float  # S, bp

@@ -15,8 +15,8 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 7  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
-# 7: repo from the SR1 strip
+SCHEMA = 8  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
+# 7: repo from the SR1 strip; 8: the delivery window and the carry behind the horizon
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
@@ -40,6 +40,9 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
     return {
         "model": "light", "schema": SCHEMA, "contract": r.contract, "asof": r.asof.isoformat(),
         "settle": r.settle.isoformat(), "horizon": r.horizon.isoformat(), "horizon_reason": r.horizon_reason,
+        "delivery": {"first": r.delivery.first.isoformat(), "last": r.delivery.last.isoformat(),
+                     "ctd": r.delivery.ctd, "fwd_first": r.delivery.fwd_first, "fwd_last": r.delivery.fwd_last,
+                     "units": "forward clean prices of the cheapest bond at the last delivery day, per 100 face"},
         "sofr": r.sofr, "sofr_date": r.sofr_date.isoformat(),
         "repo": {"path": r.repo.path, "term": r.repo.term,
                  "months": {m.isoformat(): v for m, v in r.repo.months.items()}, "why_flat": r.repo.why_flat,

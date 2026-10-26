@@ -14,7 +14,7 @@ when it covers the last delivery day, else flat at the latest SOFR, with a warni
 3. A digital at each ``K_k`` from the options (``vol.digitals``), discounted at that repo from
    settlement to expiry.
 4. Probabilities per bond (``model.probabilities``).
-5. Futures DV01 at z = 0, probability-weighted and CTD-label (``risk.dv01``), and key-rate DV01s from
+5. Futures DV01 at z = 0, probability-weighted and CTD-based (``risk.dv01``), and key-rate DV01s from
    par-curve bumps scaled to each bond's DV01 (``risk.krd``), with effective maturity.
 6. ATM vol of the same options (``vol.atm``), converted to yield vol with the CTD's DV01/CF: the
    width of the shift distribution to the horizon, each switch's distance in σ, and its normal tail
@@ -84,6 +84,17 @@ class Repo:
 
 
 @dataclass(frozen=True)
+class Delivery:
+    """The delivery window and the carry that picks the horizon (``model.horizon``)."""
+
+    first: date
+    last: date
+    ctd: str  # the cheapest at the last delivery day, whose carry decides
+    fwd_first: float  # its forward clean price on each day
+    fwd_last: float
+
+
+@dataclass(frozen=True)
 class BasketRow:
     cusip: str
     coupon: float
@@ -124,6 +135,7 @@ class LightResult:
     settle: date
     horizon: date
     horizon_reason: str
+    delivery: Delivery
     sofr: float
     sofr_date: date
     repo: Repo
@@ -135,10 +147,10 @@ class LightResult:
     crossovers: tuple[Crossover, ...]  # in increasing z
     probabilities: Probabilities
     dv01: tuple[float, float]  # probability-weighted, per 100 face of futures (lo, hi)
-    ctd_dv01: float  # CTD-label, per 100 face of futures
+    ctd_dv01: float  # CTD-based, per 100 face of futures
     face: float  # contract unit
     krd: np.ndarray  # probability-weighted key-rate DV01s per 100 face of futures (interval midpoints)
-    ctd_krd: np.ndarray  # CTD-label
+    ctd_krd: np.ndarray  # CTD-based
     par_date: date
     clusters: tuple[krd.Cluster, ...]  # bonds with a probability, by key-rate profile
     vol: atm.AtmVol
@@ -261,7 +273,8 @@ def run(x: LightInputs) -> LightResult:
     if em_hi - em_lo > EM_WARN_YEARS:
         warnings.append(f"KRDs use interval midpoints of the probabilities; effective maturity could be "
                         f"{em_lo:.2f}–{em_hi:.2f}y")
-    return LightResult(x.contract, x.asof, x.settle, horizon, reason, x.sofr, x.sofr_date, repo, x.f_market, e0,
+    delivery = Delivery(x.first_delivery, x.last_delivery, ctd_last, first_fwd, last[ctd_last])
+    return LightResult(x.contract, x.asof, x.settle, horizon, reason, delivery, x.sofr, x.sofr_date, repo, x.f_market, e0,
                        x.expiry, df, tuple(rows), tuple(crossovers), probs,
                        dv01.weighted(per, by_bond), per[ctd0], x.face,
                        krd.weighted(krds, krd.point_weights(by_bond)), krds[ctd0], x.par_date,

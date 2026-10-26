@@ -77,7 +77,7 @@ def test_points_bands_and_label():
     assert pts.percentiles[prof.point(1)] == pytest.approx(0.841345, abs=1e-6)
     _, label = envelope(FOUR, HORIZON, pts.centres)
     assert list(pts.label) == label
-    # the CTD-label DV01 at today's state is the CTD's DV01/CF at its forward yield
+    # the CTD-based DV01 at today's state is the CTD's DV01/CF at its forward yield
     from ctd.risk.dv01 import per_futures
     ctd = next(b for b in FOUR if b.cusip == pts.label[prof.point(0)])
     assert pts.label_dv01[prof.point(0)] == pytest.approx(per_futures(ctd.coupon, ctd.maturity, HORIZON, 0.055, ctd.cf))
