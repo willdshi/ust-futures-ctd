@@ -96,3 +96,11 @@ def test_shifted_curve_moves_key_rate_shapes():
     em = [effective_maturity(x) for x in k]
     assert em[0] < em[1] < em[2]
     assert em[0] > (date(2050, 2, 15) - HORIZON).days / 365.25  # deep discount even at −100bp
+
+
+def test_the_profile_widens_to_take_in_two_sigma():
+    assert pf.half_range(45.1) == 100  # ±2σ = ±90bp: the standard ±100bp
+    assert pf.half_range(48.0) == 110  # ±96bp would sit 4bp from the end
+    assert pf.half_range(55.3) == 120
+    assert pf.reach(55.3) >= 120 + pf.TAIL_WIDTHS * 55.3 * (1 + pf.VOL_BAND)
+

@@ -12,6 +12,7 @@ from ctd.curve.par import ParCurve
 from ctd.data import refdata
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.td_prices import BondPrice
+from ctd.model import profile as pf
 from ctd.model.light import LightInputs, run
 from ctd.reference.options import OptionExpiry
 from ctd.report.light import format_run, prob
@@ -151,7 +152,9 @@ def test_profile_is_the_headline_and_is_saved(tmp_path):
     assert "Shifted states" in out and "Change in key-rate DV01 from today" in out and "+2σ CTD-based" in out
     rec = results.light_record(r, [], None)
     assert rec["schema"] == 8
-    assert len(rec["profile"]["curve"]["dv01"]) == len(r.profile.curve.centres) == 201
+    half = pf.half_range(r.width)  # ±100bp, or wider to take in ±2σ
+    assert len(rec["profile"]["curve"]["dv01"]) == len(r.profile.curve.centres) == 2 * half + 1
+    assert r.profile.curve.centres[-1] == half >= 2 * r.width
     assert rec["profile"]["points"]["centres"] == pytest.approx(list(pts.centres))
 
 

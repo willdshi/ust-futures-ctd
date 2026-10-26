@@ -29,7 +29,7 @@ from ctd.curve.par import ParCurve, key_rate_curves
 from ctd.model.envelope import BasketBond, Switch, envelope
 from ctd.risk import krd
 
-CENTRES_BP = 100  # the profile runs from −100 to +100bp (outputs.md chart 1)
+CENTRES_BP = 100  # the profile runs from −100 to +100bp (outputs.md chart 1), wider to take in ±2σ: see ``half_range``
 TAIL_WIDTHS = 6.0  # cells reach this many (widest) widths beyond the outermost centre
 STEP_BP = 1.0
 VOL_BAND = 0.10  # vol ±10% bands (design 6, Tier 2)
@@ -132,16 +132,23 @@ class Profile:
 
 def profile(bonds: list[BasketBond], horizon: date, par: ParCurve, switches: list[Switch], s_bp: float,
             centres_bp: float = CENTRES_BP, step_bp: float = STEP_BP) -> Profile:
-    """``switches`` must cover ±(``centres_bp`` + 2σ + ``TAIL_WIDTHS`` widths at vol +10%): see ``reach``."""
+    """``switches`` must cover ``reach``: the profile's range plus ``TAIL_WIDTHS`` widths at vol +10%."""
     span = reach(s_bp, centres_bp)
     c = cells(bonds, horizon, par, switches, -span, span, step_bp)
-    centres = np.arange(-centres_bp, centres_bp + step_bp / 2, step_bp)
+    half = half_range(s_bp, centres_bp)
+    centres = np.arange(-half, half + step_bp / 2, step_bp)
     curve = states(c, bonds, horizon, par, centres, s_bp)
     points = states(c, bonds, horizon, par, [k * s_bp for k in Profile.POINTS], s_bp)
     band = tuple(weights(c, centres, s_bp * f) @ c.dv01 for f in (1 - VOL_BAND, 1 + VOL_BAND))
     return Profile(curve, points, band)
 
 
+def half_range(s_bp: float, centres_bp: float = CENTRES_BP) -> float:
+    """The profile's centres run over ±this: ``centres_bp``, or wider in steps of 10bp so that ±2σ
+    falls at least 5bp inside the ends (ZNZ6 on 2026-10-22, width 55bp: ±120bp)."""
+    return float(max(centres_bp, 10 * np.ceil((2 * s_bp + 5) / 10)))
+
+
 def reach(s_bp: float, centres_bp: float = CENTRES_BP) -> float:
     """How far the cells (and the switches) must reach either side of 0, in bp."""
-    return float(np.ceil(max(centres_bp, 2 * s_bp) + TAIL_WIDTHS * s_bp * (1 + VOL_BAND)))
+    return float(np.ceil(half_range(s_bp, centres_bp) + TAIL_WIDTHS * s_bp * (1 + VOL_BAND)))

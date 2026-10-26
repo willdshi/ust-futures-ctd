@@ -40,7 +40,7 @@ A **duration-drift monitor for Treasury futures users**: how stable is the durat
 
 The headline chart. It separates **level** (how much DV01) from **shape** (where on the curve).
 
-- **Top panel:** total probability-weighted DV01 against factor shift (about −100 to +100bp, dual-labelled in percentiles). Shows the switch staircase smoothed by vol. ±1σ and ±2σ marked as points on the curve.
+- **Top panel:** total probability-weighted DV01 against factor shift (about −100 to +100bp, wider in steps of 10bp when ±2σ falls beyond, dual-labelled in percentiles). Shows the switch staircase smoothed by vol. ±1σ and ±2σ marked as points on the curve.
 - **Bottom panel (same x-axis):** stacked share or heatmap of each key-rate bucket's share of total DV01. A switch appears as a band bending toward longer buckets, for example ZB risk sliding from 20y into 30y.
 - **Overlay:** faint CTD-based DV01 step line on the top panel.
 - One chart per contract, as small multiples.
