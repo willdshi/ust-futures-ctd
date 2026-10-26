@@ -2,7 +2,7 @@
 
 import math
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -150,11 +150,9 @@ def test_profile_is_the_headline_and_is_saved(tmp_path):
     assert "region-weighted (normal, ATM width; vol ±10%" in out
     assert "Shifted states" in out and "Change in key-rate DV01 from today" in out and "+2σ CTD-label" in out
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 6
+    assert rec["schema"] == 7
     assert len(rec["profile"]["curve"]["dv01"]) == len(r.profile.curve.centres) == 201
     assert rec["profile"]["points"]["centres"] == pytest.approx(list(pts.centres))
-
-
 
 
 def test_atm_vol_width_and_distance_to_switch():
@@ -183,3 +181,46 @@ def test_clusters_and_a_stale_par_curve():
     assert not any("par curve is from" in w for w in r.warnings)
     stale = run(inputs(par_date=date(2026, 10, 20)))
     assert "par curve is from 2026-10-20, not 2026-10-21 (none published for 2026-10-21)" in stale.warnings
+
+
+def sofr_fixings(start: date, end: date, rate: float) -> dict[date, float]:
+    sifma = refdata.calendar("sifma")
+    days = (start + timedelta(days=i) for i in range((end - start).days + 1))
+    return {d: rate for d in days if sifma.is_business_day(d)}
+
+
+MONTHS = [date(2026, 10, 1), date(2026, 11, 1), date(2026, 12, 1)]
+KNOWN = sofr_fixings(date(2026, 9, 30), date(2026, 10, 20), 0.0388)
+
+
+def test_repo_is_flat_sofr_with_a_warning_without_the_sr1_strip():
+    r = run(inputs())
+    assert r.repo.path == "flat" and r.repo.months == {}
+    assert any("repo flat at SOFR 3.8800%, not the SR1 strip: no SOFR fixings" in w for w in r.warnings)
+    assert "repo: flat SOFR 3.8800%" in format_run(r)
+
+
+def test_a_flat_sr1_strip_gives_the_flat_sofr_answer():
+    flat_run, strip_run = run(inputs()), run(inputs(sr1=dict.fromkeys(MONTHS, 0.0388), fixings=KNOWN))
+    assert strip_run.repo.path == "sr1" and not any("repo" in w for w in strip_run.warnings)
+    assert strip_run.repo.term == pytest.approx(flat_run.repo.term, abs=1e-14)
+    assert strip_run.df == pytest.approx(flat_run.df, abs=1e-14)
+    assert strip_run.e0 == pytest.approx(flat_run.e0, abs=1e-10)
+
+
+def test_a_rising_strip_raises_repo_and_is_saved(tmp_path):
+    from ctd.report import results
+
+    sr1 = dict(zip(MONTHS, (0.0390, 0.0393, 0.0407)))
+    r = run(inputs(sr1=sr1, fixings=KNOWN))
+    assert r.repo.path == "sr1" and set(r.repo.months) == set(MONTHS)
+    assert r.repo.term > run(inputs()).repo.term
+    assert "repo: SR1 strip" in format_run(r)
+    rec = results.light_record(r, [], None)
+    assert rec["schema"] == 7 and rec["repo"]["path"] == "sr1"
+    assert rec["repo"]["months"]["2026-12-01"] == pytest.approx(r.repo.months[date(2026, 12, 1)])
+
+
+def test_a_strip_short_of_the_last_delivery_day_falls_back_to_flat():
+    r = run(inputs(sr1=dict.fromkeys(MONTHS[:2], 0.0388), fixings=KNOWN))
+    assert r.repo.path == "flat" and "no SR1 settlement for Dec 2026" in r.repo.why_flat

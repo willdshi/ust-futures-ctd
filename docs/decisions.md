@@ -168,4 +168,22 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 **Decision** (settled 2026-10-25): a derived table built from a source whose every pull holds the whole series (Treasury's par curve year files, FRED) or overlapping windows of it (NY Fed) takes each value from the latest pull, and each build notes any value a newer pull changes.
 - Keeping each value as known on each as-of date would be the stricter match to the reproducibility rule, but nothing has been revised: across the stored pulls, 175,990 repeated FRED values and 5,684 par-curve values are unchanged, and the NY Fed's own revision flag is empty on all 8,852 records since 2018.
 - The revision notes mean a change would show in `ctd derive`'s output and `_build.json` rather than slip in; if revisions start, revisit.
-- Single-date runs are unaffected: `ctd run` reads the file stored under its own as-of date.
+- Single-date runs are unaffected: `ctd run` reads the files stored under its own as-of date, plus, for the month's SOFR fixings, NY Fed files under earlier as-of dates (stored once, never changed; next entry).
+
+## Repo path for the light model (design §5.3)
+
+**Status:** adopted (2026-10-25), path 3 built; path 2 deferred.
+
+**Decision:** repo is the **strip of 1-month SOFR futures** (§5.3 path 3, `funding/strip.py`) whenever it covers the last delivery day; otherwise flat at the latest SOFR (path 1), with a warning. This replaces §5.3's three-way rule (flat by default, stepped if an FOMC meeting falls before the horizon, strip if carry is close) with one default.
+- **Strip:** SR1 settles at 100 minus the arithmetic average of daily SOFR over its calendar month, each non-business day at the business day before it (which can be in the previous month). Months are solved in order, each with one flat rate on its unknown days; the current month's known fixings and the days carried in from the previous month are fixed. Each month then reprices its SR1 average exactly. **Verify the averaging rule against CME's SR1 rulebook chapter** when next on cmegroup.com.
+- **Fixings:** the current month's fixings come from the NY Fed files; a daily file holds two weeks, so files under earlier as-of dates are read too (each listed in the result's `inputs` with its `asof`). A known business day with no fixing (an early-close Good Friday) takes the one before it.
+- **Cross-check:** flat SOFR is still computed; a warning appears when it would put the horizon on the other delivery day.
+- **Effect** (2026-10-21, horizon 31 December): term repo 4.02% against 3.89% flat (the strip's months: October's remaining days 3.91%, November 3.94%, December 4.11%). Carry falls about 0.02 points per bond, the recentring gap widens about 0.026 points (ZBZ6 −0.424 to −0.450), horizon and CTD unchanged, futures DV01 +$40 per $100mm. ZBZ6 gains a near-tie switch at −19.4bp next to the one at −19.0bp.
+
+**Why path 3 before path 2:** it needs no new data for the live contracts (SR1 is stored daily, 25 months out) and prices whatever the market expects for the December FOMC and the year-end turn, though spread evenly over each month.
+
+**Deferred: path 2 (FOMC steps and the year-end turn).** Wanted for historical mode, where step and turn placement matter across many dates. Needs:
+- an **FOMC calendar** as reference data in `reference/` (meeting dates and the day each decision takes effect, from federalreserve.gov, 2016 on, unscheduled meetings such as March 2020 included), with effective-from records like the delivery calendars;
+- steps solved month by month (rate before and after each decision, a month with no meeting priced flat as the consistency check) and the year-end spike placed on 31 December. Spread over December, the turn lifts repo to a 31 December horizon by about 1bp, although that day's rate is not part of that repo.
+
+**To do: buy extra SR1 months (Databento).** The futures backfill keeps the front two contracts only (data.md §5.11), but a horizon is up to five months out early in a cycle (August for a 31 December horizon), so historical mode needs about the front six SR1 months from May 2018. Until bought, historical dates fall back to flat SOFR (or front SR3, with a solve over its IMM quarter). Before May 2018 there is no SR1 or SOFR: decide between flat repo and fed funds futures (ZQ) plus an assumed SOFR–fed funds spread when historical mode is built.

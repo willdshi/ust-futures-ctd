@@ -15,7 +15,8 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 6  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile
+SCHEMA = 7  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
+# 7: repo from the SR1 strip
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
@@ -40,6 +41,10 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
         "model": "light", "schema": SCHEMA, "contract": r.contract, "asof": r.asof.isoformat(),
         "settle": r.settle.isoformat(), "horizon": r.horizon.isoformat(), "horizon_reason": r.horizon_reason,
         "sofr": r.sofr, "sofr_date": r.sofr_date.isoformat(),
+        "repo": {"path": r.repo.path, "term": r.repo.term,
+                 "months": {m.isoformat(): v for m, v in r.repo.months.items()}, "why_flat": r.repo.why_flat,
+                 "units": "decimals; term actual/360 simple from settlement to the horizon; months are the "
+                          "strip's overnight rate on each month's unknown days"},
         "f_market": r.f_market, "e0": r.e0, "gap": r.gap,
         "options": {"product": r.expiry.product, "label": r.expiry.label, "expiry": r.expiry.expiry.isoformat(),
                     "df": r.df},

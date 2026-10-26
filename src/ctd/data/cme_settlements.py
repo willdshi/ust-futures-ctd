@@ -119,12 +119,13 @@ def parse_futures(content: bytes, asof: date) -> dict[date, FuturesSettle]:
     return out
 
 
-def read_futures(store, asof: date, product: str) -> dict[date, FuturesSettle]:
-    """``product``'s (``"ZB"``) settlements for ``asof``, from the bookmarklet or an automatic pull."""
-    names = store.names(asof, "cme_fut", product)
+def read_futures(store, asof: date, product: str, source: str = "cme_fut") -> dict[date, FuturesSettle]:
+    """``product``'s (``"ZB"``) settlements for ``asof``, from the bookmarklet or an automatic pull;
+    ``source="cme_stir"`` for SR1, SR3 and ZQ."""
+    names = store.names(asof, source, product)
     if not names:
         raise FileNotFoundError(f"no {product} futures settlements stored for {asof}")
-    return parse_futures(store.read(asof, "cme_fut", product, names[0]), asof)
+    return parse_futures(store.read(asof, source, product, names[0]), asof)
 
 
 SPECS = [

@@ -1,14 +1,17 @@
 """The light model for one contract and one date (design 5.11; pure).
 
 Inputs are what ``ctd run`` reads from the store: the TCF basket and CFs, TreasuryDirect clean
-prices, the futures settlement, the latest SOFR and the contract's quarterly options. Steps:
+prices, the futures settlement, SOFR (the latest fixing, the month's fixings so far and the SR1
+strip) and the contract's quarterly options. Repo is the SR1 strip (``funding.strip``, 5.3 path 3)
+when it covers the last delivery day, else flat at the latest SOFR, with a warning. Steps:
 
-1. Forward clean price of each bond to the first and last delivery days at flat SOFR; the
+1. Forward clean price of each bond to the first and last delivery days at that repo; the
    horizon is the last day if the CTD's carry is positive, the first if negative
-   (``model.horizon``). Forward yields at the horizon.
+   (``model.horizon``), with a warning if flat SOFR would pick the other day. Forward yields at
+   the horizon.
 2. Switch points by parallel shifts of the forward yields (``model.envelope``), each recentred
    onto the market settlement, ``K_k = F_market + E(z_k) − E(0)``.
-3. A digital at each ``K_k`` from the options (``vol.digitals``), discounted at flat SOFR from
+3. A digital at each ``K_k`` from the options (``vol.digitals``), discounted at that repo from
    settlement to expiry.
 4. Probabilities per bond (``model.probabilities``).
 5. Futures DV01 at z = 0, probability-weighted and CTD-label (``risk.dv01``), and key-rate DV01s from
@@ -25,7 +28,7 @@ prices, the futures settlement, the latest SOFR and the contract's quarterly opt
 (delivery options, specialness, the timing of the price snapshots).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 import numpy as np
@@ -34,7 +37,8 @@ from ctd.bonds.forward import forward_clean, forward_yield
 from ctd.curve.par import ParCurve, key_rate_curves
 from ctd.data.cme_bulletin import OptionSettle
 from ctd.data.td_prices import BondPrice
-from ctd.funding.repo import flat
+from ctd.funding import strip
+from ctd.funding.repo import Growth, flat
 from ctd.model import profile as pf
 from ctd.model.envelope import BasketBond, Switch, envelope, switches
 from ctd.model.horizon import light_horizon
@@ -67,6 +71,16 @@ class LightInputs:
     face: float  # contract unit, $ face per contract
     par_curve: ParCurve  # Treasury par curve, latest on or before asof
     par_date: date
+    sr1: dict[date, float] = field(default_factory=dict)  # SR1 month -> implied average (100 − settle) / 100
+    fixings: dict[date, float] = field(default_factory=dict)  # SOFR known on the evening, this month on
+
+
+@dataclass(frozen=True)
+class Repo:
+    path: str  # "sr1" (the strip, 5.3 path 3) or "flat" (path 1)
+    term: float  # term rate from settlement to the horizon, actual/360 simple
+    months: dict[date, float]  # the strip's overnight rate per month; empty when flat
+    why_flat: str | None  # why the strip wasn't used
 
 
 @dataclass(frozen=True)
@@ -112,6 +126,7 @@ class LightResult:
     horizon_reason: str
     sofr: float
     sofr_date: date
+    repo: Repo
     f_market: float
     e0: float
     expiry: OptionExpiry
@@ -180,19 +195,32 @@ def run(x: LightInputs) -> LightResult:
 
     if x.par_date != x.asof:
         warnings.append(f"par curve is from {x.par_date}, not {x.asof} (none published for {x.asof})")
-    g = flat(x.sofr, x.repo_cal)
+    g_flat = flat(x.sofr, x.repo_cal)
+    try:
+        s = strip.solve(x.sr1, x.fixings, x.repo_cal.prev_business_day(x.last_delivery), x.repo_cal)
+        g, months, why_flat = s.growth(x.repo_cal), s.rates, None
+    except ValueError as e:
+        g, months, why_flat = g_flat, {}, str(e)
+        warnings.append(f"repo flat at SOFR {x.sofr:.4%}, not the SR1 strip: {e}")
     curves = key_rate_curves(x.par_curve)
 
-    def fwd(c: str, delivery: date) -> float:
+    def fwd(c: str, delivery: date, g: Growth = g) -> float:
         p = x.prices[c]
         return forward_clean(p.price, p.coupon, p.maturity, x.settle, delivery, g)
 
-    last = {c: fwd(c, x.last_delivery) for c in cusips}
-    ctd_last = min(cusips, key=lambda c: last[c] / x.cfs[c])
-    first_fwd = fwd(ctd_last, x.first_delivery)
-    horizon = light_horizon(x.first_delivery, x.last_delivery, first_fwd, last[ctd_last])
+    def pick(g: Growth):
+        last = {c: fwd(c, x.last_delivery, g) for c in cusips}
+        ctd_last = min(cusips, key=lambda c: last[c] / x.cfs[c])
+        first_fwd = fwd(ctd_last, x.first_delivery, g)
+        return light_horizon(x.first_delivery, x.last_delivery, first_fwd, last[ctd_last]), last, ctd_last, first_fwd
+
+    horizon, last, ctd_last, first_fwd = pick(g)
     reason = (f"{'positive' if horizon == x.last_delivery else 'negative'} carry: CTD {ctd_last} forward "
               f"{first_fwd:.4f} on {x.first_delivery}, {last[ctd_last]:.4f} on {x.last_delivery}")
+    if months and (flat_horizon := pick(g_flat)[0]) != horizon:
+        warnings.append(f"carry sign depends on the repo path: flat SOFR would put the horizon on {flat_horizon}")
+    repo = Repo("sr1" if months else "flat", (g(x.settle, horizon) - 1) * 360 / (horizon - x.settle).days,
+                months, why_flat)
 
     rows = []
     for c in cusips:
@@ -233,7 +261,7 @@ def run(x: LightInputs) -> LightResult:
     if em_hi - em_lo > EM_WARN_YEARS:
         warnings.append(f"KRDs use interval midpoints of the probabilities; effective maturity could be "
                         f"{em_lo:.2f}–{em_hi:.2f}y")
-    return LightResult(x.contract, x.asof, x.settle, horizon, reason, x.sofr, x.sofr_date, x.f_market, e0,
+    return LightResult(x.contract, x.asof, x.settle, horizon, reason, x.sofr, x.sofr_date, repo, x.f_market, e0,
                        x.expiry, df, tuple(rows), tuple(crossovers), probs,
                        dv01.weighted(per, by_bond), per[ctd0], x.face,
                        krd.weighted(krds, krd.point_weights(by_bond)), krds[ctd0], x.par_date,

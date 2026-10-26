@@ -53,6 +53,22 @@ def read_latest(store, asof: date, rate: str = "sofr") -> tuple[date, float]:
     return max(known), rates[max(known)]
 
 
+def read_known(store, asof: date, since: date, rate: str = "sofr") -> tuple[dict[date, float], list[tuple]]:
+    """Every ``rate`` fixing from ``since`` known on the evening of ``asof``, and the files read
+    as (as-of date, source, name). A daily file holds two weeks, so earlier as-of dates' files
+    (stored once, never changed) are read until ``since`` is covered."""
+    rates, files = {}, []
+    for d in sorted((d for d in store.asofs() if since - timedelta(days=LOOKBACK_DAYS) <= d <= asof), reverse=True):
+        for source in ("nyfed_rates", "nyfed_rates_backfill"):
+            for name in store.names(d, source, rate):
+                rates.update({k: v for k, v in parse(store.read(d, source, rate, name)).items()
+                              if k not in rates})
+                files.append((d, source, name))
+        if rates and min(rates) <= since:
+            break
+    return {k: v for k, v in rates.items() if since <= k <= asof}, files
+
+
 SPECS = [
     SourceSpec("nyfed_rates", "NY Fed SOFR, TGCR, BGCR, EFFR (trailing two weeks)", Kind.DATED, "cme",
                units=lambda asof, cal: list(RATES), fetch=fetch),

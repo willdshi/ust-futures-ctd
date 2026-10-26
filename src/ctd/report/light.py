@@ -47,6 +47,14 @@ def _distance(side: str, c) -> str:
     return f"{side} {c.switch.z_bp:+.1f}bp ({abs(c.sigmas):.2f}σ{', below 1σ' if abs(c.sigmas) < 1 else ''})"
 
 
+def _repo(r: LightResult) -> str:
+    sofr = f"SOFR {r.sofr:.4%} ({r.sofr_date})"
+    if r.repo.path == "flat":
+        return f"repo: flat {sofr}, {r.repo.term:.4%} to the horizon"
+    months = ", ".join(f"{m:%b} {v:.3%}" for m, v in r.repo.months.items())
+    return f"repo: SR1 strip, {r.repo.term:.4%} to the horizon ({months}); latest {sofr}"
+
+
 NEXT_CHEAPEST = 3  # bonds listed beyond those with a probability: the cheapest of the rest at z = 0
 
 
@@ -65,7 +73,7 @@ def format_run(r: LightResult, all_bonds: bool = False) -> str:
     lines = [
         f"{r.contract} as of {r.asof} (settlement {r.settle})",
         f"horizon {r.horizon}: {r.horizon_reason}",
-        f"repo: flat SOFR {r.sofr:.4%} ({r.sofr_date})",
+        _repo(r),
         f"options: {r.expiry.product} {r.expiry.label}, expiry {r.expiry.expiry}, DF {r.df:.6f}",
         f"futures settlement {r.f_market:.4f}, envelope E(0) {r.e0:.4f}, "
         f"recentring gap {r.gap:+.4f} ({r.gap * 32:+.1f}/32)",

@@ -97,3 +97,36 @@ def test_futures_settlements(store):
 def test_sofr_latest_known_on_the_evening(store):
     store.write(ASOF, "nyfed_rates", "sofr", "sofr_2026-10-07_2026-10-21.json", SOFR, {})
     assert nyfed.read_latest(store, ASOF) == (date(2026, 10, 20), 0.0388)
+
+
+SR1 = (b'{"settlements":[{"month":"OCT 26","open":"-","high":"-","low":"-","last":"-","change":"0",'
+       b'"settle":"96.1050","volume":"1,204","openInterest":"52,310"},'
+       b'{"month":"NOV 26","open":"-","high":"-","low":"-","last":"-","change":"0",'
+       b'"settle":"96.0750","volume":"3,977","openInterest":"88,041"}],'
+       b'"tradeDate":"10/21/2026","empty":false}')
+
+
+def test_stir_settlements_from_their_own_source(store):
+    store.write(ASOF, "cme_stir", "SR1", "SR1.json", SR1, {})
+    sr1 = cme_settlements.read_futures(store, ASOF, "SR1", "cme_stir")
+    assert {m: s.settle for m, s in sr1.items()} == {date(2026, 10, 1): 96.105, date(2026, 11, 1): 96.075}
+    with pytest.raises(FileNotFoundError):
+        cme_settlements.read_futures(store, ASOF, "SR1")  # not a Treasury future
+
+
+def sofr_file(rates: dict[str, float]) -> bytes:
+    rows = ", ".join(f'{{"effectiveDate": "{d}", "type": "SOFR", "percentRate": {r}}}' for d, r in rates.items())
+    return f'{{"refRates": [{rows}]}}'.encode()
+
+
+def test_sofr_fixings_reach_back_through_earlier_files(store):
+    store.write(ASOF, "nyfed_rates", "sofr", "sofr_2026-10-07_2026-10-21.json",
+                sofr_file({"2026-10-20": 3.88, "2026-10-08": 3.86}), {})
+    store.write(date(2026, 10, 9), "nyfed_rates", "sofr", "sofr_2026-09-25_2026-10-09.json",
+                sofr_file({"2026-10-08": 3.99, "2026-09-30": 3.91, "2026-09-25": 3.90}), {})
+    store.write(date(2026, 9, 1), "nyfed_rates", "sofr", "sofr_2026-08-18_2026-09-01.json",
+                sofr_file({"2026-08-31": 3.95}), {})
+    rates, files = nyfed.read_known(store, ASOF, date(2026, 9, 30))
+    # the newer file wins a date both hold; the walk stops once the start is covered
+    assert rates == pytest.approx({date(2026, 10, 20): 0.0388, date(2026, 10, 8): 0.0386, date(2026, 9, 30): 0.0391})
+    assert [d for d, _, _ in files] == [ASOF, date(2026, 10, 9)]
