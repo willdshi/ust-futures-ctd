@@ -1,6 +1,6 @@
 # UST Futures CTD
 
-How stable is the duration you hold through Treasury futures, and how does it  change it as interest rates move?
+How stable is the duration you hold through Treasury futures, and how does it change as interest rates move?
 
 This project models the cheapest-to-deliver (CTD) bond for CBOT Treasury futures, with primary focus on the 10-year note (ZN) and the T-bond (ZB). From that it computes what a futures position's interest-rate risk really is: futures DV01, key rate DV01s and how both move as yields move. It runs end of day, from free public data only.
 
@@ -53,7 +53,7 @@ Every file is stored exactly as downloaded, keyed by its as-of date, and the mod
 
 ## Status
 
-Working now, for the December 2026 Futures contracts:
+Working now, for the December 2026 futures contracts:
 - daily data collection for six Treasury futures contracts and their options, with gap alerts
 - the light model: switch points and CTD probabilities from option digitals
 - futures DV01, key rate DV01s and the duration profile
