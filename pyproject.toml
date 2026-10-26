@@ -43,3 +43,6 @@ markers = [
     "network: tests that hit external data sources",
 ]
 xfail_strict = true
+
+[tool.pyright]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "data"]
