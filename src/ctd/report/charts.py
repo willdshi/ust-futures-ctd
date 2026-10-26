@@ -36,13 +36,13 @@ from ctd.risk.dv01 import dollars
 SURFACE, INK, INK2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 SERIES = "#2a78d6"
 NEUTRAL = "#f0efec"
-SHARE_CMAP = LinearSegmentedColormap.from_list(
-    "share", [(0.0, INK2), (0.5, NEUTRAL), (0.6, "#cde2fb"), (0.7, "#86b6ef"), (0.8, "#3987e5"),
-              (0.9, "#1c5cab"), (1.0, "#0d366b")])
 # % of DV01, the same scale for every contract. Shares run from about −25% (the short buckets of
 # low-coupon bonds) to about 140% (UBZ6's 25y), so gray is full at −50% and blue at +100%; beyond
-# either, the end color.
-SHARE_NORM = TwoSlopeNorm(vcenter=0, vmin=-50, vmax=100)
+# either, the end color. Shared with the interactive page (report.interactive).
+SHARE_STOPS = ((-50, INK2), (0, NEUTRAL), (20, "#cde2fb"), (40, "#86b6ef"), (60, "#3987e5"), (80, "#1c5cab"),
+               (100, "#0d366b"))
+SHARE_NORM = TwoSlopeNorm(vcenter=0, vmin=SHARE_STOPS[0][0], vmax=SHARE_STOPS[-1][0])
+SHARE_CMAP = LinearSegmentedColormap.from_list("share", [(float(SHARE_NORM(v)), c) for v, c in SHARE_STOPS])
 STATES = {-2: "#1c5cab", -1: "#86b6ef", 1: "#f0a09f", 2: "#e34948"}
 SIGMA = {-2: "−2σ", -1: "−1σ", 0: "today", 1: "+1σ", 2: "+2σ"}
 

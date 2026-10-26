@@ -30,7 +30,7 @@ A **duration-drift monitor for Treasury futures users**: how stable is the durat
 | Contract in the series | The contract whose quarterly options are the nearest not yet expired: roll at option expiry (December to March on 2026-11-20). See [decisions.md](decisions.md). |
 | Option-implied, not traded (published caveat) | Every option-derived number (the digitals, the ATM vol and so the width) comes from CME settlement prices, which CME sets from its implied-vol skew for the expiry whether or not a strike traded. Call them option-implied, never market-implied. Each digital and the ATM vol show which of their strikes traded that day ("strikes traded": all, none, or which); with none, or beyond about 1.5σ, a digital is indicative. Chains before 2026-10-16 include strikes with no open interest that the bulletin leaves out. See [decisions.md](decisions.md), Option strikes with no open interest. |
 | Probabilities in charts (first milestone) | Normal factor with ATM vol and β = 1, so they can be recomputed at shifted states; the option-implied (light model) probabilities are shown alongside as a cross-check. No skew until the smile-implied distribution (phase 3). |
-| Rendering | matplotlib PNGs embedded in one self-contained HTML page per date ([decisions.md](decisions.md)) |
+| Rendering | matplotlib PNGs embedded in one self-contained HTML page per date; an interactive companion page links charts 1 and 2 (plotly.js in the browser, `ctd report --interactive`) ([decisions.md](decisions.md)) |
 | Parameter estimation | Daily EWMA or rolling vol and betas, to avoid artificial steps |
 
 ---

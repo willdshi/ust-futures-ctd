@@ -154,6 +154,13 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 
 A switch shows as the dark cell moving between rows: ZBZ6 on 2026-10-23 from 15y through 20y to 25y as yields rise.
 
+**Interactive companion page (2026-10-26).** The static page stays the record (PNGs for the README, the writeup and print); `ctd report --interactive` also writes `output/interactive/<asof>.html` with charts 1 and 2 linked (`report/interactive.py`):
+- Chart 2 shows the key-rate change at any shift selected on chart 1 (hover, click to pin, or a slider for touch screens), not only ±1σ and ±2σ. Hovering chart 1 names the CTD at the shift and the likeliest CTDs at delivery from there; the heatmap gives each bucket's share.
+- Drawn in the browser by plotly.js (pinned version, from a CDN) from JSON embedded in the page, so it is one static file that needs no server (GitHub Pages). No Python plotly dependency and no static export (the `kaleido` problem above doesn't arise). Dash was ruled out: it needs a running server.
+- Only model outputs go in the JSON (DV01s, key-rate DV01s, shares, probabilities by shift), no market prices.
+- Same colors as the PNGs: the heatmap's stops are shared (`charts.SHARE_STOPS`), placed linearly since plotly maps z linearly.
+- Chart 3 is not interactive yet: worth it once the series is long enough to need zoom, and its CTD names and event flags would move into the hover.
+
 ## When December options expire (design §5.11, §10)
 
 **Status:** adopted (2026-10-24), replacing a phase 1b open question.
