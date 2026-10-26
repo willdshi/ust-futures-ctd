@@ -17,7 +17,8 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 ```
 
 - To refresh `environment.yml`, run `conda env export -n ctd --from-history` (conda is at `%USERPROFILE%\miniconda3\Scripts\conda.exe`). Then remove the `prefix:` line and save the file as UTF-8. A PowerShell `>` redirect writes UTF-16.
-  - `--from-history` omits pip installs. Keep the `pip:` section by hand; `conda list -n ctd` marks them with channel `pypi` (top-level ones now: `databento`, `QuantLib`).
+  - `--from-history` omits pip installs. Keep the `pip:` section by hand; the top-level pip installs are `databento` and `QuantLib`. `conda list -n ctd` also labels scipy and pyarrow `pypi`, wrongly: they are conda-forge packages whose file records conda fails to match.
+  - It also prints `channels: defaults` (conda's configuration), but every conda package comes from conda-forge. Keep `conda-forge` and `nodefaults` by hand, and the `libblas=*=*openblas` pin: MKL 2026.1's default threading layer crashes on numpy matrix products in this env.
 - Keep dependencies in sync in both `environment.yml` and `pyproject.toml`. Test-only packages (QuantLib) go in the `dev` extras.
 - pytest runs with `--strict-markers`, so register any new marker in `pyproject.toml`. Mark tests that touch external sources with `network`.
 - No linter or formatter is configured yet.

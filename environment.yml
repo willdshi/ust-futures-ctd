@@ -1,6 +1,7 @@
 name: ctd
 channels:
-  - defaults
+  - conda-forge
+  - nodefaults  # every conda package comes from conda-forge; don't fall back to Anaconda's defaults
 dependencies:
   - python=3.13
   - pyarrow
@@ -13,7 +14,8 @@ dependencies:
   - numpy
   - matplotlib
   - pdfplumber
+  - libblas=*=*openblas  # MKL 2026.1's default threading layer crashes on matrix products here
   - pip
   - pip:
-      - databento  # not on the defaults channel
+      - databento  # not on conda-forge
       - QuantLib  # test-only independent check of the bond math (design 5.1)
