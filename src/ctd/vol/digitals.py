@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from ctd.data.cme_bulletin import OptionSettle
 
-TICK = {"ZN": 1 / 64, "ZB": 1 / 64, "UB": 1 / 64, "ZF": 1 / 128, "ZT": 1 / 128}
+TICK = {"ZN": 1 / 64, "TN": 1 / 64, "ZB": 1 / 64, "UB": 1 / 64, "ZF": 1 / 128, "ZT": 1 / 128}  # TN: every stored settlement a multiple of 1/64 (October 2026)
 
 
 @dataclass(frozen=True)

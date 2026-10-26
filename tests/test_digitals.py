@@ -116,3 +116,10 @@ def test_equal_settlements_are_a_floor_and_give_a_bound():
     rows += [OptionSettle("ZN", "DEC26", "P", 101.0, 3 / 64, None, 0, 10)]
     d = digital(rows, 100.09, 105.45, DF)
     assert d.upper_bound and d.prob == pytest.approx(1 / 64 / 0.5 / DF)
+
+
+def test_every_treasury_option_product_has_a_tick():
+    from ctd.data import refdata
+    from ctd.vol.digitals import TICK
+
+    assert {p["code"] for p in refdata.cme_products()["treasury"]} <= set(TICK)
