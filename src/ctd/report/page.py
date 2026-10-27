@@ -3,6 +3,7 @@
     output/2026-10-21.html               summary: contracts, headline numbers, charts 1 to 3 for every contract
     output/2026-10-21/ZBZ6.html          one contract: its charts, then the full analytics
     output/2026-10-21/png/ZBZ6-*.png     the same charts as PNGs (README, writeup, print)
+    output/archive.html                  every summary page in output/, newest first (rewritten each run)
 
 Built from the saved results of every contract run on that date (``report.results``), never from a
 model run, so the pages can be redrawn from the files alone. The charts are drawn in the browser by
@@ -14,6 +15,7 @@ probabilities from both models, the distance to each switch, and the inputs. Pla
 formatting, no template engine (decisions.md, Chart rendering).
 """
 
+import re
 from datetime import date
 from html import escape
 from pathlib import Path
@@ -313,9 +315,10 @@ DISCLAIMER = (
     "outputs should not be relied on for trading or risk management.</footer>")
 
 
-def _document(title: str, body: list[str], data: list[dict]) -> str:
-    """A page whose charts (``data``, from ``interactive.chart_data``) are drawn in the browser."""
-    head, tail = interactive.scripts(data)
+def _document(title: str, body: list[str], data: list[dict] | None = None) -> str:
+    """A page whose charts (``data``, from ``interactive.chart_data``) are drawn in the browser; no
+    scripts without ``data``."""
+    head, tail = interactive.scripts(data) if data is not None else ("", "")
     return (f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
             f"<title>{title}</title><style>{CSS}</style>{head}</head>\n<body><main>\n" + "\n".join(body)
@@ -331,6 +334,7 @@ def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | 
     contracts = ", ".join(r["contract"] for r in recs)
     data = interactive.chart_data(recs, history or {})
     return _document(f"CTD report {asof}", [
+        f"<p class='back'><a href='{ARCHIVE}'>All report dates</a></p>",
         f"<h1>Treasury futures duration profile, {asof}</h1>",
         f"<p class='lede'>{contracts}. {LIGHT_MODEL_LEDE}</p>",
         SUMMARY_NOTE,
@@ -363,6 +367,26 @@ def render_contract(asof: date, rec: dict, rows: list[series.Row] | None = None)
     ], data)
 
 
+ARCHIVE = "archive.html"  # next to the summary pages (and the published index.html, a copy of the latest)
+_SUMMARY_NAME = re.compile(r"\d{4}-\d{2}-\d{2}\.html")
+
+
+def render_archive(dates: list[date]) -> str:
+    """The list of report dates, newest first, each linking its summary page."""
+    items = "".join(f"<li><a href='{d.isoformat()}.html'>{d.isoformat()}</a>{' (latest)' if i == 0 else ''}</li>"
+                    for i, d in enumerate(sorted(dates, reverse=True)))
+    return _document("CTD report dates", [
+        "<h1>Treasury futures duration profile: all report dates</h1>",
+        f"<ul class='archive'>{items}</ul>",
+    ])
+
+
+def summary_dates(out_dir: Path) -> list[date]:
+    """The dates with a summary page ``<date>.html`` in ``out_dir``."""
+    d = Path(out_dir)
+    return sorted(date.fromisoformat(p.stem) for p in d.glob("*.html") if _SUMMARY_NAME.fullmatch(p.name))
+
+
 def write_pngs(out_dir: Path, rec: dict, rows: list[series.Row]) -> list[Path]:
     """The contract's charts as PNG files, ``out_dir/<contract>-dv01-profile.png`` and so on (chart 3
     from two dates on): the same charts as the pages', for the README, the writeup and print."""
@@ -392,8 +416,9 @@ def contracts_on(root: Path, asof: date) -> list[str]:
 
 def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = None) -> list[Path]:
     """Write the summary ``out_dir/<asof>.html``, each contract's ``out_dir/<asof>/<contract>.html``
-    and its charts as PNGs under ``out_dir/<asof>/png/``, from the results saved under ``root``;
-    the pages first, the summary's path leading."""
+    and its charts as PNGs under ``out_dir/<asof>/png/``, from the results saved under ``root``, then
+    ``out_dir/archive.html`` listing every summary page in ``out_dir``; the pages first, the summary's
+    path leading."""
     import json
 
     contracts = contracts or contracts_on(root, asof)
@@ -420,4 +445,6 @@ def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = N
         p.write_text(render_contract(asof, r, history[r["contract"]]), encoding="utf-8")
         paths.append(p)
         pngs += write_pngs(p.parent / "png", r, history[r["contract"]])
-    return paths + pngs
+    archive = Path(out_dir) / ARCHIVE
+    archive.write_text(render_archive(summary_dates(out_dir)), encoding="utf-8")
+    return paths + [archive] + pngs

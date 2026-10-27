@@ -92,6 +92,7 @@ def test_summary_page_holds_the_charts_and_links_each_contract_but_no_tables(rec
     assert "ZT (2-year) and ZF (5-year) futures are omitted" in html
     assert html.count("<a href='2026-10-21/ZBZ6.html'><b>ZBZ6</b></a>") == 2  # in both tables
     assert "<th>ticker</th><th>CTD today" in html
+    assert html.index("<a href='archive.html'>All report dates</a>") < html.index("<h1>")
     assert _urls(html) == [interactive.PLOTLY]  # nothing else from the network
     assert page.render(ASOF, [zn, rec]) == html
 
@@ -132,9 +133,22 @@ def test_report_command_writes_the_date_page_in_contract_order(tmp_path, rec, ca
         for name in ("dv01-profile", "krd-change"):  # chart 3 needs two dates
             assert (out / "2026-10-21" / "png" / f"{c}-{name}.png").read_bytes().startswith(PNG)
     printed = capsys.readouterr().out
-    assert printed.count(".html") == 3 and "wrote 4 chart PNGs" in printed  # summary, two contracts, their PNGs
+    assert printed.count(".html") == 4 and "wrote 4 chart PNGs" in printed  # summary, two contracts, archive
     assert main([*args, "--contract", "ZBZ6"]) == 0
     assert "ZNZ6.html" not in (out / "2026-10-21.html").read_text(encoding="utf-8")
+
+
+def test_archive_lists_every_summary_page_newest_first(tmp_path, rec):
+    results.write_light(tmp_path, rec)
+    out = tmp_path / "out"
+    out.mkdir()
+    for name in ("2026-10-16.html", "index.html", "notes.html"):  # an older summary, and pages that aren't
+        (out / name).write_text("", encoding="utf-8")
+    page.write(tmp_path, out, ASOF)
+    html = (out / "archive.html").read_text(encoding="utf-8")
+    assert re.findall(r"<a href='([^']+)'>", html) == ["2026-10-21.html", "2026-10-16.html"]
+    assert "2026-10-21</a> (latest)" in html and "not investment advice" in html
+    assert "<script" not in html and not _urls(html)
 
 
 def test_report_command_without_results_says_so(tmp_path, capsys):
