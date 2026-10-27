@@ -291,11 +291,12 @@ def through_time(history: dict[str, list[series.Row]]) -> list[str]:
     return [
         "<h2>DV01 through time</h2>",
         "<p class='note'><b>Top:</b> futures DV01 on each date with its −1σ and +1σ states, against the CTD-based DV01, "
-        "which steps at each switch (the new CTD named), and the DV01 of the first date's CTD held throughout. "
+        "which steps at each switch (circled; the interactive page names the CTD), and the DV01 of the first "
+        "date's CTD held throughout. "
         "The gap between that constant-CTD line and the probability-weighted line is the part of the change "
         "caused by the basket. <b>Bottom:</b> effective maturity, where on the curve the DV01 sits (the key rates' "
         "maturities weighted by their DV01); with the CTD unchanged it still lengthens a little as yields rise. "
-        "Guides mark dates with an event flag.</p>",
+        "Guides mark basket changes.</p>",
         "<div class='grid'>" + "".join(f"<figure>{_img(charts.dv01_series_chart(c, rows), c + ' DV01 through time')}"
                                        "</figure>" for c, rows in shown.items()) + "</div>",
     ]

@@ -159,7 +159,7 @@ A switch shows as the dark cell moving between rows: ZBZ6 on 2026-10-23 from 15y
 - Drawn in the browser by plotly.js (pinned version, from a CDN) from JSON embedded in the page, so it is one static file that needs no server (GitHub Pages). No Python plotly dependency and no static export (the `kaleido` problem above doesn't arise). Dash was ruled out: it needs a running server.
 - Only model outputs go in the JSON (DV01s, key-rate DV01s, shares, probabilities by shift), no market prices.
 - Same colors as the PNGs: the heatmap's stops are shared (`charts.SHARE_STOPS`), placed linearly since plotly maps z linearly.
-- Chart 3 is not interactive yet: worth it once the series is long enough to need zoom, and its CTD names and event flags would move into the hover.
+- Chart 3 is on it too, below each contract's charts 1 and 2. The static chart names each new CTD on the plot, which crowded once the series ran from 2026-09-01 (about a dozen ZBZ6 switches); here a CTD change is an open circle on the CTD-based line and the hover names the CTD, its probability of remaining CTD and the nearest switch in σ. ±1σ is a band rather than two lines (outputs.md), guides mark basket changes only, and dragging across dates zooms with both y-axes refitted to the window. The static chart 3 follows: circles instead of names, guides for basket changes only.
 
 ## When December options expire (design §5.11, §10)
 

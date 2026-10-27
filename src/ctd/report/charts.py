@@ -11,8 +11,10 @@ global figure state; style through ``rc_context``.
 - Chart 2: the change in each key-rate DV01 from today at −2σ, −1σ, +1σ and +2σ, with the
   CTD-based change as a marker on each bar.
 - Chart 3: one contract's series (``report.series``) by trading day: the model DV01 with its ±1σ
-  states, the CTD-based staircase (each switch named) and the constant-CTD DV01; below, effective
-  maturity for the same three. A guide through both panels at each event-flagged date.
+  states, the CTD-based staircase (a circle at each change of CTD; the names were dropped from the
+  plot once switches crowded it, and are in the interactive page's hover) and the constant-CTD DV01;
+  below, effective maturity for the same three. A guide through both panels at each other
+  event-flagged date (a basket change), named.
 """
 
 import io
@@ -222,15 +224,14 @@ def dv01_series_chart(contract: str, rows: list[Row]) -> bytes:
         top.plot(x, _k([r.constant_dv01 for r in rows]), color=INK2, linewidth=1, linestyle=(0, (4, 2)),
                  label=f"constant CTD ({rows[0].constant_name})")
         top.plot(x, _k([r.dv01 for r in rows]), color=SERIES, linewidth=2, label="probability-weighted", **marker)
+        changes = [i for i, r in enumerate(rows) if CTD in r.events]
+        top.scatter(changes, _k([rows[i].ctd_dv01 for i in changes]), s=22, facecolor="none", edgecolor=INK2,
+                    linewidth=1, zorder=3, label="CTD change")
         for i, r in enumerate(rows):
-            if r.events:
+            other = [e for e in r.events if e != CTD]
+            if other:  # a guide only for the rarer events: CTD changes are the circles
                 for ax in (top, bottom):
                     ax.axvline(i, color=AXIS, linewidth=0.8, zorder=1.5)
-            if CTD in r.events:  # name the new CTD where the staircase steps
-                top.annotate(r.ctd_name, (i, float(_k(r.ctd_dv01))), xytext=(-3, 4), textcoords="offset points",
-                             ha="right", fontsize=7, color=INK2)
-            other = [e for e in r.events if e != CTD]
-            if other:
                 top.annotate(", ".join(other), (i, 1), xycoords=("data", "axes fraction"), xytext=(3, -2),
                              textcoords="offset points", va="top", fontsize=7, color=INK2)
         lo, hi = top.get_ylim()
@@ -246,6 +247,6 @@ def dv01_series_chart(contract: str, rows: list[Row]) -> bytes:
         _day_ticks(bottom, days)
 
         handles, names = top.get_legend_handles_labels()
-        order = [4, 0, 1, 2, 3]  # probability-weighted first, then +1σ, −1σ, CTD-based, constant
+        order = [4, 0, 1, 2, 5, 3]  # probability-weighted first, then +1σ, −1σ, CTD-based, CTD change, constant
         fig.legend([handles[i] for i in order], [names[i] for i in order], loc="outside lower center", ncol=3)
         return _png(fig)

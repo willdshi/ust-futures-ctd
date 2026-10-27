@@ -1,15 +1,19 @@
-"""The interactive single-date page: charts 1 and 2 linked, drawn in the browser with plotly.js.
+"""The interactive single-date page: charts 1 and 2 linked, and chart 3, drawn in the browser with plotly.js.
 
 A companion to the static page (``report.page``), from the same saved results: each contract's
-profile goes into the page as JSON and plotly.js (from a CDN, pinned) draws it, so the page is one
-static file that needs no server (GitHub Pages). Only model outputs go in: DV01s, key-rate DV01s,
-shares and probabilities by shift, no market prices.
+profile and series go into the page as JSON and plotly.js (from a CDN, pinned) draws them, so the
+page is one static file that needs no server (GitHub Pages). Only model outputs go in: DV01s,
+key-rate DV01s, shares, effective maturities and probabilities, no market prices.
 
 - Chart 1: the DV01 profile as on the static page; hovering names the CTD at the shift and the
   likeliest CTDs at delivery from that state, and the heatmap gives each bucket's share.
 - Chart 2: the change in each key-rate DV01 from today at the shift selected on chart 1 (hover to
   move it, click to pin it, or the slider), with the CTD-based change as a marker; the static
   page shows only ±1σ and ±2σ.
+- Chart 3: DV01 and effective maturity through time (``report.series``), up to the page's date.
+  The static chart names each new CTD on the plot, which crowds once switches are frequent; here a
+  CTD change is a marker and the hover names the CTD. ±1σ is a band (outputs.md), guides mark
+  basket changes only, and dragging zooms the dates with the y-axes refitted to the window.
 """
 
 import json
@@ -20,7 +24,7 @@ from pathlib import Path
 import numpy as np
 from scipy.special import ndtri
 
-from ctd.report import charts, page, results
+from ctd.report import charts, page, results, series
 from ctd.report.names import bond_name
 from ctd.risk.dv01 import dollars
 
@@ -34,7 +38,29 @@ def _k(v) -> np.ndarray:
 
 
 def _r(a, n: int) -> list:
-    return np.round(np.asarray(a, dtype=float), n).tolist()
+    """Rounded, with NaN as None (JSON has no NaN)."""
+    a = np.asarray(a, dtype=float)
+    out = np.round(a, n).astype(object)
+    out[np.isnan(a)] = None
+    return out.tolist()
+
+
+def series_payload(rows: list[series.Row]) -> dict:
+    """One contract's chart 3 series, in $k per bp per $100mm and years."""
+    def k(f):
+        return _r(_k([f(r) for r in rows]), 2)
+
+    return {
+        "dates": [f"{r.asof.day} {r.asof:%b %Y}" for r in rows], "ticks": [f"{r.asof.day} {r.asof:%b}" for r in rows],
+        "dv01": k(lambda r: r.dv01), "plus1": k(lambda r: r.states[1]), "minus1": k(lambda r: r.states[-1]),
+        "ctd_dv01": k(lambda r: r.ctd_dv01), "constant_dv01": k(lambda r: r.constant_dv01),
+        "em": _r([r.em for r in rows], 2), "ctd_em": _r([r.ctd_em for r in rows], 2),
+        "constant_em": _r([r.constant_em for r in rows], 2),
+        "ctd": [r.ctd_name for r in rows], "p_ctd": _r([r.p_ctd for r in rows], 3),
+        "nearest": _r([r.nearest_sigmas for r in rows], 2), "constant_name": rows[0].constant_name,
+        "ctd_change": [series.CTD in r.events for r in rows],
+        "events": [", ".join(e for e in r.events if e != series.CTD) for r in rows],
+    }
 
 
 def payload(rec: dict) -> dict:
@@ -91,7 +117,8 @@ STYLE = {
 
 CSS = page.CSS + """
 figure.plot { padding: 4px 8px 8px; }
-.chart1 { height: 600px; } .chart2 { height: 360px; }
+.chart1 { height: 600px; } .chart2 { height: 360px; } .chart3 { height: 560px; }
+figure.wide { flex-basis: 100%; }
 .control { display: flex; align-items: center; gap: 12px; margin: 4px 8px 0; color: var(--ink2); font-size: 13px; }
 .control input { flex: 1; }
 .readout { font-variant-numeric: tabular-nums; min-width: 26ch; }
@@ -199,10 +226,80 @@ function link(section, c) {
   show(c.default);
 }
 
+function chart3(el, c) {
+  const s = c.series, n = s.dates.length, markers = n <= 60 ? "lines+markers" : "lines";
+  const step = Math.max(1, Math.ceil(n / 10)), ticks = s.dates.map((_, i) => i).filter(i => i % step === 0);
+  const nearest = s.nearest.map(v => v === null ? "none in range" : v.toFixed(1) + "σ");
+  const events = s.events.map(e => e ? "<br>" + e : "");
+  const changes = s.dates.map((_, i) => i).filter(i => s.ctd_change[i]);
+  const traces = [
+    { x: s.dates, y: s.dv01, mode: markers, line: { color: S.series, width: 2.5 }, marker: { size: 5 },
+      name: "probability-weighted", customdata: s.dates.map((_, i) => [s.plus1[i], s.minus1[i], nearest[i], events[i]]),
+      hovertemplate: "<b>%{y:.1f}k</b> probability-weighted (−1σ %{customdata[1]:.1f}k, +1σ %{customdata[0]:.1f}k)" +
+        "<br>nearest switch %{customdata[2]}%{customdata[3]}<extra></extra>" },
+    { x: s.dates, y: s.plus1, line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+    { x: s.dates, y: s.minus1, fill: "tonexty", fillcolor: "rgba(134,182,239,0.25)", line: { width: 0 },
+      name: "−1σ to +1σ", hoverinfo: "skip" },
+    { x: s.dates, y: s.ctd_dv01, line: { color: S.muted, width: 1, shape: "hvh" }, name: "CTD-based",
+      customdata: s.dates.map((_, i) => [s.ctd[i], s.p_ctd[i]]),
+      hovertemplate: "%{y:.1f}k CTD-based: %{customdata[0]}, P(remains CTD) %{customdata[1]:.0%}<extra></extra>" },
+    { x: s.dates, y: s.constant_dv01, line: { color: S.ink2, width: 1, dash: "dash" },
+      name: `constant CTD (${s.constant_name})`, hovertemplate: "%{y:.1f}k constant CTD<extra></extra>" },
+    { x: changes.map(i => s.dates[i]), y: changes.map(i => s.ctd_dv01[i]), mode: "markers", name: "CTD change",
+      marker: { symbol: "circle-open", size: 8, color: S.ink2, line: { width: 1.5 } }, hoverinfo: "skip" },
+    { x: s.dates, y: s.em, yaxis: "y2", mode: markers, line: { color: S.series, width: 2.5 }, marker: { size: 5 },
+      showlegend: false, hovertemplate: "<b>%{y:.1f}y</b> probability-weighted<extra></extra>" },
+    { x: s.dates, y: s.ctd_em, yaxis: "y2", line: { color: S.muted, width: 1, shape: "hvh" }, showlegend: false,
+      hovertemplate: "%{y:.1f}y CTD-based<extra></extra>" },
+    { x: s.dates, y: s.constant_em, yaxis: "y2", line: { color: S.ink2, width: 1, dash: "dash" }, showlegend: false,
+      hovertemplate: "%{y:.1f}y constant CTD<extra></extra>" },
+  ];
+  const basket = s.dates.map((d, i) => [d, s.events[i]]).filter(([, e]) => e);
+  const layout = {
+    font, paper_bgcolor: S.surface, plot_bgcolor: S.surface, margin: { l: 64, r: 16, t: 96, b: 48 },
+    title: { text: `${c.contract} DV01 through time, ${s.dates[0]} to ${s.dates[n - 1]}`, x: 0.01, xanchor: "left",
+             y: 0.985, yref: "container", yanchor: "top", font: { size: 15, color: S.ink } },
+    hovermode: "x unified", hoverlabel: { bgcolor: S.surface, bordercolor: S.axis, font: { color: S.ink } },
+    dragmode: "zoom", showlegend: true,
+    legend: { orientation: "h", x: 0, y: 0.92, yref: "container", yanchor: "top", font: { size: 11 },
+              traceorder: "normal" },
+    xaxis: { ...axis, fixedrange: false, type: "category", anchor: "y2", tickvals: ticks.map(i => s.dates[i]),
+             ticktext: ticks.map(i => s.ticks[i]), showspikes: true, spikemode: "across", spikesnap: "cursor",
+             spikecolor: S.ink2, spikethickness: 1, spikedash: "solid" },
+    yaxis: { ...axis, domain: [0.4, 1], title: { text: "futures DV01 ($k per bp per $100mm)" } },
+    yaxis2: { ...axis, domain: [0, 0.32], title: { text: "effective maturity (years)" } },
+    shapes: basket.map(([d]) => ({ type: "line", xref: "x", yref: "paper", x0: d, x1: d, y0: 0, y1: 1,
+                                   line: { color: S.axis, width: 1, dash: "dot" } })),
+    annotations: basket.map(([d, e]) => ({ x: d, y: 1, xref: "x", yref: "paper", yanchor: "bottom", text: e,
+                                           showarrow: false, font: { size: 10, color: S.ink2 } })),
+  };
+  return Plotly.newPlot(el, traces, layout, config).then(() => fitOnZoom(el, s));
+}
+
+// a date zoom refits both y-axes to the dates in view; double-click resets
+function fitOnZoom(el, s) {
+  const top = [s.dv01, s.plus1, s.minus1, s.ctd_dv01, s.constant_dv01], bottom = [s.em, s.ctd_em, s.constant_em];
+  const fit = (series, i0, i1) => {
+    const v = series.flatMap(a => a.slice(i0, i1 + 1)).filter(x => x !== null);
+    const lo = Math.min(...v), hi = Math.max(...v), pad = 0.06 * (hi - lo || 1);
+    return [lo - pad, hi + pad];
+  };
+  el.on("plotly_relayout", e => {
+    if (e["xaxis.autorange"]) {
+      Plotly.relayout(el, { "yaxis.autorange": true, "yaxis2.autorange": true });
+    } else if ("xaxis.range[0]" in e) {
+      const n = s.dates.length;
+      const i0 = Math.max(0, Math.ceil(e["xaxis.range[0]"])), i1 = Math.min(n - 1, Math.floor(e["xaxis.range[1]"]));
+      if (i1 > i0) Plotly.relayout(el, { "yaxis.range": fit(top, i0, i1), "yaxis2.range": fit(bottom, i0, i1) });
+    }
+  });
+}
+
 for (const c of D.contracts) {
   const section = document.getElementById(c.contract);
   Promise.all([chart1(section.querySelector(".chart1"), c), chart2(section.querySelector(".chart2"), c)])
     .then(() => link(section, c));
+  if (c.series) chart3(section.querySelector(".chart3"), c);
 }
 """
 
@@ -214,13 +311,20 @@ def _section(c: dict) -> str:
             f"<figure class='plot'><div class='chart2'></div><div class='control'>"
             f"<label for='s-{escape(c['contract'])}'>shift</label>"
             f"<input type='range' id='s-{escape(c['contract'])}' min='0' max='{n}' step='1' value='{c['default']}'>"
-            f"<span class='readout'></span></div></figure></div></section>")
+            f"<span class='readout'></span></div></figure>"
+            + ("<figure class='plot wide'><div class='chart3'></div></figure>" if "series" in c else "")
+            + "</div></section>")
 
 
-def render(asof: date, recs: list[dict]) -> str:
-    """The interactive page for ``asof`` from that date's results, in contract order."""
+def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | None = None) -> str:
+    """The interactive page for ``asof`` from that date's results, in contract order; ``history``
+    holds each contract's series up to ``asof`` for chart 3 (drawn from two dates on)."""
     page.check_schema(recs)
     payloads = [payload(r) for r in recs]
+    for c in payloads:
+        rows = (history or {}).get(c["contract"], [])
+        if len(rows) >= 2:
+            c["series"] = series_payload(rows)
     data = json.dumps({"style": STYLE, "contracts": payloads}, ensure_ascii=False,
                       separators=(",", ":")).replace("</", "<\\/")
     contracts = ", ".join(r["contract"] for r in recs)
@@ -231,7 +335,9 @@ def render(asof: date, recs: list[dict]) -> str:
         "below, each key rate's share of that DV01. Hover to read the CTD at a shift and the likeliest CTDs at "
         "delivery from there. <b>Right:</b> the change in each key-rate DV01 from today at the shift selected on the "
         "left: hover to move it, click to pin it, or use the slider. Markers are the CTD-based change, which "
-        "jumps at each switch.</p>",
+        "jumps at each switch. <b>Below:</b> DV01 and effective maturity on each date, against the CTD-based "
+        "figures and the first date's CTD held throughout; circles mark a change of CTD, which the hover names. "
+        "Drag across dates to zoom, double-click to reset.</p>",
         *(_section(c) for c in payloads),
     ])
     return (f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>"
@@ -253,7 +359,12 @@ def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = N
         if not path.exists():
             raise FileNotFoundError(f"no saved result for {c} on {asof} ({path})")
         recs.append(json.loads(path.read_text(encoding="utf-8")))
+    history = {}
+    for c in contracts:
+        past = [r for r in results.read_light(root, c) if date.fromisoformat(r["asof"]) <= asof]
+        page.check_schema(past)
+        history[c] = series.series(past)
     out = Path(out_dir) / "interactive" / f"{asof.isoformat()}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(asof, recs), encoding="utf-8")
+    out.write_text(render(asof, recs, history), encoding="utf-8")
     return out
