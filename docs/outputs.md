@@ -116,7 +116,6 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 ## Tier 2 — Credibility and timeliness
 
 - **Contract roll:** run December and March together and show the DV01 and KRD change at the roll with no yield move. Late-November roll is a natural first publication.
-- **Cross-contract comparison:** which contract gives the most stable exposure at today's yields. TN and UB are typically stable; ZN and ZB are prone to switching.
 - **Uncertainty bands:** rerun at vol ±10% and betas ±0.05.
 - **Calibration backtest:** forecast CTD probabilities against the realised CTD at delivery (Brier score, reliability plot). This decides whether readers trust "30% chance of a switch."
 - **Calendar overlay:** auctions adding issues, roll period, first notice day, delivery dates.
