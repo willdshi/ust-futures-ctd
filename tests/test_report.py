@@ -88,7 +88,10 @@ def test_summary_page_holds_the_charts_and_links_each_contract_but_no_tables(rec
     assert "<caption>" not in html and "<h3>Inputs and diagnostics" not in html  # the tables are per contract
     assert html.index("<a href='2026-10-21/ZNZ6.html'><b>ZNZ6</b></a>") < html.index("<a href='2026-10-21/ZBZ6.html'>")
     assert "<h3><a href='2026-10-21/ZBZ6.html'>ZBZ6</a></h3>" in html  # each contract's charts link too
-    assert "follow the ticker links" in html and "ZT (2-year) and ZF (5-year) futures are omitted" in html
+    assert "are on its own page</span>: follow the <span class='hl'>ticker links</span>" in html
+    assert "ZT (2-year) and ZF (5-year) futures are omitted" in html
+    assert html.count("<a href='2026-10-21/ZBZ6.html'><b>ZBZ6</b></a>") == 2  # in both tables
+    assert "<th>ticker</th><th>CTD today" in html
     assert _urls(html) == [interactive.PLOTLY]  # nothing else from the network
     assert page.render(ASOF, [zn, rec]) == html
 

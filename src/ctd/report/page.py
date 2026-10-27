@@ -128,7 +128,8 @@ def contracts_table(recs: list[dict], link: bool = False) -> str:
                                            rows, cls="text") + "</div>"
 
 
-def summary(recs: list[dict]) -> str:
+def summary(recs: list[dict], link: bool = False) -> str:
+    """The headline numbers per contract. With ``link``, each ticker links to the contract's page (on the summary)."""
     rows = []
     for r in recs:
         pts, names = r["profile"]["points"], _names(r)
@@ -136,13 +137,15 @@ def summary(recs: list[dict]) -> str:
         em = np.array(pts["effective_maturity"])[i]
         near = nearest(r)
         normal = pts["probs"].get(r["ctd"], [0.0] * len(pts["centres"]))[i]
-        rows.append([f"<b>{r['contract']}</b>",
-                     f"{names[r['ctd']]} (O {prob(*r['ctd_keeps'])}, N {normal:.1%})", _day(r["horizon"]),
+        ticker = f"<b>{r['contract']}</b>"
+        if link:
+            ticker = f"<a href='{contract_href(r['asof'], r['contract'])}'>{ticker}</a>"
+        rows.append([ticker, f"{names[r['ctd']]} (O {prob(*r['ctd_keeps'])}, N {normal:.1%})", _day(r["horizon"]),
                      f"{r['f_market']:.4f}", _dv01_duration(pts["dv01"][i], r["f_market"]),
                      _dv01_duration(pts["label_dv01"][i], r["f_market"]),
                      f"{em:.1f}y / {pts['label_effective_maturity'][i]:.1f}y",
                      f"{r['vol']['width']:.1f}bp", _distance(near["rally"]), _distance(near["selloff"])])
-    table = _table(["contract", "CTD today, P(RCaD)<sup>1</sup>", "implied delivery<sup>2</sup>", "futures settle",
+    table = _table(["ticker", "CTD today, P(RCaD)<sup>1</sup>", "implied delivery<sup>2</sup>", "futures settle",
                     "DV01 per $100mm (duration)", "CTD-based DV01 (duration)",
                     "eff. maturity / CTD-based", "width (1σ)", "nearest switch, rally", "nearest switch, sell-off"],
                    rows, cls="summary")
@@ -262,7 +265,7 @@ LIGHT_MODEL_LEDE = (
 
 CSS = """
 :root { color-scheme: light; --surface: #fcfcfb; --plane: #f9f9f7; --ink: #0b0b0b; --ink2: #52514e;
-  --muted: #898781; --grid: #e1e0d9; --flag: #d03b3b; }
+  --muted: #898781; --grid: #e1e0d9; --flag: #d03b3b; --link: #1c5cab; }
 body { margin: 0; background: var(--plane); color: var(--ink);
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 1470px; margin: 0 auto; padding: 24px 16px 48px; }
@@ -282,7 +285,8 @@ th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: l
 table.text th, table.text td { text-align: left; }
 .flag { color: var(--flag); font-weight: 600; }
 ul.diag { color: var(--ink2); padding-left: 20px; }
-a { color: #1c5cab; } p.back { margin: 0 0 12px; }
+a { color: var(--link); } p.back { margin: 0 0 12px; }
+.hl { color: var(--link); font-weight: 700; }  /* text pointing to the contract pages, styled like their ticker links */
 footer { border-top: 1px solid var(--grid); margin-top: 40px; padding-top: 12px; color: var(--ink2); font-size: 13px;
   max-width: 75ch; }
 section h3 { margin-top: 28px; }
@@ -290,9 +294,9 @@ section h3 { margin-top: 28px; }
 
 # The summary's opening note: where the detail is, and which contracts aren't covered
 SUMMARY_NOTE = (
-    "<p class='note'>Detailed analytics for each contract (the shifted states, key-rate DV01s, CTD "
-    "probabilities, the distance to each switch, and the inputs) are on its own page: follow the ticker links "
-    "in the table below. ZT (2-year) and ZF (5-year) futures are omitted: their deliverable baskets span about "
+    "<p class='note'><span class='hl'>Detailed analytics for each contract (the shifted states, key-rate DV01s, CTD "
+    "probabilities, the distance to each switch, and the inputs) are on its own page</span>: follow the "
+    "<span class='hl'>ticker links</span> in the tables below. ZT (2-year) and ZF (5-year) futures are omitted: their deliverable baskets span about "
     "a year of maturity or less, so a change of CTD moves their duration and DV01 little.</p>")
 
 
@@ -331,7 +335,7 @@ def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | 
         f"<p class='lede'>{contracts}. {LIGHT_MODEL_LEDE}</p>",
         SUMMARY_NOTE,
         contracts_table(recs, link=True),
-        summary(recs),
+        summary(recs, link=True),
         "<h2>Charts</h2>", interactive.NOTE,
         *(interactive.section(c, f"<h3><a href='{contract_href(r['asof'], r['contract'])}'>{r['contract']}</a></h3>")
           for c, r in zip(data, recs)),
