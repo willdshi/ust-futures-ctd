@@ -75,7 +75,9 @@ This write-up replaces "the CTD" with every deliverable bond, each weighted by i
 
 The model runs at the end of each day from public data: Treasury prices, CME futures and option settlements, conversion factors, SOFR futures and the Treasury par curve. It has four steps.
 
-**Forward prices.** Each deliverable bond is priced forward to delivery at term repo, built from the SOFR futures strip, and divided by its conversion factor. Delivery is assumed on the last day of the month when carry is positive (as for ZBZ6, on 31 December 2026), and on the first day when it is negative.
+**Forward prices.** Each deliverable bond is priced forward to delivery at term repo, built from the SOFR futures strip, and divided by its conversion factor. Delivery is assumed on the last day of the month when carry is positive (as for ZBZ6, on 31 December 2026), and on the first day when it is negative.[^carry]
+
+[^carry]: The sign is that of the basket's probability-weighted carry, $\sum_i p_i\,(C_{i,\text{first}} - C_{i,\text{last}})$: each bond's converted forward price on the first delivery day less on the last, weighted by its option-implied probability $p_i$ of being CTD. Following today's CTD alone would make the date flip each time two bonds of opposite carry trade places, as ZN's did 13 times between September and October 2026.
 
 **Switch points.** Every bond's forward yield is shifted in parallel by $z$ basis points, and each bond is repriced. The envelope $E(z) = \min_i P_i(z)/\text{CF}_i$ is the model's futures price at delivery, and the shifts $z_k$ where its minimum changes bond are the switch points, found exactly by root-finding. Each switch point is also expressed as a futures price, recentred on the market settlement:
 
@@ -162,6 +164,8 @@ ZN sits in between, and shows the shape the quality option gives a duration prof
 
 **An interest rate model.** One factor can't represent slope moves independent of the level. Yet for a basket that spans 15 to 25 years, slope moves alone can cause a switch. A two-factor model of the curve (or a full term structure model), calibrated to the options, would price those switches directly. It would give probabilities at delivery rather than at option expiry, and is the route to valuing the end-of-month and wildcard options and a futures fair value, all of which are out of scope today.
 
+The futures themselves could help calibrate such a model. A futures price sits below the cheapest converted forward price by the value of the short's delivery options. The quality option's share of that value depends on how likely the curve is to steepen or flatten enough to cause a switch. Across contracts and over time, futures prices therefore carry information about slope volatility, and about how slope moves with the level of yields, that options on the level alone don't reveal. The obstacle is repo. A futures price also depends on the repo rate of the likely CTD: when that bond is special, its carry is higher and its forward price lower, which pushes the futures price down in the same direction as the delivery options. The model funds every bond at general collateral, and the special repo rates the market expects for the CTD aren't available from free data. So the gap between the futures settlement and the model's envelope (1.3/32nds for ZBZ6 on 23 October) mixes the two, and a slope signal can't be separated from it cleanly without a view on the CTD's repo.
+
 **Bond-specific spreads.** Individual bonds trade rich or cheap to the curve, and a bond in demand can be special in repo, with financing well below general collateral. The model prices each bond from its own price and funds all of them at general collateral repo. A few basis points of richness, or special repo on one bond, can move a switch point. Modelling spreads as mean-reverting, and adding bond-specific repo where a data source exists, would address this.
 
 # Limitations
@@ -171,4 +175,3 @@ Beyond what the potential future work above addresses:
 - **The probabilities are risk-neutral.** They come from option prices, which include a risk premium, so they are the market's pricing of a switch, not a forecast of one.
 - **Free prices are imperfect.** Treasury's published end-of-day prices are rounded and aren't struck at the same moment as the futures settlement. A few ticks of noise can move a switch point by a basis point or two.
 - **Thin options for UB and TN.** Few of their option strikes trade on a given day, so their probabilities, and often their at-the-money vol, rest on CME's settlement curve rather than that day's trades.
-- **No calibration history yet.** Until the backtest is done, the probabilities are option-implied but unscored.
