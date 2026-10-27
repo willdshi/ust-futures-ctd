@@ -93,6 +93,11 @@ def test_summary_page_holds_the_charts_and_links_each_contract_but_no_tables(rec
     assert page.render(ASOF, [zn, rec]) == html
 
 
+def test_every_page_carries_the_disclaimer(rec):
+    for html in (page.render(ASOF, [rec]), page.render_contract(ASOF, rec)):
+        assert html.count("not investment advice") == 1 and html.index("<footer>") < html.index("</main>")
+
+
 def test_contract_page_holds_its_charts_and_every_table(rec):
     html = page.render_contract(ASOF, rec)
     assert "<title>ZBZ6 CTD report 2026-10-21</title>" in html and "<a href='../2026-10-21.html'>" in html

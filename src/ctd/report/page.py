@@ -283,6 +283,8 @@ table.text th, table.text td { text-align: left; }
 .flag { color: var(--flag); font-weight: 600; }
 ul.diag { color: var(--ink2); padding-left: 20px; }
 a { color: #1c5cab; } p.back { margin: 0 0 12px; }
+footer { border-top: 1px solid var(--grid); margin-top: 40px; padding-top: 12px; color: var(--ink2); font-size: 13px;
+  max-width: 75ch; }
 section h3 { margin-top: 28px; }
 """ + interactive.CSS
 
@@ -301,13 +303,19 @@ def check_schema(recs: list[dict]) -> None:
                              f"{MIN_SCHEMA} or later; re-run ctd run")
 
 
+# On every page: readers arriving at a page directly never see the README's disclaimer
+DISCLAIMER = (
+    "<footer>This is a personal research project. It is not investment advice, comes with no warranty, and its "
+    "outputs should not be relied on for trading or risk management.</footer>")
+
+
 def _document(title: str, body: list[str], data: list[dict]) -> str:
     """A page whose charts (``data``, from ``interactive.chart_data``) are drawn in the browser."""
     head, tail = interactive.scripts(data)
     return (f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
             f"<title>{title}</title><style>{CSS}</style>{head}</head>\n<body><main>\n" + "\n".join(body)
-            + f"\n</main>\n{tail}\n</body></html>\n")
+            + f"\n{DISCLAIMER}\n</main>\n{tail}\n</body></html>\n")
 
 
 def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | None = None) -> str:
