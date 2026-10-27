@@ -3,7 +3,11 @@
 One row per date, product, option month, right and strike. Sources and precedence:
 
 - ``databento_opt_backfill`` before 2026-10-16 (data.md 5.12; ``ctd.data.databento.read_options``);
-- ``cme_bulletin`` (Section 42) from 2026-10-16, the first stored bulletin (data.md 5.9).
+- ``cme_bulletin`` (Section 42) from 2026-10-16, the first stored bulletin (data.md 5.9);
+- ``databento_daily`` from 2026-10-26, the daily pull (data.md 5.14;
+  ``ctd.data.databento.read_daily_options``). The bulletin becomes a cross-check (``overlap``), stored
+  on the days the bookmarklet is clicked. Like the backfill, it also settles strikes the bulletin
+  leaves out. Open interest is the evening's first figure until the next date's file brings the revision.
 
 A cabinet settlement (``CAB`` in the bulletin; 0.001 in Databento, 0.0005 for ZT, 0.0 before
 2017-05-19) is ``settle`` null and ``cabinet`` true. No volume or open interest is 0 from both
@@ -17,7 +21,7 @@ from datetime import date
 
 import pyarrow as pa
 
-from ctd.data import cme_bulletin, databento, refdata
+from ctd.data import cme_bulletin, databento, databento_daily, refdata
 from ctd.data.derived.store import Source, Table, file_ref
 from ctd.reference.options import underlying_month
 
@@ -73,7 +77,39 @@ DATABENTO = Source(databento.OPT, 3, _databento_units, lambda store, key: databe
                    lambda key: (key, None))
 
 
+def _daily_units(store) -> dict[str, list[dict]]:
+    """Per date and option unit: the date's statistics and lookup, every definitions file of the unit up
+    to the date (a day's holds only new strikes), and the next business day's statistics once stored."""
+    cal, out, defs = refdata.calendar("cme"), {}, {}
+    for d in sorted(store.asofs()):
+        for unit in store.units(d, databento.DAILY):
+            if unit not in databento_daily.OPT_UNITS:
+                continue
+            names = store.names(d, databento.DAILY, unit)
+            defs.setdefault(unit, []).extend(file_ref(store, d, databento.DAILY, unit, n)
+                                             for n in names if "_definition_" in n)
+            nxt = cal.add_business_days(d, 1)
+            out[f"{d.isoformat()}/{unit}"] = (
+                [file_ref(store, d, databento.DAILY, unit, n) for n in names if "_definition_" not in n]
+                + list(defs[unit])
+                + [file_ref(store, nxt, databento.DAILY, unit, n) for n in store.names(nxt, databento.DAILY, unit)
+                   if "_statistics_" in n])
+    return out
+
+
+def _daily_read(store, key: str) -> tuple[pa.Table, list[str]]:
+    iso, unit = key.split("/")
+    asof = date.fromisoformat(iso)
+    dates = sorted(d for d in store.asofs() if d <= asof and store.names(d, databento.DAILY, unit))
+    return databento.read_daily_options(store, asof, unit, dates)
+
+
+DAILY = Source(databento.DAILY, 1, _daily_units, _daily_read, lambda key: (key.split("/")[1][1:], int(key[:4])))
+
+
 def winner(asof: date, product: str) -> str:
+    if asof >= databento_daily.FIRST_DATE:
+        return databento.DAILY
     return "cme_bulletin" if asof >= BULLETIN_FROM else "databento_opt_backfill"
 
 
@@ -91,4 +127,4 @@ def chain(dstore, product: str, asof: date) -> tuple[list[cme_bulletin.OptionSet
 
 TABLE = Table("options", 1, SCHEMA, key=("asof", "product", "label", "right", "strike"),
               compare=("expiry", "underlying_month", "settle", "cabinet", "volume", "open_interest"),
-              sources=(DATABENTO, BULLETIN), winner=winner)
+              sources=(DATABENTO, BULLETIN, DAILY), winner=winner)

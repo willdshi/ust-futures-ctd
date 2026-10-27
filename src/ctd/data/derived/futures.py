@@ -7,10 +7,15 @@ Sources and precedence:
   and ZQ months 3 to 8 too, from ``databento_stir_backfill`` (data.md 5.13). The two pulls are one
   source, since precedence picks one source per date and product; their rows are all labelled
   ``databento_fut_backfill``, and the month tells which pull a row came from;
-- ``cme_fut`` (Treasuries) and ``cme_stir`` (SR1, SR3, ZQ) from 2026-10-14: every listed month (data.md 5.8).
+- ``cme_fut`` (Treasuries) and ``cme_stir`` (SR1, SR3, ZQ) from 2026-10-14: every listed month (data.md 5.8);
+- ``databento_daily`` from 2026-10-26 for the Treasuries (front two) and SR1 (front seven), the daily
+  pull (data.md 5.14); SR3 and ZQ stay with ``cme_stir``, which the daily pull doesn't cover. The CME
+  pages become a cross-check (``overlap``), stored on the days the bookmarklet is clicked.
 
 ``open_interest`` is at the close of ``asof``. CME's page for day D shows the previous business
-day's, so a CME row for D takes it from D+1's page and stays null until that page is stored.
+day's, so a CME row for D takes it from D+1's page and stays null until that page is stored. A daily
+Databento row has the evening's first figure from D's file, replaced by the revision (the one CME's
+page shows) once D+1's file is stored.
 Volume isn't kept: CME's page has a same-day estimate, Databento the final cleared volume.
 """
 
@@ -18,7 +23,7 @@ from datetime import date
 
 import pyarrow as pa
 
-from ctd.data import cme_settlements, databento, refdata
+from ctd.data import cme_settlements, databento, databento_daily, refdata
 from ctd.data.derived.store import Source, Table, file_ref
 from ctd.reference.contracts import MONTH_CODES
 
@@ -80,12 +85,37 @@ def _databento_units(store) -> dict[str, list[dict]]:
 
 DATABENTO = Source(databento.FUT, 2, _databento_units, lambda store, key: databento.read_futures(store, key),
                    lambda key: (key, None))
+
+
+def _daily_units(store) -> dict[str, list[dict]]:
+    """Per date and product: the date's statistics and lookup, and the next business day's statistics
+    (the revised open interest) once stored, so storing it re-reads the date."""
+    cal, out = refdata.calendar("cme"), {}
+    for d in store.asofs():
+        for product in store.units(d, databento.DAILY):
+            if product in databento_daily.FUT_MONTHS:
+                nxt = cal.add_business_days(d, 1)
+                out[f"{d.isoformat()}/{product}"] = (
+                    [file_ref(store, d, databento.DAILY, product, n) for n in store.names(d, databento.DAILY, product)]
+                    + [file_ref(store, nxt, databento.DAILY, product, n) for n in store.names(nxt, databento.DAILY, product)
+                       if "_statistics_" in n])
+    return out
+
+
+def _daily_read(store, key: str) -> tuple[list[dict], list[str]]:
+    iso, product = key.split("/")
+    return databento.read_daily_futures(store, date.fromisoformat(iso), product)
+
+
+DAILY = Source(databento.DAILY, 1, _daily_units, _daily_read, lambda key: (key.split("/")[1], int(key[:4])))
 STIR = ("SR1", "SR3", "ZQ")
 
 
 def winner(asof: date, product: str) -> str:
     if asof < CME_FROM:
         return databento.FUT
+    if asof >= databento_daily.FIRST_DATE and product in databento_daily.FUT_MONTHS:
+        return databento.DAILY
     return "cme_stir" if product in STIR else "cme_fut"
 
 
@@ -97,4 +127,4 @@ def settlements(dstore, product: str, asof: date) -> tuple[dict[date, float], li
 
 
 TABLE = Table("futures", 1, SCHEMA, key=("asof", "product", "month"), compare=("contract", "settle", "open_interest"),
-              sources=(DATABENTO, _cme_source("cme_fut"), _cme_source("cme_stir")), winner=winner)
+              sources=(DATABENTO, _cme_source("cme_fut"), _cme_source("cme_stir"), DAILY), winner=winner)

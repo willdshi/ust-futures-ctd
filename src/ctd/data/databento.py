@@ -1,6 +1,7 @@
-"""Readers for the paid Databento backfills (data.md 5.11, 5.12, 5.13). No fetcher: the files are
-pulled once by the scripts in ``scratch/`` and stored under ``raw/2026-10-22/`` (``raw/2026-10-26/``
-for the extra SR1 and ZQ months).
+"""Readers for the paid Databento backfills (data.md 5.11, 5.12, 5.13) and the daily pull (5.14). The
+backfills have no fetcher: they were pulled once by the scripts in ``scratch/`` and stored under
+``raw/2026-10-22/`` (``raw/2026-10-26/`` for the extra SR1 and ZQ months). The daily pull's fetcher is
+``ctd.data.databento_daily``.
 
 Statistics records (``stat_type`` 3 settlement, 6 cleared volume, 9 open interest) carry
 ``ts_ref``, the trading day they refer to, stamped at midnight UTC: its UTC date is the trading
@@ -21,6 +22,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 
+from ctd.data import refdata
 from ctd.reference.contracts import MONTH_CODES, parse_contract
 from ctd.reference.options import LABELS, underlying_month
 
@@ -358,3 +360,58 @@ def read_options(store, product: str, log=None) -> tuple[pa.Table, list[str]]:
     if log:
         log(f"{OPT}/{product}: {len(stats)} statistics records")
     return option_rows(stats, defs, product)
+
+
+# --- Daily pulls (data.md 5.14) ----------------------------------------------------------------
+
+DAILY = "databento_daily"
+
+
+def _daily_array(store, d: date, unit: str, kind: str) -> np.ndarray | None:
+    import databento as db
+
+    name = f"{unit}_{kind}_{d.isoformat()}.dbn.zst"
+    if name not in store.names(d, DAILY, unit):
+        return None
+    return db.DBNStore.from_bytes(store.read(d, DAILY, unit, name)).to_ndarray()
+
+
+def daily_stats(store, asof: date, unit: str) -> pd.DataFrame:
+    """``unit``'s statistics records for trade date ``asof``: from its own file (finals, the evening's
+    open interest and cleared volume) and, if stored, the next business day's (the revised open
+    interest, sent the next morning, which is what CME's page shows). Each file also holds the
+    previous trade date's revisions, which are dropped."""
+    nxt = refdata.calendar("cme").add_business_days(asof, 1)
+    frames = [stats_frame(a) for a in (_daily_array(store, asof, unit, "statistics"),
+                                       _daily_array(store, nxt, unit, "statistics")) if a is not None]
+    stats = pd.concat(frames, ignore_index=True)
+    return stats[stats["d"] == np.datetime64(asof)]
+
+
+def daily_lookup(store, asof: date, unit: str) -> dict:
+    return json.loads(store.read(asof, DAILY, unit, f"{unit}_symbology_raw_symbol_{asof.isoformat()}.json"))
+
+
+def read_daily_futures(store, asof: date, product: str) -> tuple[list[dict], list[str]]:
+    """Futures table rows for ``product`` on ``asof`` from the daily pull (``daily_stats``, the date's lookup)."""
+    return futures_rows(daily_stats(store, asof, product), daily_lookup(store, asof, product), product)
+
+
+def read_daily_options(store, asof: date, unit: str, definition_dates: list[date]) -> tuple[pa.Table, list[str]]:
+    """Options table rows for ``unit`` (``OZN``) on ``asof`` from the daily pull.
+
+    A day's definitions file holds only the strikes not defined before (the first file holds all),
+    so contracts come from every file in ``definition_dates`` (on or before ``asof``), matched to the
+    date's settlements by (instrument id, raw symbol) through the date's lookup, ids being reused.
+    """
+    lookup = daily_lookup(store, asof, unit)
+    defs = pd.concat([definitions_frame(a) for d in definition_dates
+                      if (a := _daily_array(store, d, unit, "definition")) is not None])
+    defs = defs.assign(symbol=[s.decode() for s in defs["raw_symbol"]]).drop_duplicates(["instrument_id", "symbol"])
+    on_date = {(int(i), symbol_on(iv, asof)) for i, iv in lookup["result"].items()}
+    defs = defs[[(int(i), s) in on_date for i, s in zip(defs["instrument_id"], defs["symbol"])]]
+    # one definition per id on the date, valid all day, so option_rows' as-of match takes it
+    end = (np.datetime64(asof, "D") + np.timedelta64(1, "D")).astype("datetime64[ns]").astype("int64")
+    defs = defs.drop(columns="symbol").assign(first=0, last=end)
+    return option_rows(daily_stats(store, asof, unit), defs, unit[1:])
+

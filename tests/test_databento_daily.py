@@ -7,10 +7,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from ctd.data import databento
 from ctd.data import databento_daily as dd
 from ctd.data import manifest as mf
 from ctd.data import registry
 from ctd.data.databento import OPEN_INTEREST, SETTLE, UNDEF_PRICE, UNDEF_TS, stats_frame
+from ctd.data.derived import futures, options
+from ctd.data.derived.store import DerivedStore, build
 from ctd.data.fetch import fetch_date
 
 MON = date(2026, 10, 26)
@@ -193,3 +196,106 @@ def test_an_incomplete_pull_is_not_stored(store, client):
 def test_not_collected_before_the_first_date(store, client):
     _, man = fetch(store, asof=date(2026, 10, 23), today=date(2026, 10, 27))
     assert man["status"] == mf.NOT_EXPECTED and client.calls == []
+
+
+# --- Reading the daily files into the derived tables (phase 1e items 3, 4) ----------------------
+
+TUE, WED = date(2026, 10, 27), date(2026, 10, 28)
+DEF = np.dtype([("ts_recv", "u8"), ("instrument_id", "u4"), ("instrument_class", "S1"), ("raw_symbol", "S22"),
+                ("strike_price", "i8"), ("expiration", "u8"), ("underlying", "S22")])
+
+
+def definition(t, iid, sym, k):
+    right = sym.split()[1][0]
+    return (ns(t), iid, right.encode(), sym.encode(), round(k * 1e9), ns("2026-11-20T22:00Z"), b"ZNZ6")
+
+
+def lookup(d: date, symbols: dict[int, str]) -> bytes:
+    nxt = date.fromordinal(d.toordinal() + 1).isoformat()
+    return json.dumps({"start_date": d.isoformat(), "result": {str(i): [{"d0": d.isoformat(), "d1": nxt, "s": s}]
+                                                              for i, s in symbols.items()}}).encode()
+
+
+@pytest.fixture
+def daily(store, monkeypatch):
+    """Stored daily files whose DBN content is a key into ``arrays``: (date, unit, kind) -> record array."""
+    arrays = {}
+
+    def put(d: date, unit: str, kind: str, a: np.ndarray, symbols: dict[int, str] | None = None):
+        arrays[(d, unit, kind)] = a
+        store.write(d, dd.SOURCE, unit, f"{unit}_{kind}_{d}.dbn.zst", f"{d}/{unit}/{kind}".encode(), {})
+        if symbols is not None:
+            store.write(d, dd.SOURCE, unit, f"{unit}_symbology_raw_symbol_{d}.json", lookup(d, symbols), {})
+
+    monkeypatch.setattr(databento, "_daily_array", lambda s, d, unit, kind: arrays.get((d, unit, kind)) if
+                        f"{unit}_{kind}_{d}.dbn.zst" in s.names(d, dd.SOURCE, unit) else None)
+    return put
+
+
+def test_daily_futures_take_the_date_and_its_revised_open_interest_from_the_next_file(store, daily):
+    daily(MON, "ZN", "statistics", records(
+        ("2026-10-26T12:00Z", 1, "2026-10-23", OPEN_INTEREST, 0, None, 900),  # Friday's revision: not this date's
+        ("2026-10-26T19:00Z", 1, "2026-10-26", SETTLE, 2, 106.0, 0),
+        ("2026-10-26T23:15Z", 1, "2026-10-26", SETTLE, 3, 106.109375, 0),
+        ("2026-10-27T01:30Z", 1, "2026-10-26", OPEN_INTEREST, 0, None, 1000)), {1: "ZNZ6"})
+    assert databento.read_daily_futures(store, MON, "ZN") == ([
+        {"asof": MON, "product": "ZN", "month": date(2026, 12, 1), "contract": "ZNZ6", "settle": 106.109375,
+         "open_interest": 1000}], [])
+    daily(TUE, "ZN", "statistics", records(("2026-10-27T14:05Z", 1, "2026-10-26", OPEN_INTEREST, 0, None, 1100)),
+          {1: "ZNZ6"})
+    assert databento.read_daily_futures(store, MON, "ZN")[0][0]["open_interest"] == 1100
+
+
+def test_daily_options_match_definitions_from_every_earlier_file_by_id_and_symbol(store, daily):
+    daily(MON, "OZN", "definition", np.array([definition("2026-10-26T23:00Z", 101, "OZNZ6 C1120", 112.0),
+                                              definition("2026-10-26T23:00Z", 102, "OZNZ6 P1100", 110.0)], dtype=DEF))
+    # on the 27th id 102 is reused for a new strike, defined in that day's file
+    daily(TUE, "OZN", "definition", np.array([definition("2026-10-27T15:00Z", 102, "OZNZ6 P1095", 109.5)], dtype=DEF))
+    daily(TUE, "OZN", "statistics", records(
+        ("2026-10-27T23:15Z", 101, "2026-10-27", SETTLE, 3, 0.03125, 0),
+        ("2026-10-27T23:15Z", 102, "2026-10-27", SETTLE, 3, 3.5, 0),
+        ("2026-10-28T01:30Z", 102, "2026-10-27", OPEN_INTEREST, 0, None, 40)), {101: "OZNZ6 C1120", 102: "OZNZ6 P1095"})
+    table, notes = databento.read_daily_options(store, TUE, "OZN", [MON, TUE])
+    assert [(r["label"], r["right"], r["strike"], r["settle"], r["open_interest"]) for r in table.to_pylist()] == [
+        ("DEC26", "C", 112.0, 0.03125, 0), ("DEC26", "P", 109.5, 3.5, 40)]
+
+
+def test_daily_units_list_the_next_days_statistics_and_every_earlier_definitions_file(store):
+    for d in (MON, TUE):
+        for unit, kinds in (("ZN", ("statistics",)), ("OZN", ("statistics", "definition"))):
+            for kind in kinds:
+                store.write(d, dd.SOURCE, unit, f"{unit}_{kind}_{d}.dbn.zst", b"x", {})
+            store.write(d, dd.SOURCE, unit, f"{unit}_symbology_raw_symbol_{d}.json", b"{}", {})
+    fut = futures.DAILY.units(store)
+    assert sorted(fut) == ["2026-10-26/ZN", "2026-10-27/ZN"]
+    assert [(f["asof"], f["name"]) for f in fut["2026-10-26/ZN"]] == [
+        ("2026-10-26", "ZN_statistics_2026-10-26.dbn.zst"), ("2026-10-26", "ZN_symbology_raw_symbol_2026-10-26.json"),
+        ("2026-10-27", "ZN_statistics_2026-10-27.dbn.zst")]
+    opt = options.DAILY.units(store)
+    assert sorted(f["name"] for f in opt["2026-10-27/OZN"]) == [
+        "OZN_definition_2026-10-26.dbn.zst", "OZN_definition_2026-10-27.dbn.zst", "OZN_statistics_2026-10-27.dbn.zst",
+        "OZN_symbology_raw_symbol_2026-10-27.json"]
+    assert "OZN_definition_2026-10-27.dbn.zst" not in {f["name"] for f in opt["2026-10-26/OZN"]}
+    assert options.DAILY.scope("2026-10-27/OZN") == ("ZN", 2026) and futures.DAILY.scope("2026-10-26/SR1") == ("SR1", 2026)
+
+
+def test_daily_pull_wins_from_its_first_date():
+    assert futures.winner(date(2026, 10, 23), "ZN") == "cme_fut" and futures.winner(MON, "ZN") == dd.SOURCE
+    assert futures.winner(MON, "SR1") == dd.SOURCE and futures.winner(MON, "ZQ") == "cme_stir"
+    assert options.winner(date(2026, 10, 23), "ZB") == "cme_bulletin" and options.winner(MON, "ZB") == dd.SOURCE
+
+
+def test_storing_the_next_day_rereads_the_date(store, daily):
+    dstore = DerivedStore(store.root)
+    daily(MON, "ZN", "statistics", records(("2026-10-26T23:15Z", 1, "2026-10-26", SETTLE, 3, 106.0, 0),
+                                           ("2026-10-27T01:30Z", 1, "2026-10-26", OPEN_INTEREST, 0, None, 1000)),
+          {1: "ZNZ6"})
+    build(dstore, store, futures.TABLE, log=lambda _: None)
+    assert dstore.read("futures")[["contract", "open_interest", "source"]].values.tolist() == [["ZNZ6", 1000, dd.SOURCE]]
+    daily(TUE, "ZN", "statistics", records(("2026-10-27T14:05Z", 1, "2026-10-26", OPEN_INTEREST, 0, None, 1100),
+                                           ("2026-10-27T23:15Z", 1, "2026-10-27", SETTLE, 3, 106.5, 0),
+                                           ("2026-10-28T01:30Z", 1, "2026-10-27", OPEN_INTEREST, 0, None, 1200)),
+          {1: "ZNZ6"})
+    assert build(dstore, store, futures.TABLE, log=lambda _: None).read[dd.SOURCE] == 2  # the 26th again, and the 27th
+    t = dstore.read("futures")
+    assert list(zip(t["asof"], t["settle"], t["open_interest"])) == [(MON, 106.0, 1100), (TUE, 106.5, 1200)]
