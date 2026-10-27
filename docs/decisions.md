@@ -34,6 +34,16 @@ So hibernation delays collection rather than losing data, unless the PC is off f
 
 **After a longer absence, by hand:** run `ctd fetch --asof <date>` for each missed day, or `ctd backfill`.
 
+## When the morning derive may run (design §10 phase 1e item 5)
+
+**Status:** undecided, tabled (raised 2026-10-27).
+
+**Now:** `ctd-morning-derive` (09:30, `scripts/morning_derive.ps1`) waits until `ctd-morning-sofr` and `ctd-morning-databento` have started that day and stopped running, logs their exit codes, and derives whatever they stored. It waits for them to finish, not to succeed. That is harmless in itself (a derive without D just lacks D, and the next one adds it), but it's not the dependency expected, and nothing says D is missing.
+
+**What happened (2026-10-27):** both collection tasks started together at 10:11 after the PC woke and appended to one log; the Databento task's command never ran (Windows PowerShell can't append to a file another process is writing), yet the task reported exit code 0. Derive ran at 10:14 without 10-26's Databento data. Fixed separately (each task has its own log), but it shows a task's exit code can't be trusted as the gate.
+
+**Proposed:** gate on the stored data, not the tasks. Before deriving, require `databento_daily` `ok` in D's manifest and `nyfed_rates` `ok` in D+1's (D's SOFR is stored under the next day), D being the previous `cme` business day. Otherwise skip the derive, log which source is missing and raise a desktop alert, as the evening fetch does (`ctd.data.alert`). Open: whether to skip the derive or derive anyway and only alert, and whether a later run (the evening fetch, or a second derive) should retry once the data arrives.
+
 ## Key-rate grid for KRDs (design §5.9)
 
 **Status:** adopted (2026-10-22), from [outputs.md](outputs.md) Conventions.
