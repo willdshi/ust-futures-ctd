@@ -1,12 +1,13 @@
 ---
 title: "Treasury Futures DV01 beyond the cheapest to deliver: how stable is duration?"
-author: Will Shi
+author: William Shi
 date: October 2026
 geometry: margin=1in
 numbersections: true
 ---
 
 <!--
+Figures: python scripts/writeup_figures.py (from data/results/light for 2026-10-23)
 Build: pandoc docs/writeup.md -o docs/writeup.pdf --pdf-engine=xelatex --resource-path=docs
 Numbers quoted are ZBZ6 on 2026-10-23 (light model) unless stated.
 -->
@@ -43,9 +44,9 @@ Conversion factors price every bond at a 6% yield. If every bond in the basket y
 - **Yields above 6%**: high-duration bonds (long maturity, low coupon) lose the most value, and become cheapest to deliver.
 - **Yields below 6%**: low-duration bonds become cheapest.
 
-Coupons and the shape of the curve shift these boundaries, but the rule of thumb holds. So which bond is cheapest depends on the level of yields, and the short's right to choose is an option: the **quality option**. Each bond's converted forward price falls as yields rise, at a rate set by its duration, so the bonds' price lines cross. The futures price follows the lowest of them (the envelope), and each place where the lowest line changes is a **switch point**. Figure 1 shows this for ZBZ6, with each bond's converted price measured above the cheapest one: the CTD sits on the zero line, and a switch point is where another bond's line comes down to meet it.
+Coupons and the shape of the curve shift these boundaries, but the rule of thumb holds. So which bond is cheapest depends on the level of yields, and the short's right to choose is an option: the **quality option**. Each bond's converted forward price falls as yields rise, at a rate set by its duration, so the bonds' price lines cross. The futures price follows the lowest of them (the envelope), and each place where the lowest line changes is a **switch point**. Figure 1 shows this for ZBZ6. In the top panel the envelope bends at each switch point, getting steeper in a sell-off as longer bonds take over, but the converted prices are so close that the switches are hard to see. The bottom panel measures each bond's converted price above the cheapest one instead: the envelope becomes the zero line, and a switch point is where another bond's line comes down to meet it.
 
-![ZBZ6 on 2026-10-23: the converted forward price of each bond that is cheapest somewhere within ±100bp, in 32nds above the cheapest bond, against a parallel shift in forward yields. Labels name the CTD in each region (the 2.25% of August 2049, CTD for under 2bp around +47bp, is unlabelled). Dotted lines are switch points; the shaded band is $\pm 1\sigma$ of the move to delivery.](images/zbz6-envelope-2026-10-23.png){width=90%}
+![ZBZ6 on 2026-10-23: the converted forward price of each bond that is cheapest somewhere within ±100bp, against a parallel shift in forward yields. Top: in points, with the envelope (the futures price) in blue. Bottom: in 32nds above the cheapest bond. Labels name the CTD in each region (the 2.25% of August 2049, CTD for under 2bp around +47bp, is unlabelled). Dotted lines are switch points; the shaded band is $\pm 1\sigma$ of the move to delivery.](images/zbz6-envelope-2026-10-23.png){width=90%}
 
 The quality option matters most when:
 
@@ -111,7 +112,7 @@ Figure 2 is the main output: the futures DV01 across parallel shifts in yields, 
 
 The model's DV01 is lowest about 35bp below today's yields. In a rally, each bond's own DV01 rises, but the CTD also moves to shorter bonds; near today's level the second effect wins.
 
-![ZBZ6 DV01 profile on 2026-10-23. Top: futures DV01 across parallel shifts in basket forward yields, probability-weighted (blue, with the band for vol ±10%) against CTD-based (grey). Bottom: the share of DV01 at each key rate.](images/zbz6-dv01-profile-heatmap-2026-10-23.png){width=90%}
+![ZBZ6 DV01 profile on 2026-10-23. Top: futures DV01 across parallel shifts in basket forward yields, probability-weighted (blue, with the band for vol ±10%) against CTD-based (grey). Bottom: the share of DV01 at each key rate.](images/zbz6-dv01-profile-2026-10-23.png){width=90%}
 
 ![ZBZ6 key rate DV01 change from today at $\pm 1\sigma$ and $\pm 2\sigma$, 2026-10-23: probability-weighted (bars) against CTD-based (dashes).](images/zbz6-krd-change-2026-10-23.png){width=90%}
 
@@ -134,7 +135,15 @@ Table 1 compares the two probability estimates at each switch point. For a like-
 
 Within $\pm1.5\sigma$, the two agree to about 2 percentage points, inside the noise of a single put spread. The only real gap is in the far wing: the switch at $+126$bp is more than $4\sigma$ away at the width to option expiry, where the normal model gives nothing and the option settlements still price 1.6%. That is skew, though at that distance it rests on how CME extrapolates its settlement curve, so it is only indicative.
 
-<!-- TODO: optional ZN or UB contrast. -->
+## Comparison with TN and ZN
+
+TN is the contract least prone to switching. Its December basket has only two notes, three months apart in maturity: the 4.375% of May 2036 (the CTD) and the 4.625% of August 2036. The one switch point is 78bp of sell-off away ($1.7\sigma$), and the two notes' durations barely differ, so the probability-weighted and CTD-based DV01s lie almost on top of each other (Figure 4). The DV01 falls steadily, from \$88.5k at $-2\sigma$ to \$75.3k at $+2\sigma$, through the notes' own convexity alone. For TN, the CTD-based figure is the right answer.
+
+![TNZ6 DV01 profile on 2026-10-23: a two-note basket with one distant switch point, where the probability-weighted and CTD-based DV01s nearly coincide.](images/tnz6-dv01-profile-2026-10-23.png){width=75%}
+
+ZN sits in between, and shows the shape the quality option gives a duration profile. Its December basket has 10 notes maturing between June 2033 and November 2034. With forward yields near 4.9%, well below 6%, the CTD is the shortest note, the 3.875% of August 2033, and the options give it over a 90% chance of remaining CTD. The nearest switches are 48bp of rally away, to a slightly shorter note, and 73bp of sell-off away ($1.9\sigma$), to the 3.875% of August 2034, a year longer. Two effects pull against each other in a sell-off: the notes' convexity lowers the DV01, and the growing chance of a switch to the longer note raises it. The probability-weighted DV01 is therefore U-shaped (Figure 5). It is lowest, at \$61.2k, about 30bp above today's yields, and rises on both sides, to \$63.1k at $+100$bp. The CTD-based figure instead keeps falling, to about \$58.7k, then jumps by about \$7k (12%) at the switch.
+
+![ZNZ6 DV01 profile on 2026-10-23: the probability-weighted DV01 is U-shaped, as convexity lowers it in a sell-off and the chance of a switch to a longer note raises it.](images/znz6-dv01-profile-2026-10-23.png){width=75%}
 
 # Validation
 
@@ -145,11 +154,11 @@ Within $\pm1.5\sigma$, the two agree to about 2 percentage points, inside the no
 
 **Not yet done: a historical backtest.** The real test of the probabilities is whether bonds given a 30% chance of being CTD turn out to be CTD about 30% of the time. The plan is to run the model over past delivery cycles with large moves, such as the 2022–23 sell-off. Its probabilities would then be scored against the bond actually cheapest at delivery, with a Brier score and a reliability plot, contract by contract.
 
-# Further work
+# Potential future work
 
-**Betas.** The model shifts every forward yield by the same amount. In practice yields across a 10-year basket don't move one-for-one: the curve tends to steepen or flatten as its level changes. The next step regresses yield changes at each published tenor on one reference yield per contract (the 20-year for ZB). Each bond then moves by its own beta, interpolated at its maturity. Betas would be re-estimated daily, so the DV01 series doesn't jump when they are refitted; shrunk slightly towards 1; and also estimated on sell-off days alone, in case those differ. Switch points depend on differences in beta between bonds. For ZB, a beta error of 0.03 moves a switch 30bp away by about 1bp. The leftover curve noise the betas don't explain also widens the probabilities around switch points that are close together.
+**Betas.** The model shifts every forward yield by the same amount. In practice yields across a 10-year basket don't move one-for-one: the curve tends to steepen or flatten as its level changes. One option is to regress yield changes at each published tenor on one reference yield per contract (the 20-year for ZB). Each bond then moves by its own beta, interpolated at its maturity. Betas would be re-estimated daily, so the DV01 series doesn't jump when they are refitted; shrunk slightly towards 1; and also estimated on sell-off days alone, in case those differ. Switch points depend on differences in beta between bonds. For ZB, a beta error of 0.03 moves a switch 30bp away by about 1bp. The leftover curve noise the betas don't explain also widens the probabilities around switch points that are close together.
 
-**The option smile.** The normal model uses one at-the-money vol and ignores skew. The planned replacement fits a normal SABR smile to each option expiry and takes the probabilities from the fitted curve's slope across strikes. This gives one consistent distribution for every switch point, with skew, and tail probabilities that can't be negative. Unlike today's digitals, it also gives a density, so the DV01 profile and key rate DV01s would reflect the skew too. The distribution would be extended from option expiry to delivery by adding normally distributed yield moves over the remaining time. The raw put-spread digitals then become the check on the fit. Far wings need care: when far out-of-the-money options are priced rich or at their minimum tick, the fitted tails come out too fat.
+**The option smile.** The normal model uses one at-the-money vol and ignores skew. A replacement would fit a normal SABR smile to each option expiry and take the probabilities from the fitted curve's slope across strikes. This gives one consistent distribution for every switch point, with skew, and tail probabilities that can't be negative. Unlike today's digitals, it also gives a density, so the DV01 profile and key rate DV01s would reflect the skew too. The distribution would be extended from option expiry to delivery by adding normally distributed yield moves over the remaining time. The raw put-spread digitals then become the check on the fit. Far wings need care: when far out-of-the-money options are priced rich or at their minimum tick, the fitted tails come out too fat.
 
 **An interest rate model.** One factor can't represent slope moves independent of the level. Yet for a basket that spans 15 to 25 years, slope moves alone can cause a switch. A two-factor model of the curve (or a full term structure model), calibrated to the options, would price those switches directly. It would give probabilities at delivery rather than at option expiry, and is the route to valuing the end-of-month and wildcard options and a futures fair value, all of which are out of scope today.
 
@@ -157,7 +166,7 @@ Within $\pm1.5\sigma$, the two agree to about 2 percentage points, inside the no
 
 # Limitations
 
-Beyond what the further work above addresses:
+Beyond what the potential future work above addresses:
 
 - **The probabilities are risk-neutral.** They come from option prices, which include a risk premium, so they are the market's pricing of a switch, not a forecast of one.
 - **Free prices are imperfect.** Treasury's published end-of-day prices are rounded and aren't struck at the same moment as the futures settlement. A few ticks of noise can move a switch point by a basis point or two.
