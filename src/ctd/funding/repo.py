@@ -5,8 +5,9 @@ Overnight rates compound daily, actual/360, each rate applying until the next bu
 
     G(start, end) = Π_i (1 + r_i · d_i / 360),  R_term = (G − 1) × 360 / D
 
-Rates are decimals. ``rate_on(d)`` gives the overnight rate for business day ``d``: flat at
-today's SOFR in v1 (path 1), stepped or stripped later (paths 2 and 3) without changing callers.
+Rates are decimals. ``rate_on(d)`` gives the overnight rate for business day ``d``: the SR1
+strip (path 3, ``funding.strip``), or flat at the latest SOFR (path 1, ``flat``) when the strip
+can't be solved.
 """
 
 from collections.abc import Callable
