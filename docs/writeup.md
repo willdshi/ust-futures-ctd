@@ -53,7 +53,20 @@ The quality option matters most when:
 - **The basket is wide.** ZB's basket spans 15 to 25 years of maturity, so its bonds' durations differ widely and a switch changes the futures DV01 a lot. TN's basket is under a year wide, and UB's switches are between 30-year bonds of similar duration, so both stay stable. ZN sits in between; its basket narrowed from 6.5–10 years to 6.5–8 years from the September 2023 contract.
 - **Yields are near 6%.** Converted prices bunch together, so small moves reorder them and switch points sit close to the current yield level.
 
-ZB at the end of October 2026 shows both effects. Its December contract (ZBZ6) has 59 deliverable bonds maturing between 2042 and 2051. With forward yields around 5.4%, the CTD is a mid-basket bond, the 4.625% of November 2044. The next switch, to a longer bond, is only 4bp of sell-off away. Five switches lie within 50bp on the sell-off side, each to a longer, lower-coupon bond, and two lie within 40bp on the rally side. The expected move in yields to delivery is about 46bp (one standard deviation, implied by options). The option market puts the chance of crossing the next switch alone at about 45%, and gives today's CTD only a 25% chance of still being cheapest when the options expire in late November (about 15% by delivery at the end of December).
+ZB at the end of October 2026 shows both effects. Its December contract (ZBZ6) has 59 deliverable bonds maturing between 2042 and 2051. With forward yields around 5.4%, the CTD is a mid-basket bond, the 4.625% of November 2044. Table 1 lists the switch points, the bond that becomes cheapest beyond each one, and the option market's probability of reaching it (the two estimates are described in Section 4). The next switch, to a longer bond, is only 4bp of sell-off away. Five switches lie within 50bp on the sell-off side, each to a longer, lower-coupon bond, and two lie within 40bp on the rally side. The expected move in yields to delivery is about 46bp (one standard deviation, implied by options). The option market puts the chance of crossing the next switch alone at about 45%, and gives today's CTD only a 25% chance of still being cheapest when the options expire in late November (about 15% by delivery at the end of December).
+
+| Switch (bp) | Futures price $K_k$ | CTD beyond the switch | Digital | Normal | Gap |
+|-------:|----------:|------------------:|------:|------:|-----:|
+| $-39.6$ | 112.34 | 4.75% Nov 2043 | 7.3% | 8.9% | $-1.6$ |
+| $-14.2$ | 109.06 | 4.625% May 2044 | 29.2% | 31.4% | $-2.2$ |
+| $+3.8$ | 106.78 | 4.875% Aug 2045 | 45.8% | 44.9% | $+0.9$ |
+| $+16.8$ | 105.14 | 2.875% Aug 2045 | 27.4% | 28.4% | $-1.0$ |
+| $+34.0$ | 102.80 | 2.25% Aug 2046 | 10.8% | 12.3% | $-1.5$ |
+| $+46.6$ | 100.98 | 2.25% Aug 2049 | 4.7% | 5.6% | $-0.9$ |
+| $+48.3$ | 100.71 | 1.375% Aug 2050 | 4.7% | 5.0% | $-0.3$ |
+| $+126.1$ | 88.21 | 1.25% May 2050 | 1.6% | 0.0% | $+1.6$ |
+
+: ZBZ6 switch points on 2026-10-23: probability of the futures price passing each switch point by option expiry (20 November), from put and call spreads (digital) and from the normal model at the at-the-money vol; the gap is in percentage points. The futures settlement was 107.25.
 
 Each switch changes the bond that the future tracks, and with it the futures DV01 and its spread across maturities. A risk number based on today's CTD alone jumps at each switch point.
 
@@ -120,7 +133,7 @@ The model's DV01 is lowest about 35bp below today's yields. In a rally, each bon
 
 The key rate split matters as much as the total (Figure 2, bottom, and Figure 3). Today the CTD, the 4.625% of November 2044, has no 25-year exposure at all: \$53.3k at 15 years and \$75.7k at 20 years. The model puts \$29.4k at 25 years, because the bonds a sell-off would make cheapest mature in 2045 to 2050. After a $+1\sigma$ sell-off, the CTD-based split puts \$171.1k at 20 years and still nothing at 25 years; the model has \$93.1k at 25 years and \$70.9k at 20 years. A curve hedge sized on the CTD alone would miss the long end in a sell-off, and then overcorrect when the CTD finally switches.
 
-Table 1 compares the two probability estimates at each switch point. For a like-for-like comparison, the normal model here uses the width to option expiry (29bp), not to delivery.
+Table 2, a copy of Table 1, compares the two probability estimates at each switch point. For a like-for-like comparison, the normal model here uses the width to option expiry (29bp), not to delivery.
 
 | Switch (bp) | Futures price $K_k$ | CTD beyond the switch | Digital | Normal | Gap |
 |-------:|----------:|------------------:|------:|------:|-----:|
@@ -152,7 +165,7 @@ ZN sits in between, and shows the shape the quality option gives a duration prof
 - **Bond math.** All prices, yields, accrued interest and DV01s come from one hand-written street-convention pricing function. Price and yield round trips agree to $10^{-10}$, and prices match QuantLib, used only as an independent test.
 - **Conversion factors and baskets.** Conversion factors from CME's formula match every row of CME's published tables collected so far. Baskets are rebuilt from the eligibility rules and checked against the same tables, including bonds crossing the ZN grade change in 2023 and the 25-year boundary between ZB and UB.
 - **The model's mechanics.** Switch points are tested on a two-bond basket with a known answer. On a flat 6% curve every converted price is close to 100. The probability-weighted DV01 matches the slope of the expected envelope computed by finite differences.
-- **Probabilities.** The two independent estimates agree to within the noise of the option settlements (Table 1). Where the same day's options are available from two sources, CME's daily bulletin and a commercial data history, they give the same vol and DV01; only far-wing probabilities differ, by up to a percentage point.
+- **Probabilities.** The two independent estimates agree to within the noise of the option settlements (Table 2). Where the same day's options are available from two sources, CME's daily bulletin and a commercial data history, they give the same vol and DV01; only far-wing probabilities differ, by up to a percentage point.
 
 **Not yet done: a historical backtest.** The real test of the probabilities is whether bonds given a 30% chance of being CTD turn out to be CTD about 30% of the time. The plan is to run the model over past delivery cycles with large moves, such as the 2022–23 sell-off. Its probabilities would then be scored against the bond actually cheapest at delivery, with a Brier score and a reliability plot, contract by contract.
 
