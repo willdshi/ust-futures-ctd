@@ -81,7 +81,7 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 - In a selloff toward a crossover, effects 1 and 3 push the same way, so a rising line is not by itself evidence of a switch. Near the crossover the switch effect dominates; far from it, effect 3 is a small drift that tracks yields. In a rally both shorten.
 - For a pure basket signal, hold each bond's key-rate shape fixed at a reference yield, or plot a constant-CTD effective maturity and read the gap.
 
-**Expected jumps:** the probability-weighted series is continuous in yields while there is time to delivery, so a switch shows as a smooth bend. Expect discrete moves only from:
+
 1. Basket changes: a new issue entering or an old one dropping out.
 2. The contract roll (December to March): a discrete step by construction, and one to highlight.
 3. Near expiry: as σ√T shrinks, probabilities collapse toward 0 or 1, and daily yield moves near a crossover can look like jumps.
@@ -121,14 +121,12 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 - **Calibration backtest:** forecast CTD probabilities against the realised CTD at delivery (Brier score, reliability plot). This decides whether readers trust "30% chance of a switch."
 - **Calendar overlay:** auctions adding issues, roll period, first notice day, delivery dates.
 - **Daily attribution:** split DV01 changes into yields, time, vol/betas and basket. Sequential, with a fixed documented order (basket, then time, then vol/betas, then yields). Build after regular publication starts; event flags cover it until then.
-- **Portfolio mix (later):** charts 1 and 2 for a user-entered overlay mix, for example 60% ZN and 40% UB.
 
 ## Fragility dashboard (context row, not a composite score)
 
 1. **Asset-manager duration held via futures:** TFF asset-manager long × probability-weighted DV01 per contract, in $/bp, with net alongside. Trend over time shows buy-side reliance on synthetic duration.
 2. **Deliverable float of the next CTD:** outstanding − SOMA − stripped, against front-month OI and asset-manager long OI. An upper bound on supply and a squeeze or specialness indicator.
 3. **Rebalancing timing:** flag when a switch zone coincides with month-end or the roll, when asset-manager rebalancing would bunch up. An execution-cost issue, not a level move.
-4. **"Not a convexity event" explainer:** transfer versus creation, hedged sides largely net, residual asymmetry of ambiguous sign.
 
 ## Dropped or reframed from the original plan
 
