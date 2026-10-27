@@ -6,7 +6,7 @@ Choices about how the project runs and how the model is built, with the options 
 
 **Status:** undecided, low priority (raised 2026-10-21).
 
-**Now:** the Windows scheduled task `ctd-daily-fetch` (registered by `scripts/register_daily_fetch.ps1`) runs `ctd fetch --catch-up` at 19:00 on weekdays.
+**Now:** the Windows scheduled task `ctd-daily-fetch` (registered by `scripts/register_daily_fetch.ps1`) runs `ctd fetch --catch-up` at 19:00 on weekdays. A second task, `ctd-morning-sofr`, stores the previous day's SOFR at 10:00 ([data.md](data.md) §4); if it's missed, the evening fetch collects the file.
 - If the PC is asleep or hibernating at 19:00, the run is missed, but "run as soon as possible after a missed start" is on, so it runs at the next wake.
 - `--catch-up` retries the as-of date and the 4 business days before it.
 - It runs only while the user is logged in.

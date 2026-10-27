@@ -130,6 +130,7 @@ A source's recovery window is how many business days after the as-of date it can
 | Task | Command |
 |---|---|
 | Daily collection | Scheduled task `ctd-daily-fetch` runs `ctd fetch --catch-up --notify` at 19:00 on weekdays (log in `data/fetch.log`). `--catch-up` also retries the previous 4 business days. |
+| Morning SOFR | Scheduled task `ctd-morning-sofr` runs `scripts/morning_sofr.py` at 10:00 on weekdays (same log): the NY Fed rates under today's as-of date once the previous business day's SOFR is published, so that day can be run before the evening fetch (design §10, phase 1b B7). It stores nothing if the fixing isn't out yet; the evening fetch then collects the file as before. |
 | Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry, e.g. a missed bookmarklet click) and for manual files ingest refused. The newest date's gaps aren't alerted: its CME files come with the next morning's click, and late files are retried the next evening. |
 | CME files | Morning after each trade date: click the bookmarklet on a cmegroup.com tab, then `ctd ingest` or wait for the evening run. |
 | Check | `ctd check [--from D] [--to D]` |
