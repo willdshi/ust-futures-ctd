@@ -12,7 +12,7 @@ A **duration-drift monitor for Treasury futures users**: how stable is the durat
 
 - **In:** CTD probabilities, probability-weighted futures DV01 and KRDs, scenario profiles, time series.
 - **Out:** futures fair value, curve fitting, idiosyncratic rich/cheap modelling, issue-specific repo, outputs aimed at basis traders.
-- **Contracts:** ZN and ZB first (prone to switching). TN and UB added mainly as stable-duration comparisons.
+- **Contracts:** ZN, TN, ZB and UB, all four with the same outputs. ZN and ZB switch most often; TN and UB usually less. ZT and ZF are not modelled.
 
 ## Conventions
 
@@ -152,4 +152,4 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 
 ## First milestone
 
-Tier 1 for ZN and ZB, plus the December/March roll comparison, ready before the late-November roll.
+Tier 1 for ZN, TN, ZB and UB, plus the December/March roll comparison, ready before the late-November roll.

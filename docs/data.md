@@ -26,7 +26,7 @@ Every business day, `ctd fetch` snapshots each source into a local raw store und
 
 Backfill-only source ids (`par_curve_backfill`, `nyfed_rates_backfill`, `yahoo_fut_backfill`, `databento_fut_backfill`, `databento_opt_backfill`, `databento_stir_backfill`) hold the one-off history pulls; see §4. The three Databento sources are the only paid ones, and each is written by a standalone one-off script rather than `ctd backfill`. The scripts are not included in the repository; each request is recorded in §5.11 to §5.13 and in each file's meta sidecar.
 
-The six Treasury futures in scope are ZT, ZF, ZN, TN, ZB and UB. The model reads ZN and ZB first, then UB and TN as stable-duration comparisons (design §1); ZT and ZF are collected so they can be added later. What the model publishes is in [outputs.md](outputs.md).
+The six Treasury futures in scope are ZT, ZF, ZN, TN, ZB and UB. The model reads ZN, TN, ZB and UB, all four alike (design §1); ZT and ZF are collected so they can be added later. What the model publishes is in [outputs.md](outputs.md).
 
 ### History starts in 2016
 

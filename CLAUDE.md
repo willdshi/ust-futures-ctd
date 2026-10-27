@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-End-of-day model of cheapest-to-deliver (CTD) probabilities, futures DV01s and key rate DV01s for CBOT Treasury futures, built only from free public data. The model covers **ZN and ZB first** (the contracts prone to switching), then **UB and TN** as stable-duration comparisons. Data collection covers six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11. What gets published (charts, tiers, conventions) is in [docs/outputs.md](docs/outputs.md); collected data is described in [docs/data.md](docs/data.md) and settled choices in [docs/decisions.md](docs/decisions.md).
+End-of-day model of cheapest-to-deliver (CTD) probabilities, futures DV01s and key rate DV01s for CBOT Treasury futures, built only from free public data. The model covers **ZN, TN, ZB and UB**, all four on an equal footing; ZT and ZF are out of scope for the model. Data collection covers all six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11. What gets published (charts, tiers, conventions) is in [docs/outputs.md](docs/outputs.md); collected data is described in [docs/data.md](docs/data.md) and settled choices in [docs/decisions.md](docs/decisions.md).
 
 ## Environment and commands
 
