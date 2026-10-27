@@ -23,7 +23,7 @@ The market already prices the chance of a switch, so the risk you hold changes s
 - **A duration profile**: DV01 and its key-rate shape across yield shifts, with ±1σ and ±2σ marked, recomputing the switch probabilities at each shifted state.
 - **Distance to the next switch**, in basis points and in standard deviations.
 
-For example, on 2026-10-23 ZBZ6 (December T-bond futures) carried $137,000 of DV01 per $100mm notional. CTD-based it carried $126,000. After a 49bp sell-off, just past 1σ, the model's DV01 rises to $148,100, while the CTD-based figure jumps to $174,200 as the CTD moves to a longer, low-coupon bond.
+For example (as seen in the image above), on 2026-10-23 ZBZ6 (December T-bond futures) carried $137,000 of DV01 per $100mm notional. CTD-based it carried $126,000. After a 49bp sell-off, just past 1σ, the model's DV01 rises to $148,100, while the CTD-based figure jumps to $174,200 as the CTD moves to a longer, low-coupon bond.
 
 Intended use is for monitoring duration exposure, not for relative value trading. There is no futures fair value, no implied repo and no delivery-option valuation. See the write-up for a more detailed explanation.
 
@@ -31,7 +31,7 @@ Intended use is for monitoring duration exposure, not for relative value trading
 
 1. **Basket and forward prices.** Each deliverable bond is priced forward to the implied delivery date at term repo (from the one-month SOFR futures strip), and divided by its conversion factor.
 2. **Switch points.** Yields are shifted in parallel; the yield and futures levels at which the cheapest bond changes are found by exact root-finding.
-3. **Probabilities.** The probability of reaching each switch comes from two models: digitals from put and call spreads on the CME option settlements, and a normal distribution at the at-the-money implied vol. Both read CME settlement prices, which CME sets from its implied-vol skew whether or not a strike traded, so they are option-implied rather than traded prices; the report shows which strikes behind each probability traded that day.
+3. **Probabilities.** The probability of reaching each switch comes from two models: digitals from put and call spreads on the CME option settlements, and a normal distribution at the at-the-money implied vol. The latter is essentially a 1 factor model moving yields in parallel. Both read CME settlement prices, which CME sets from its implied-vol skew whether or not a strike traded, so they are option-implied rather than traded prices; the report shows which strikes behind each probability traded that day.
 4. **Risk.** Each bond's DV01 and key rate DV01s (tent bumps on the Treasury par curve at 2, 5, 7, 10, 15, 20, 25 and 30 years) are weighted by the probability that it is CTD, and recomputed at every shifted state for the duration profile.
 
 All bond math (pricing, yields, accrued, conversion factors, forwards) is hand-written in one street-convention pricing function, and tested against QuantLib and CME's published conversion factor tables. The full specification is in [docs/design.md](docs/design.md). Outputs are specified in [docs/outputs.md](docs/outputs.md), and settled choices are recorded in [docs/decisions.md](docs/decisions.md).
@@ -57,7 +57,7 @@ Every file is stored exactly as downloaded, keyed by its as-of date, and the mod
 
 Working now, for the December 2026 futures contracts:
 - daily data collection for six Treasury futures contracts and their options, with gap alerts
-- the light model: switch points and CTD probabilities from option digitals
+- the light model (1 factor, parallel yield hsifts): switch points and CTD probabilities from option digitals
 - futures DV01, key rate DV01s and the duration profile
 - the single-date HTML report (duration profile and key-rate change charts, with tables)
 - derived Parquet tables over ten years of history
