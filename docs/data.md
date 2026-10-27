@@ -21,6 +21,7 @@ Every business day, `ctd fetch` snapshots each source into a local raw store und
 | `cme_bulletin` | Daily Bulletin Section 42: options on the six Treasury futures | cmegroup.com | bookmarklet | daily | 2026-10-16 → |
 | `cme_opt` | Per-product option settlement files | cmegroup.com | auto if CME allowed | occasional | none |
 | `databento_fut_backfill` | Futures settlements and open interest, front two contracts of the nine CME futures | Databento (paid) | script | backfill | 2016-01-01 → 2026-10-21 (SR1, SR3 from 2018-04-27) |
+| `databento_daily` | Futures statistics (Treasury front two, SR1 front seven) and standard Treasury option statistics and definitions | Databento (paid) | auto | daily | 2026-10-26 → |
 | `databento_opt_backfill` | Option settlements and open interest by strike, standard expiries on the six Treasury futures | Databento (paid) | script | backfill | 2016-01-01 → 2026-10-19 |
 
 Backfill-only source ids (`par_curve_backfill`, `nyfed_rates_backfill`, `yahoo_fut_backfill`, `databento_fut_backfill`, `databento_opt_backfill`, `databento_stir_backfill`) hold the one-off history pulls; see §4. The three Databento sources are the only paid ones, and each is written by a standalone one-off script rather than `ctd backfill`. The scripts are not included in the repository; each request is recorded in §5.11 to §5.13 and in each file's meta sidecar.
@@ -130,7 +131,9 @@ A source's recovery window is how many business days after the as-of date it can
 | Task | Command |
 |---|---|
 | Daily collection | Scheduled task `ctd-daily-fetch` runs `ctd fetch --catch-up --notify` at 19:00 on weekdays (log in `data/fetch.log`). `--catch-up` also retries the previous 4 business days. |
-| Morning SOFR | Scheduled task `ctd-morning-sofr` runs `scripts/morning_sofr.py` at 10:00 on weekdays (same log): the NY Fed rates under today's as-of date once the previous business day's SOFR is published, so that day can be run before the evening fetch (design §10, phase 1b B7). It stores nothing if the fixing isn't out yet; the evening fetch then collects the file as before. |
+| Morning SOFR | Scheduled task `ctd-morning-sofr` runs `scripts/morning_sofr.py` at 09:15 on weekdays (same log): the NY Fed rates under today's as-of date once the previous business day's SOFR is published, so that day can be run before the evening fetch (design §10, phase 1b B7). It stores nothing if the fixing isn't out yet; the evening fetch then collects the file as before. |
+| Morning Databento | Scheduled task `ctd-morning-databento` runs `ctd fetch --catch-up --source databento_daily` at 09:15 on weekdays (same log): the previous business day's CME futures and options, queryable from 09:00 Eastern (§5.14). |
+| Morning derive | Scheduled task `ctd-morning-derive` runs `scripts/morning_derive.ps1` at 09:30 on weekdays (log in `data/derive.log`): waits until both morning tasks have run that day and finished (at most an hour), then `ctd derive --notify`. All three are registered by `scripts/register_morning_tasks.ps1`. |
 | Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry, e.g. a missed bookmarklet click) and for manual files ingest refused. The newest date's gaps aren't alerted: its CME files come with the next morning's click, and late files are retried the next evening. |
 | CME files | Morning after each trade date: click the bookmarklet on a cmegroup.com tab, then `ctd ingest` or wait for the evening run. |
 | Check | `ctd check [--from D] [--to D]` |
@@ -328,7 +331,16 @@ The third digit is the same code for every product (2 = ¼ and 7 = ¾ for ZF too
 - **Check:** in the derived futures table, every month on 2026-10-14 to 10-22 agrees with `cme_stir` (settlement, contract code and open interest; 8 months a day to 10-21, the 6 of this pull on 10-22).
 - **Not yet used by the model:** `ctd run` takes SR1 from the `cme_stir` page for its date, so dates before 2026-10-14 still fall back to flat SOFR until historical mode reads the derived table.
 
-### 5.14 Occasional and legacy
+### 5.14 `databento_daily`: daily CME futures and options (paid)
+
+- **What and why:** the record for CME futures and option settlements from 2026-10-26 (design §10 phase 1e; [decisions.md](decisions.md), Daily CME collection from Databento), so the daily run doesn't wait for the bookmarklet click. Units: futures `ZT`, `ZF`, `ZN`, `TN`, `ZB`, `UB` (front two contracts, `<P>.c.0` and `c.1`) and `SR1` (`c.0` to `c.6`), `stype_in=continuous`; options `OZT`, `OZF`, `OZN`, `OTN`, `OZB`, `OUB` (`O<P>.OPT`, `stype_in=parent`, weeklies not included). No SR3 or ZQ. Fetcher: `ctd.data.databento_daily`; needs `DATABENTO_API_KEY`.
+- **Window:** 00:00 Chicago time on D to 00:00 on the next `cme` business day, so each record is in exactly one file. Friday's window runs to Monday and holds the Sunday finals; a date's revised open interest (about 09:05 CT the next day) is in the next date's file.
+- **When:** without a CME licence the API stops about 8 hours behind real time, so D's window is queryable from about 09:00 Eastern on the next business day. The fetch requests nothing until `metadata.get_dataset_range` passes the window's end and `get_dataset_condition` lists each of the window's dates (Friday to Sunday for a Friday) as `available` or `degraded`; a `degraded` date is stored with a note on the unit's manifest entry (`notes`). A pull with no final settlement or open interest on any futures contract, or no option finals, isn't stored. Each case is a gap retried by the next run. Collected by `ctd-morning-databento` at 09:15 Eastern and retried by the evening fetch.
+- **Files** under `raw/<D>/databento_daily/<unit>/`: `<unit>_statistics_<D>.dbn.zst` (the DBN stream as received) and `<unit>_symbology_raw_symbol_<D>.json` (the free id-to-symbol lookup for D, the client's parsed response). Option units add `<unit>_definition_<D>.dbn.zst`: the whole window's definitions on the unit's first date, then only the calls and puts whose (instrument id, raw symbol) pair no earlier definitions file holds, requested by id; a day with no new strikes has none. Each sidecar records the request and its quoted `cost_usd`.
+- **Cost:** about $0.02 a day after the first ($0.11 of full option definitions on the first).
+- **Not read yet:** the readers and the derived tables take it in phase 1e items 3 and 4.
+
+### 5.15 Occasional and legacy
 
 - **`cme_opt`:** CME's per-product option settlement files (an expiry list plus one JSON per option series). Only used if automated CME access ever works; the bulletin replaces it.
 - **`cme_cf`** (2026-10-16 only): the conversion factor spreadsheet downloaded by hand before the FTP source existed. The source no longer exists; the FTP file for that date is under `cme_tcf`.

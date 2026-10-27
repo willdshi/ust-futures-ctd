@@ -27,6 +27,7 @@ class RawFile:
     content_type: str = ""
     method: str = "GET"
     params: dict | None = None
+    note: str | None = None  # a caveat the source reports about the data (recorded in the manifest)
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,7 @@ Choices about how the project runs and how the model is built, with the options 
 
 **Status:** undecided, low priority (raised 2026-10-21).
 
-**Now:** the Windows scheduled task `ctd-daily-fetch` (registered by `scripts/register_daily_fetch.ps1`) runs `ctd fetch --catch-up` at 19:00 on weekdays. A second task, `ctd-morning-sofr`, stores the previous day's SOFR at 10:00 ([data.md](data.md) §4); if it's missed, the evening fetch collects the file.
+**Now:** the Windows scheduled task `ctd-daily-fetch` (registered by `scripts/register_daily_fetch.ps1`) runs `ctd fetch --catch-up` at 19:00 on weekdays. A second task, `ctd-morning-sofr`, stores the previous day's SOFR at 09:15 ([data.md](data.md) §4); if it's missed, the evening fetch collects the file.
 - If the PC is asleep or hibernating at 19:00, the run is missed, but "run as soon as possible after a missed start" is on, so it runs at the next wake.
 - `--catch-up` retries the as-of date and the 4 business days before it.
 - It runs only while the user is logged in.
@@ -311,7 +311,7 @@ ZB's and ZN's digitals rest on strikes that traded (ZB on 2026-09-15: half its 6
 
 A day's file ends at 00:00 Chicago time, which is queryable at exactly 09:00 Eastern (both cities change clocks together), hence 09:15; the fetcher also checks the dataset range before pulling. The revised open interest arrives with the next date's file, the same one-day lag as the CME page.
 
-**Cost (free quotes, one session, 2026-10-23):** option statistics (six products, all months) 15 MB, $0.014; futures statistics (nine products, all months, spreads included) 2 MB, $0.002; full option definitions 72 MB, $0.113, almost all user-defined spreads; futures definitions $0.017. So statistics plus definitions for new instruments only: about $4 a year, against about $35 with full definitions daily. Futures need no definitions (symbology and `reference/`, as in the backfill).
+**Cost (free quotes, one session, 2026-10-23):** option statistics (six products, all months) 15 MB, $0.014; futures statistics (nine products, all months, spreads included) 2 MB, $0.002; full option definitions 72 MB, $0.113, almost all user-defined spreads; futures definitions $0.017. A narrower futures pull (front two of the six Treasury contracts, front seven SR1, no SR3 or ZQ) was quoted on the same session at $0.0001 (116 KB) against $0.0021 (2.3 MB) for the nine products' full parents: **decided (2026-10-27): the narrow pull.** It covers everything the model reads (SR1 to the repo strip's horizon, the front two Treasury contracts for vol conversion, as in the backfill); SR3 and ZQ come only from the CME pages on the days the bookmarklet is clicked, an exception to collecting broadly (design §3.2) that Databento can backfill if ever needed. So statistics plus definitions for new instruments only: about $4 a year, against about $35 with full definitions daily. Futures need no definitions (symbology and `reference/`, as in the backfill).
 
 **Not collected:** weekly options. They are separate Globex products, not in `O<P>.OPT`, the model doesn't use them, and Databento can backfill them if ever wanted. The bulletin keeps carrying them on the days it's clicked.
 

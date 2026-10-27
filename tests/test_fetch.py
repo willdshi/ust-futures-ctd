@@ -11,6 +11,7 @@ from ctd.data.inbox import ingest
 FRI = date(2026, 10, 16)
 MON = date(2026, 10, 19)
 CME_IDS = {"cme_fut", "cme_bulletin", "cme_stir"}
+DATABENTO = "databento_daily"
 
 
 def run(store, http, asof=FRI, today=FRI, **kw):
@@ -31,6 +32,8 @@ def test_auto_sources_ok_and_cme_manual_needed(store):
     for sid, status in st.items():
         if sid in CME_IDS:
             assert status == mf.MANUAL_NEEDED
+        elif sid == DATABENTO:  # collected from 2026-10-26
+            assert status == mf.NOT_EXPECTED
         else:
             assert status == mf.OK, sid
     assert {g.source for g in gaps} == CME_IDS

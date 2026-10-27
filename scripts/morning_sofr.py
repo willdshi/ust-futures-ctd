@@ -2,7 +2,7 @@
 
     python scripts/morning_sofr.py [--asof 2026-10-27]
 
-Run by the scheduled task ``ctd-morning-sofr`` (``register_morning_sofr.ps1``) at 10:00 on weekdays. A date's
+Run by the scheduled task ``ctd-morning-sofr`` (``register_morning_tasks.ps1``) at 09:15 on weekdays. A date's
 SOFR is published about 8am the next business day; the evening fetch stores it under that day's as-of date,
 so a run for the previous day made before the evening would take the day before's rate and warn
 (docs/decisions.md, Which data a run uses). This stores the same file in the morning instead: the evening

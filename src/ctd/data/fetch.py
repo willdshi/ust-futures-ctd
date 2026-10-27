@@ -17,10 +17,12 @@ NO_DATA_SETTLED_AFTER = 5
 
 
 def _unit_entry(status: str, files: list[str], origin: str | None = None, error: str | None = None,
-                provisional: list[str] | None = None) -> dict:
+                provisional: list[str] | None = None, notes: list[str] | None = None) -> dict:
     entry = {"status": status, "origin": origin, "files": files, "attempted_at": utc_now(), "error": error}
     if provisional:
         entry["provisional"] = provisional
+    if notes:
+        entry["notes"] = notes
     return entry
 
 
@@ -47,9 +49,11 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
         if prev and prev["status"] in (mf.FAILED, mf.OK):
             return prev
         return _unit_entry(mf.MISSING, names)
-    stored = []
+    stored, notes = [], []
     try:
         for f in spec.fetch(asof, unit, http):
+            if f.note and f.note not in notes:
+                notes.append(f.note)
             meta = {"origin": "auto", "url": f.url, "http_status": f.status, "content_type": f.content_type,
                     "method": f.method, "params": f.params, "downloaded_at": utc_now()}
             if not store.write(asof, spec.id, unit, f.name, f.content, meta) and f.name in pending \
@@ -62,7 +66,8 @@ def _run_unit(spec: SourceSpec, asof: date, unit: str, store: RawStore, http: Ht
         return _unit_entry(mf.FAILED, store.names(asof, spec.id, unit), error=f"{type(e).__name__}: {e}")
     except Exception as e:  # one failing source must not stop the others
         return _unit_entry(mf.FAILED, store.names(asof, spec.id, unit), error=f"{type(e).__name__}: {e}")
-    return _unit_entry(mf.OK, stored, origin="auto", provisional=_provisional(spec, store, asof, unit, stored))
+    return _unit_entry(mf.OK, stored, origin="auto", provisional=_provisional(spec, store, asof, unit, stored),
+                       notes=notes)
 
 
 def _run_source(spec: SourceSpec, asof: date, store: RawStore, http: Http | None, today: date,
