@@ -430,4 +430,4 @@ For a reproducible run on a past date:
   - CME Pace of the Roll (confirm what it publishes and whether past rolls can be retrieved).
 
   All but Pace of the Roll have free history, so they can be added and backfilled when the dashboard is built (design §3.2).
-- **CME collection:** CME has no free download feed for settlements, so they and the bulletin depend on the daily bookmarklet click. A paid feed (DataMine, Databento, Barchart OnDemand) is the alternative for daily collection (design §11); Databento is used for the history before 2026-10-14 (§5.11).
+- **CME collection:** CME has no free download feed for settlements, so they and the bulletin depend on the daily bookmarklet click. Decided 2026-10-27: a daily Databento pull at 09:15 Eastern becomes the record, with the bookmarklet files kept as a secondary source, gapped on any day not clicked (design §10 phase 1e; [decisions.md](decisions.md), Daily CME collection from Databento). Not built yet; Databento is used for the history before 2026-10-14 (§5.11).

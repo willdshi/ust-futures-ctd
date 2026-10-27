@@ -270,7 +270,7 @@ A switch shows as the dark cell moving between rows: ZBZ6 on 2026-10-23 from 15y
 - 2026-10-16 and 10-19, where both sources exist: the same inputs with the bulletin chain and the Databento chain give identical results for ZBZ6 and ZNZ6, and the same ATM vol, width and DV01 for UBZ6 and TNZ6; only far-wing digitals move (up to 1 point; one TNZ6 bound ≤1.5% against ≤5.8%, the bulletin's from interpolating across strikes 94 to 101.5).
 - Dropping the strikes with no open interest and no volume from every chain, 2026-09-01 to 10-15: ZBZ6 and ZNZ6 essentially unchanged (one P(CTD) moves 1 point); UBZ6 and TNZ6 keep their ATM vol (within 0.8%) and DV01 (within $10), but switches near the money lose their strikes and their probabilities become uninformative intervals (TNZ6 on 09-22: CTD 97–100% becomes 0–100%; UBZ6 on 10-02: 49–51% becomes 0–100%).
 
-**Why keep them:** they come off the same skew as the strikes with open interest, so dropping them makes the chain smaller, not more market-based; the headline numbers (DV01, KRDs, the profile and the charts) use only ATM vol, from the two strikes next to the futures price, so they don't depend on the wings; and dropping them turns UB's and TN's September digitals into 0–100%. The seam at 10-16 goes when live runs move to a daily Databento download (design §10, phase 1d item 1). Until then the bulletin is the weaker source for UB and TN, since it hides strikes.
+**Why keep them:** they come off the same skew as the strikes with open interest, so dropping them makes the chain smaller, not more market-based; the headline numbers (DV01, KRDs, the profile and the charts) use only ATM vol, from the two strikes next to the futures price, so they don't depend on the wings; and dropping them turns UB's and TN's September digitals into 0–100%. The daily Databento download (design §10, phase 1e) ends the bulletin stretch going forward; the seam goes once 2026-10-20 to its first date is bought too (phase 1e item 8, deferred; Daily CME collection from Databento, below). Until then the bulletin is the weaker source for UB and TN on those dates, since it hides strikes.
 
 **How far to trust a digital:** a switch within about 1σ reads the well-anchored part of the skew; beyond about 1.5σ it reads CME's wing shape and is indicative.
 
@@ -292,3 +292,29 @@ ZB's and ZN's digitals rest on strikes that traded (ZB on 2026-09-15: half its 6
 - "Strikes traded" says how well a digital is anchored that day. With none traded, it rests on CME's interpolation from other strikes: indicative. So is any digital beyond about 1.5σ.
 - Even a traded strike's settlement is CME's skew, informed by the day's trades, not the trade price.
 - Before 2026-10-16 the chains include strikes with no open interest that the bulletin leaves out from 10-16; their effect on the published numbers is measured above.
+
+## Daily CME collection from Databento (design §3.2, §10 phase 1e, §11)
+
+**Status:** adopted (2026-10-27), not yet built.
+
+**Decision:** pull CME futures and option settlements from Databento every business day at 09:15 Eastern for the previous `cme` business day, as the record for both. The bookmarklet files (CME settlement pages and the Section 42 bulletin) stay as a free secondary source and cross-check; on any date the bookmarklet isn't clicked they are a permanent gap, since CME serves only five trailing days of settlement pages and the latest bulletin.
+
+**Why the time works:** without a CME licence, Databento's historical API stops at a rolling cutoff about 8 hours behind real time (requests past it return `422 dataset_unavailable_range`, "requires a subscription and/or license"). Measured on ZBZ6, 2026-10-20 to 10-26 (Chicago time):
+
+| Record for trade date D | Sent | Queryable from |
+|---|---|---|
+| Preliminary settlement (`stat_flags` 2) | 14:00 D | 22:00 D |
+| Final settlement (3), Monday to Thursday | about 18:15 D | about 02:15 D+1 |
+| Final settlement, Friday | Sunday 06:37 (none on Friday evening) | Sunday about 14:40 |
+| Open interest and cleared volume, first figure | 20:15 to 21:30 D | by about 05:30 D+1 |
+| Open interest, revised (what CME's page shows) | about 09:05 D+1 | about 17:05 D+1 |
+
+A day's file ends at 00:00 Chicago time, which is queryable at exactly 09:00 Eastern (both cities change clocks together), hence 09:15; the fetcher also checks the dataset range before pulling. The revised open interest arrives with the next date's file, the same one-day lag as the CME page.
+
+**Cost (free quotes, one session, 2026-10-23):** option statistics (six products, all months) 15 MB, $0.014; futures statistics (nine products, all months, spreads included) 2 MB, $0.002; full option definitions 72 MB, $0.113, almost all user-defined spreads; futures definitions $0.017. So statistics plus definitions for new instruments only: about $4 a year, against about $35 with full definitions daily. Futures need no definitions (symbology and `reference/`, as in the backfill).
+
+**Not collected:** weekly options. They are separate Globex products, not in `O<P>.OPT`, the model doesn't use them, and Databento can backfill them if ever wanted. The bulletin keeps carrying them on the days it's clicked.
+
+**Deferred: filling 2026-10-20 to the first daily date.** About $0.15 a day ($1 to $2). Without it, options are Databento to 10-15, the bulletin from 10-16 to the switch, then Databento again, and the bulletin stretch lacks the strikes with no open interest. The measured effect (Option strikes with no open interest, above) is none on DV01, KRDs or the profile, which use ATM vol only, and up to 1 point on far-wing digitals, mostly UB and TN: a visible change in character in the time series, not a wrong number. Futures have no such seam (the CME pages and Databento agree exactly). Recoverable at any time, so it waits (phase 1e item 8).
+
+**Gotcha:** `timeseries.get_range` with a date-only `start` and no `end` stops at the end of that day, not at the latest data. Always pass `end`.
