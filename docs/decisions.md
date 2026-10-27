@@ -174,9 +174,9 @@ The light model has no horizon logic (§5.2 runs both dates when carry is near z
 
 A switch shows as the dark cell moving between rows: ZBZ6 on 2026-10-23 from 15y through 20y to 25y as yields rise.
 
-**Interactive companion page (2026-10-26).** The static page stays the record (PNGs for the README, the writeup and print); `ctd report --interactive` also writes `output/interactive/<asof>.html` with charts 1 and 2 linked (`report/interactive.py`):
+**Interactive charts on the pages, PNGs as files (2026-10-26).** First built as a companion page beside the PNG page (`ctd report --interactive`), then swapped in: the report pages draw their charts in the browser (`report/interactive.py`), and the same charts as PNGs are written to `output/<asof>/png/<contract>-dv01-profile.png` (also `-krd-change`, `-dv01-series`) for the README, the writeup and print, no longer embedded. The pages need the CDN to draw their charts (offline viewing not needed); the date's summary dropped from 1.2 MB to about 200 KB. The summary groups the charts by contract, each under its ticker linked to the contract's page; the contract page has its charts above the analytics.
 - Chart 2 shows the key-rate change at any shift selected on chart 1 (hover, click to pin, or a slider for touch screens), not only ±1σ and ±2σ. Hovering chart 1 names the CTD at the shift and the likeliest CTDs at delivery from there; the heatmap gives each bucket's share.
-- Drawn in the browser by plotly.js (pinned version, from a CDN) from JSON embedded in the page, so it is one static file that needs no server (GitHub Pages). No Python plotly dependency and no static export (the `kaleido` problem above doesn't arise). Dash was ruled out: it needs a running server.
+- Drawn in the browser by plotly.js (pinned version, from a CDN) from JSON embedded in the page, so each page is one static file that needs no server (GitHub Pages). No Python plotly dependency and no static export (the `kaleido` problem above doesn't arise). Dash was ruled out: it needs a running server.
 - Only model outputs go in the JSON (DV01s, key-rate DV01s, shares, probabilities by shift), no market prices.
 - Same colors as the PNGs: the heatmap's stops are shared (`charts.SHARE_STOPS`), placed linearly since plotly maps z linearly.
 - Chart 3 is on it too, below each contract's charts 1 and 2. The static chart names each new CTD on the plot, which crowded once the series ran from 2026-09-01 (about a dozen ZBZ6 switches); here a CTD change is an open circle on the CTD-based line and the hover names the CTD, its probability of remaining CTD and the nearest switch in σ. ±1σ is a band rather than two lines (outputs.md), guides mark basket changes only, and dragging across dates zooms with both y-axes refitted to the window. The static chart 3 follows: circles instead of names, guides for basket changes only.
@@ -188,6 +188,21 @@ A switch shows as the dark cell moving between rows: ZBZ6 on 2026-10-23 from 15y
 **Decision:** roll at option expiry. Each contract's series runs on the contract whose quarterly options are the nearest not yet expired: ZBZ6 and ZNZ6 through 2026-11-19, ZBH7 and ZNH7 (with MAR27 options) from the December options' expiry, 2026-11-20. The light model already stops a contract once its options have expired. The March contracts are also run alongside from now, for the roll comparison (outputs.md Tier 2). Phase 1c follows the same rule.
 
 **Given up:** the December contract after 2026-11-20, which still trades to mid-December and delivers to month-end, when its CTD question matters most. Covering it needs vol from the next expiry (§5.5 step 3; the expiry-after-horizon issue in §11) and is left for phase 2.
+
+## Which dates a contract is run for (design §7, §10 phase 1d)
+
+**Status:** adopted (2026-10-26).
+
+**Decision:** a contract is run only while its futures and options are liquid: from the roll of the contract before it (for December, the September contract's roll in late August) to its own option expiry (previous entry). Earlier dates aren't wanted, even where the data would allow them. The series kept now starts on **2026-09-01**, for ZBZ6, ZNZ6, UBZ6 and TNZ6 (phase 1d).
+
+- **What the data would allow:** the December futures are in the Databento backfill from 2026-06-18 (when they became the second listed contract) and the DEC26 options from 2026-03-23, so June to August could be run; they're left out by choice, not for lack of data.
+- **No long history yet.** A series across several contracts, or before mid-2026, can't be produced with the code as it stands. It needs:
+  1. **Reference data per contract month:** delivery calendars (only Z6 and H7 are stored) and option expiries (only NOV26 to JUN27), generated from the coded rules and checked against CME for every past month.
+  2. **The roll:** a series that switches contract at each quarterly option expiry; `ctd history` runs one named contract.
+  3. **Baskets before 2023-12-11:** the light model reads CME's TCF files, which start then; earlier dates need the derived `baskets` table (rebuilt from the grade records and checked against every TCF file).
+  4. **Repo before May 2018:** no SR1 or SOFR; flat repo or fed funds futures plus a spread is still to decide (Repo path for the light model).
+
+  That is phase 4's historical runner (design §7, §10), not planned for now.
 
 ## Holiday calendar for 2016–2025 (data.md §2.5)
 
