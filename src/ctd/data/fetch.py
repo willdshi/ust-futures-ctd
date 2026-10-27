@@ -108,15 +108,17 @@ def fetch_date(asof: date, store: RawStore, http: Http | None, *, sources: Itera
         log(f"{asof} {spec.id} ...")
         entries[spec.id] = _run_source(spec, asof, store, http, today, man["sources"].get(spec.id))
         log(f"{asof} {spec.id}: {entries[spec.id]['status']}")
-    man = mf.load(store, asof)  # re-read: another run may have updated other sources meanwhile
-    man["sources"].update(entries)
-    for spec in registry.daily() if fill_missing else []:
-        if spec.id not in man["sources"]:
-            man["sources"][spec.id] = {"description": spec.description, "kind": str(spec.kind),
-                                       "calendar": spec.calendar, "schedule": spec.schedule, "status": mf.MISSING,
-                                       "reason": "not run yet", "units": {}}
-    mf.save(store, asof, man)
-    gaps = mf.gaps(man)
+
+    def merge(man: dict) -> None:  # into the stored manifest, under its lock: other runs' entries stay
+        man["sources"].update(entries)
+        for spec in registry.daily() if fill_missing else []:
+            if spec.id not in man["sources"]:
+                man["sources"][spec.id] = {"description": spec.description, "kind": str(spec.kind),
+                                           "calendar": spec.calendar, "schedule": spec.schedule,
+                                           "status": mf.MISSING, "reason": "not run yet", "units": {}}
+
+    man = mf.update(store, asof, merge)
+    gaps = mf.gaps(man, registry.occasional())
     if gaps:
         log_gaps(store.root, gaps)
     return gaps

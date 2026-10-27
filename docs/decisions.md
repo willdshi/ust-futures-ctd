@@ -6,8 +6,8 @@ Choices about how the project runs and how the model is built, with the options 
 
 **Status:** undecided, low priority (raised 2026-10-21).
 
-**Now:** the Windows scheduled task `ctd-daily-fetch` (registered by `scripts/register_daily_fetch.ps1`) runs `ctd fetch --catch-up` at 19:00 on weekdays. A second task, `ctd-morning-sofr`, stores the previous day's SOFR at 09:15 ([data.md](data.md) §4); if it's missed, the evening fetch collects the file.
-- If the PC is asleep or hibernating at 19:00, the run is missed, but "run as soon as possible after a missed start" is on, so it runs at the next wake.
+**Now:** four weekday-morning tasks (registered by `scripts/register_morning_tasks.ps1`, [data.md](data.md) §4) collect the previous business day: `ctd-daily-fetch` (`ctd fetch --catch-up`, all sources but Databento) at 09:00, `ctd-morning-sofr` and `ctd-morning-databento` at 09:15, and `ctd-morning-derive` at 09:30. Until 2026-10-27 the main fetch ran at 19:00 for that day, which stored provisional TreasuryDirect prices.
+- If the PC is asleep or hibernating at the scheduled time, the run is missed, but "run as soon as possible after a missed start" is on, so it runs at the next wake.
 - `--catch-up` retries the as-of date and the 4 business days before it.
 - It runs only while the user is logged in.
 
@@ -23,12 +23,12 @@ So hibernation delays collection rather than losing data, unless the PC is off f
 | Option | Effect | Cost |
 |---|---|---|
 | 1. Let the task wake the PC (Task Scheduler "Wake the computer to run this task") | Runs on time from sleep, and usually from hibernate | Needs "Allow wake timers" on in the power plan. Doesn't work from shutdown; laptops on battery often ignore wake timers |
-| 2. Add a second trigger, at logon or e.g. 08:00 | A missed evening is picked up as soon as the PC is used | None; repeat runs skip anything already collected |
+| 2. Add a second trigger, at logon | A missed morning is picked up as soon as the PC is used | None; repeat runs skip anything already collected |
 | 3. Widen `--catch-up` from 5 to 10 business days | A week away fills itself in; matches Yahoo's 10-day window | Slightly longer runs after an absence |
 | 4. Run on an always-on machine (mini PC, NAS, small cloud server) | Guaranteed nightly runs | Move and back up the store; overkill while CME needs a manual click |
 
-**Recommendation:** options 1–3 together. They cover hibernation, a missed evening and a week away, and need only:
-- a change to `scripts/register_daily_fetch.ps1`;
+**Recommendation:** options 1–3 together. They cover hibernation, a missed morning and a week away, and need only:
+- a change to `scripts/register_morning_tasks.ps1`;
 - a one-line change to `CATCH_UP_DAYS` in `src/ctd/cli.py`;
 - a check of the power plan's wake-timer setting (`powercfg`).
 
@@ -36,13 +36,13 @@ So hibernation delays collection rather than losing data, unless the PC is off f
 
 ## When the morning derive may run (design §10 phase 1e item 5)
 
-**Status:** undecided, tabled (raised 2026-10-27).
+**Status:** decided (2026-10-27): gate on the stored data, and skip the derive with an alert if it isn't there after an hour.
 
-**Now:** `ctd-morning-derive` (09:30, `scripts/morning_derive.ps1`) waits until `ctd-morning-sofr` and `ctd-morning-databento` have started that day and stopped running, logs their exit codes, and derives whatever they stored. It waits for them to finish, not to succeed. That is harmless in itself (a derive without D just lacks D, and the next one adds it), but it's not the dependency expected, and nothing says D is missing.
+**Before:** `ctd-morning-derive` (09:30, `scripts/morning_derive.ps1`) waited until `ctd-morning-sofr` and `ctd-morning-databento` have started that day and stopped running, logs their exit codes, and derives whatever they stored. It waits for them to finish, not to succeed. That is harmless in itself (a derive without D just lacks D, and the next one adds it), but it's not the dependency expected, and nothing says D is missing.
 
 **What happened (2026-10-27):** both collection tasks started together at 10:11 after the PC woke and appended to one log; the Databento task's command never ran (Windows PowerShell can't append to a file another process is writing), yet the task reported exit code 0. Derive ran at 10:14 without 10-26's Databento data. Fixed separately (each task has its own log), but it shows a task's exit code can't be trusted as the gate.
 
-**Proposed:** gate on the stored data, not the tasks. Before deriving, require `databento_daily` `ok` in D's manifest and `nyfed_rates` `ok` in D+1's (D's SOFR is stored under the next day), D being the previous `cme` business day. Otherwise skip the derive, log which source is missing and raise a desktop alert, as the evening fetch does (`ctd.data.alert`). Open: whether to skip the derive or derive anyway and only alert, and whether a later run (the evening fetch, or a second derive) should retry once the data arrives.
+**Decision:** `scripts/morning_derive.py` gates on the stored data, not the tasks. D is the previous `cme` business day; every minute it checks D's manifest for `databento_daily` `ok`, `td_prices` `ok` and not provisional, and `par_curve` `ok`, and that D's SOFR is stored (only when D and today are both `sifma` business days; it's stored under today's as-of date). Once all are there it runs `ctd derive --notify`. After an hour without them it doesn't derive: it logs what's missing and raises a desktop alert (`ctd.data.alert`), and the derive is rerun by hand (the script with `--asof D`, or `ctd derive`) once the data is in. No automatic retry: a missing source usually needs attention first. On a day that isn't a `cme` business day it does nothing.
 
 ## Key-rate grid for KRDs (design §5.9)
 
@@ -308,6 +308,8 @@ ZB's and ZN's digitals rest on strikes that traded (ZB on 2026-09-15: half its 6
 **Status:** adopted (2026-10-27), not yet built.
 
 **Decision:** pull CME futures and option settlements from Databento every business day at 09:15 Eastern for the previous `cme` business day, as the record for both. The bookmarklet files (CME settlement pages and the Section 42 bulletin) stay as a free secondary source and cross-check; on any date the bookmarklet isn't clicked they are a permanent gap, since CME serves only five trailing days of settlement pages and the latest bulletin.
+
+**Bookmarklet occasional (2026-10-27):** the CME sources (`cme_fut`, `cme_stir`, `cme_bulletin`) are `occasional`: ingested when clicked, never a gap or an alert (manifests written while they were daily are read by their schedule now, `registry.occasional`). Runs read the derived tables by default, so nothing waits for a click. The bulletin's final edition comes late on the next business day (still marked preliminary at 11:20 Eastern on 2026-10-27), so a click for date D belongs late on D+1, before D+2's edition replaces it. SR3 and ZQ are only collected on days clicked.
 
 **Why the time works:** without a CME licence, Databento's historical API stops at a rolling cutoff about 8 hours behind real time (requests past it return `422 dataset_unavailable_range`, "requires a subscription and/or license"). Measured on ZBZ6, 2026-10-20 to 10-26 (Chicago time):
 

@@ -30,11 +30,13 @@ def test_ingest_refreshes_manifest(tmp_path):
 
 def test_run_on_an_empty_store_reports_what_is_missing(tmp_path, capsys):
     assert main(["--data-root", str(tmp_path), "run", "--contract", "ZBZ6", "--asof", "2026-10-21"]) == 1
+    assert "no derived futures table" in capsys.readouterr().err
+    assert main(["--data-root", str(tmp_path), "run", "--contract", "ZBZ6", "--asof", "2026-10-21", "--inputs", "raw"]) == 1
     assert "no ZB futures settlements stored for 2026-10-21" in capsys.readouterr().err
 
 
 def test_history_carries_on_past_failed_dates(tmp_path, capsys):
-    # 2026-09-07 is Labor Day; the dates before 10-16 read the derived tables, which don't exist here
+    # 2026-09-07 is Labor Day; runs read the derived tables, which don't exist here
     assert main(["--data-root", str(tmp_path), "history", "--contract", "ZBZ6", "--from", "2026-09-04",
                  "--to", "2026-09-08"]) == 1
     out = capsys.readouterr().out

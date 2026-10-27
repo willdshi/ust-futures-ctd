@@ -1,6 +1,6 @@
 """Command-line entry point.
 
-    ctd fetch [--asof 2026-10-16] [--source cme_fut ...] [--catch-up] [--notify]
+    ctd fetch [--asof 2026-10-16] [--source cme_fut ...] [--skip-source databento_daily ...] [--catch-up] [--notify]
     ctd ingest
     ctd check [--from 2026-10-01] [--to 2026-10-16]
     ctd backfill
@@ -20,7 +20,6 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 CATCH_UP_DAYS = 5  # CME settlement pages show 5 trailing business days
-LIVE_FROM = date(2026, 10, 16)  # first date with every live raw source; runs before it read the derived tables
 
 
 def data_root() -> Path:
@@ -76,6 +75,7 @@ def _alert(gaps, problems, newest: date) -> None:
 
 
 def cmd_fetch(args) -> int:
+    from ctd.data import manifest as mf
     from ctd.data import refdata, registry
     from ctd.data.fetch import fetch_date
     from ctd.data.http import RequestsHttp
@@ -87,10 +87,18 @@ def cmd_fetch(args) -> int:
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
     dates = refdata.calendar("cme").trailing_business_days(asof, CATCH_UP_DAYS) if args.catch_up else [asof]
     specs = [registry.SOURCES[s] for s in args.source] if args.source else None
+    if args.skip_source:  # e.g. a source with its own scheduled task
+        specs = [s for s in (specs or registry.daily()) if s.id not in args.skip_source]
     http = RequestsHttp()
     gaps = []
     for d in dates:
-        gaps += fetch_date(d, store, http, sources=specs)
+        try:
+            gaps += fetch_date(d, store, http, sources=specs)
+        except mf.ManifestLocked as e:  # its files are stored; the next run records them
+            print(e)
+            gaps.append(mf.Gap(d, "manifest", "*", mf.FAILED, str(e)))
+    if specs is not None:  # a date's manifest also holds the other sources' gaps; report only the ones asked for
+        gaps = [g for g in gaps if g.source in {s.id for s in specs} | {"manifest"}]
     if args.notify:
         _alert(gaps, problems, max(dates))
     return _report(gaps)
@@ -166,6 +174,7 @@ def cmd_ingest(args) -> int:
 
 def cmd_check(args) -> int:
     from ctd.data import manifest as mf
+    from ctd.data import registry
     from ctd.data.store import RawStore
 
     store = RawStore(args.data_root)
@@ -174,7 +183,7 @@ def cmd_check(args) -> int:
         if (args.date_from and asof < args.date_from) or (args.date_to and asof > args.date_to):
             continue
         man = mf.load(store, asof)
-        gaps += mf.gaps(man)
+        gaps += mf.gaps(man, registry.occasional())
         warnings += [f"asof={asof} source={s} status=manual (coverage not verified)"
                      for s, e in man["sources"].items() if e["status"] == mf.MANUAL]
     for w in warnings:
@@ -189,13 +198,14 @@ def _report(gaps) -> int:
     return 1 if gaps else 0
 
 
-def uses_derived(asof: date, inputs: str = "auto") -> bool:
-    """Whether a run reads futures, SR1, options, the par curve and SOFR from the derived tables:
-    by date unless forced (``inputs`` "raw" or "derived"; design 10, phase 1d)."""
-    return inputs == "derived" or (inputs == "auto" and asof < LIVE_FROM)
+def uses_derived(inputs: str = "derived") -> bool:
+    """Whether a run reads futures, SR1, options, the par curve and SOFR from the derived tables
+    (the default, design 10 phase 1e item 6) rather than the raw CME pages, bulletin and files of its
+    date (``inputs`` "raw": a cross-check, for dates whose bookmarklet files are stored)."""
+    return inputs != "raw"
 
 
-def light_inputs(store, contract: str, asof: date, inputs: str = "auto"):
+def light_inputs(store, contract: str, asof: date, inputs: str = "derived"):
     """Everything the light model needs for ``contract`` on ``asof``, from the store only, and the
     raw files read (source, unit, name, sha256; ``asof`` when stored under another date). On the
     derived path (``uses_derived``) a table's inputs are the raw files its rows were built from,
@@ -216,7 +226,7 @@ def light_inputs(store, contract: str, asof: date, inputs: str = "auto"):
     # SOFR dated on or before asof, whenever it was pulled (asof's own is in the next morning's
     # file): this month's for the strip, plus the business day before a 1st that isn't one
     since = sifma.latest_business_day(asof.replace(day=1))
-    if uses_derived(asof, inputs):
+    if uses_derived(inputs):
         dstore = DerivedStore(store.root)
         futures, fut_src = d_futures.settlements(dstore, product, asof)
         sr1, sr1_src = d_futures.settlements(dstore, "SR1", asof)
@@ -257,14 +267,14 @@ def light_inputs(store, contract: str, asof: date, inputs: str = "auto"):
         ParCurve.from_points(par_points), par_date, sr1, fixings)
     read = [("td_prices", "securityprice", f"securityprice_{asof.isoformat()}.csv"),
             ("cme_tcf", "csv", cme_tcf.file_name(asof, "csv"))]
-    if not uses_derived(asof, inputs):
+    if not uses_derived(inputs):
         read += [("cme_fut", product, store.names(asof, "cme_fut", product)[0]),
                  *(("cme_stir", "SR1", n) for n in store.names(asof, "cme_stir", "SR1")[:1]),
                  ("cme_bulletin", "Section42", "Section42.pdf"),
                  *(("par_curve", "daily_treasury_yield_curve", n)
                    for n in store.names(asof, "par_curve", "daily_treasury_yield_curve"))]
     files = [{"source": s, "unit": u, "name": n, "sha256": store.meta(asof, s, u, n)["sha256"]} for s, u, n in read]
-    if uses_derived(asof, inputs):
+    if uses_derived(inputs):
         return x, files + derived
     # SOFR fixings, some from other as-of dates' files (marked with their date)
     files += [{"source": s, "unit": "sofr", "name": n, "sha256": store.meta(d, s, "sofr", n)["sha256"],
@@ -448,6 +458,8 @@ def build_parser() -> argparse.ArgumentParser:
     f = sub.add_parser("fetch", help="snapshot every source for an as-of date")
     asof_args(f)
     f.add_argument("--source", action="append", choices=sorted(registry.SOURCES), help="only these sources")
+    f.add_argument("--skip-source", action="append", choices=sorted(registry.SOURCES), default=[],
+                   help="all daily sources (or --source's) but these")
     f.add_argument("--catch-up", action="store_true",
                    help=f"also fill gaps in the {CATCH_UP_DAYS} business days ending on --asof")
     f.add_argument("--notify", action="store_true",
@@ -477,9 +489,10 @@ def build_parser() -> argparse.ArgumentParser:
     asof_args(r)
     r.add_argument("--no-save", action="store_true", help="print only; don't write data/results/light/...")
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
-    r.add_argument("--inputs", choices=["auto", "raw", "derived"], default="auto",
-                   help=f"where futures, SR1, options, par curve and SOFR come from: derived tables before "
-                        f"{LIVE_FROM}, raw pages from it (auto), or forced (design 10, phase 1d)")
+    r.add_argument("--inputs", choices=["derived", "raw"], default="derived",
+                   help="where futures, SR1, options, par curve and SOFR come from: the derived tables (default) "
+                        "or the date's raw CME pages, bulletin and files, which need the bookmarklet click "
+                        "(design 10, phase 1e item 6)")
     r.set_defaults(func=cmd_run)
     o = sub.add_parser("report", help="the single-date HTML pages (a summary with charts 1 to 3, a page per "
                                       "contract with its tables) and the charts as PNGs, from saved results")
@@ -501,7 +514,7 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--cutoff-hour", type=int, default=int(os.environ.get("CTD_FETCH_CUTOFF_HOUR", "18")),
                    help="as for run, for the default --to")
     h.add_argument("--no-save", action="store_true", help="print only")
-    h.add_argument("--inputs", choices=["auto", "raw", "derived"], default="auto", help="as for run")
+    h.add_argument("--inputs", choices=["derived", "raw"], default="derived", help="as for run")
     h.set_defaults(func=cmd_history)
     return p
 

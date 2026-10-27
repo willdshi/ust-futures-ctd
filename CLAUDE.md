@@ -38,7 +38,7 @@ Phase 1b (the light model, design §5.11) is in progress. Status is tracked as c
 - **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
   - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
     - CME futures settlements for all six contracts, and their option settlements as the Daily Bulletin's Section 42 PDF (saved in a browser with the bookmarklet; CME has no free download feed)
-      - Planned (design §10 phase 1e): a daily Databento pull becomes the record for both. The bookmarklet files stay a free secondary source; a day not clicked is a permanent gap there. Its futures are only the front two Treasury contracts and seven SR1 months: SR3 and ZQ come only from the bookmarklet's CME pages ([decisions.md](docs/decisions.md), Daily CME collection from Databento).
+      - From 2026-10-26 a daily Databento pull (design §10 phase 1e) is the record for both, and runs read the derived tables by default. The bookmarklet sources are `occasional`: a free cross-check, never a gap; a day not clicked is a permanent gap there. Its futures are only the front two Treasury contracts and seven SR1 months: SR3 and ZQ come only from the bookmarklet's CME pages ([decisions.md](docs/decisions.md), Daily CME collection from Databento).
     - CME conversion factor tables (TCF, from CME's public FTP server)
     - SOFR and fed funds futures
     - Yahoo Finance daily bars for the six Treasury futures (cross-check on CME settlements)

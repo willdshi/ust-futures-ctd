@@ -16,6 +16,11 @@ def daily() -> list[SourceSpec]:
     return [s for s in SOURCES.values() if s.schedule == "daily"]
 
 
+def occasional() -> frozenset[str]:
+    """Ids of the sources that are never a gap (``manifest.gaps``)."""
+    return frozenset(s.id for s in SOURCES.values() if s.schedule == "occasional")
+
+
 def backfill() -> list[SourceSpec]:
     return [s for s in SOURCES.values() if s.schedule == "backfill"]
 

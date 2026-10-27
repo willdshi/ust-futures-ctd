@@ -1,8 +1,8 @@
 """Desktop alert from the scheduled fetch (``ctd fetch --catch-up --notify``).
 
-Gaps on the newest as-of date of a run aren't alerted. At 19:00 that date's CME files are waiting
-for the next morning's bookmarklet click, and late files (the TCF xlsx, posted around 19:00) are
-retried by the next run. A gap still open on an earlier date has survived a retry, so it needs
+Gaps on the newest as-of date of a run aren't alerted: the next morning's run retries them (the
+fetch runs at 09:00 for the previous business day; its CME files, if any, come with a bookmarklet
+click that morning). A gap still open on an earlier date has survived a retry, so it needs
 attention, and so does a manual file that ingest refused.
 """
 

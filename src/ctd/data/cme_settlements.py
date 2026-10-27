@@ -64,11 +64,13 @@ def read_futures(store, asof: date, product: str, source: str = "cme_fut") -> di
 
 
 SPECS = [
+    # Occasional from 2026-10-27 (cme_stir and cme_bulletin too): Databento is the daily record (data.md 5.14),
+    # and these, saved with the bookmarklet when wanted, are a free cross-check that's never a gap.
     SourceSpec("cme_fut", "CME Treasury futures settlements, all six contracts, all months", Kind.DATED,
-               "cme", units=lambda asof, cal: list(_products("treasury")), fetch=None),
+               "cme", units=lambda asof, cal: list(_products("treasury")), fetch=None, schedule="occasional"),
     # Occasional: per-product option files dropped by hand; options arrive daily as the Daily Bulletin.
     SourceSpec("cme_opt", "CME options on Treasury futures, every expiry and strike", Kind.DATED, "cme",
                units=lambda asof, cal: list(_products("treasury")), fetch=None, schedule="occasional"),
     SourceSpec("cme_stir", "CME 1M SOFR, 3M SOFR and 30-day fed funds futures settlements", Kind.DATED,
-               "cme", units=lambda asof, cal: list(_products("stir")), fetch=None),
+               "cme", units=lambda asof, cal: list(_products("stir")), fetch=None, schedule="occasional"),
 ]

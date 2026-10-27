@@ -3,14 +3,14 @@
     python scripts/morning_sofr.py [--asof 2026-10-27]
 
 Run by the scheduled task ``ctd-morning-sofr`` (``register_morning_tasks.ps1``) at 09:15 on weekdays. A date's
-SOFR is published about 8am the next business day; the evening fetch stores it under that day's as-of date,
-so a run for the previous day made before the evening would take the day before's rate and warn
-(docs/decisions.md, Which data a run uses). This stores the same file in the morning instead: the evening
-fetch then finds it stored and skips it.
+SOFR is published about 8am the next business day and stored under that day's as-of date (docs/decisions.md,
+Which data a run uses), but the daily fetch, at 09:00, collects only the previous business day. This stores
+today's file once the fixing is out, so the previous day's run has its SOFR the same morning; the next
+morning's fetch then finds it stored and skips it.
 
 Nothing is stored until the latest fixing is the previous ``sifma`` business day's: a file without it would
-still be skipped by the evening fetch, holding the date's run back a day. Only ``nyfed_rates`` is fetched, and
-the other sources are left out of the manifest rather than recorded as missing (the evening fetch adds them).
+still be skipped by the next fetch, holding the date's run back a day. Only ``nyfed_rates`` is fetched, and
+the other sources are left out of the manifest rather than recorded as missing (the next morning's fetch adds them).
 Exit 1 if the fixing isn't published yet or the fetch fails.
 """
 
@@ -30,7 +30,7 @@ def main() -> int:
     ap.add_argument("--asof", type=date.fromisoformat, default=date.today())
     asof = ap.parse_args().asof
     if not (refdata.calendar("cme").is_business_day(asof) and refdata.calendar("sifma").is_business_day(asof)):
-        print(f"{asof}: not a cme and sifma business day; the evening fetch handles it")
+        print(f"{asof}: not a cme and sifma business day; the next morning's fetch handles it")
         return 0
     want = refdata.calendar("sifma").prev_business_day(asof)
     http = RequestsHttp()

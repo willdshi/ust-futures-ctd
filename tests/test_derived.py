@@ -540,12 +540,10 @@ def test_light_inputs_from_the_derived_tables(tmp_path):
         {date(2026, 8, 31): 0.0435, date(2026, 9, 1): 0.0433, d: 0.0431}, ["nyfed_rates"])
 
 
-def test_which_dates_read_the_derived_tables():
-    from ctd.cli import LIVE_FROM, uses_derived
+def test_runs_read_the_derived_tables_unless_asked_for_raw():
+    from ctd.cli import uses_derived
 
-    before = date(2026, 10, 15)
-    assert uses_derived(before) and not uses_derived(LIVE_FROM)
-    assert uses_derived(LIVE_FROM, "derived") and not uses_derived(before, "raw")
+    assert uses_derived() and uses_derived("derived") and not uses_derived("raw")
 
 
 def test_raw_files_behind_derived_rows(store):

@@ -23,24 +23,32 @@ def statuses(man):
     return {sid: s["status"] for sid, s in man["sources"].items()}
 
 
-def test_auto_sources_ok_and_cme_manual_needed(store):
+def test_auto_sources_ok_and_cme_never_expected(store):
     gaps, man = run(store, FakeHttp(gov_routes()))
     st = statuses(man)
     assert set(st) == {s.id for s in registry.daily()}
-    assert "cme_opt" not in st  # occasional: never expected
+    assert not CME_IDS & set(st) and "cme_opt" not in st  # occasional: never expected
     assert store.names(FRI, "cme_tcf", "csv") == ["TCF_20261016.csv"]
     for sid, status in st.items():
-        if sid in CME_IDS:
-            assert status == mf.MANUAL_NEEDED
-        elif sid == DATABENTO:  # collected from 2026-10-26
+        if sid == DATABENTO:  # collected from 2026-10-26
             assert status == mf.NOT_EXPECTED
         else:
             assert status == mf.OK, sid
-    assert {g.source for g in gaps} == CME_IDS
+    assert gaps == []
     assert store.names(FRI, "fiscaldata_auctions", "auctions_query") == ["auctions_query_p001.json",
                                                                          "auctions_query_p002.json"]
     assert store.names(FRI, "td_prices", "securityprice") == ["securityprice_2026-10-16.csv"]
-    assert (store.root / "gaps.log").read_text().count("manual_needed") == len(gaps)
+    assert not (store.root / "gaps.log").exists()
+
+
+def test_a_cme_entry_from_when_it_was_daily_is_no_longer_a_gap(store):
+    from ctd.data import manifest
+
+    manifest.save(store, FRI, {"asof": FRI.isoformat(), "sources": {"cme_bulletin": {
+        "status": mf.MANUAL_NEEDED, "schedule": "daily", "units": {"Section42": {"status": mf.MANUAL_NEEDED}}}}})
+    assert manifest.gaps(manifest.load(store, FRI)) != []  # as recorded
+    gaps, _ = run(store, FakeHttp([]), sources=[registry.SOURCES["fred"]], fill_missing=False)
+    assert {g.source for g in gaps} == {"fred"}  # the bulletin is occasional now
 
 
 def test_rerun_is_idempotent(store):

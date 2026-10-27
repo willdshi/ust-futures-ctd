@@ -327,5 +327,5 @@ def read_options(store, asof: date) -> list[OptionSettle]:
 
 SPECS = [
     SourceSpec("cme_bulletin", "CME Daily Bulletin sections (Section 42: Treasury options)", Kind.DATED, "cme",
-               units=lambda asof, cal: list(_sections()), fetch=None, validate=check),
+               units=lambda asof, cal: list(_sections()), fetch=None, validate=check, schedule="occasional"),
 ]
