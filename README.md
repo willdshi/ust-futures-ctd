@@ -23,7 +23,7 @@ The market already prices the chance of a switch, so the risk you hold changes s
 - **A duration profile**: DV01 and its key-rate shape across yield shifts, with ±1σ and ±2σ marked, recomputing the switch probabilities at each shifted state.
 - **Distance to the next switch**, in basis points and in standard deviations.
 
-For example, on 2026-10-21 ZBZ6 (December T-bond futures) carried $137,000 of DV01 per $100mm notional. CTD-based it carried $124,000. After a 1σ sell-off, the model's DV01 rises to $147,800, while the CTD-based figure jumps to $172,100 as the CTD moves to a longer, low-coupon bond.
+For example, on 2026-10-23 ZBZ6 (December T-bond futures) carried $137,000 of DV01 per $100mm notional. CTD-based it carried $126,000. After a 49bp sell-off, just past 1σ, the model's DV01 rises to $148,100, while the CTD-based figure jumps to $174,200 as the CTD moves to a longer, low-coupon bond.
 
 Intended use is for monitoring duration exposure, not for relative value trading. There is no futures fair value, no implied repo and no delivery-option valuation. See the write-up for a more detailed explanation.
 
@@ -73,9 +73,9 @@ conda env create -f environment.yml
 conda activate ctd
 pip install -e . --no-deps
 
-ctd fetch --asof 2026-10-21              # snapshot every source into ./data
-ctd run --contract ZBZ6 --asof 2026-10-21    # light model, prints and saves results
-ctd report --asof 2026-10-21             # single-date HTML page in ./output
+ctd fetch --asof 2026-10-23              # snapshot every source into ./data
+ctd run --contract ZBZ6 --asof 2026-10-23    # light model, prints and saves results
+ctd report --asof 2026-10-23             # single-date HTML page in ./output
 pytest -m "not network and not slow"     # tests that need no downloads
 ```
 
