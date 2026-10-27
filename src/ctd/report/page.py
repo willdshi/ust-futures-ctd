@@ -143,8 +143,10 @@ def summary(recs: list[dict]) -> str:
     note = ("<p class='note'><sup>1</sup> P(RCaD): the probability that today's CTD remains CTD at the implied "
             f"delivery date. <b>O</b>: from the option digitals, which can only measure it at option expiry "
             f"({expiries}); <b>N</b>: the ATM normal factor to the implied delivery date, as in the charts.</p>"
-            "<p class='note'><sup>2</sup> Implied delivery: the last delivery day if carry against term repo is "
-            "positive, the first if negative.</p>"
+            "<p class='note'><sup>2</sup> Implied delivery: the last delivery day if the basket's carry against "
+            "term repo, weighted by each bond's option-implied probability of being CTD, is positive; the first if "
+            "negative. One date for every bond and scenario: where bonds of opposite carry are close (ZN's "
+            "Aug-33s), the date is uncertain and could be either.</p>"
             "<p class='note'>Duration: the DV01 over the futures settlement price, in years (the futures' modified "
             "duration).</p>")
     return f"<div class='scroll'>{table}</div>{note}"

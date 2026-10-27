@@ -6,9 +6,9 @@ strip) and the contract's quarterly options. Repo is the SR1 strip (``funding.st
 when it covers the last delivery day, else flat at the latest SOFR, with a warning. Steps:
 
 1. Forward clean price of each bond to the first and last delivery days at that repo; the
-   horizon is the last day if the CTD's carry is positive, the first if negative
-   (``model.horizon``), with a warning if flat SOFR would pick the other day. Forward yields at
-   the horizon.
+   horizon is the last day if the basket's probability-weighted carry is positive, the first if
+   negative (``model.horizon``), weighted by steps 2–4 run with the envelope at the last day, and
+   with a warning if flat SOFR would pick the other day. Forward yields at the horizon.
 2. Switch points by parallel shifts of the forward yields (``model.envelope``), each recentred
    onto the market settlement, ``K_k = F_market + E(z_k) − E(0)``.
 3. A digital at each ``K_k`` from the options (``vol.digitals``), discounted at that repo from
@@ -41,7 +41,7 @@ from ctd.funding import strip
 from ctd.funding.repo import Growth, flat
 from ctd.model import profile as pf
 from ctd.model.envelope import BasketBond, Switch, envelope, switches
-from ctd.model.horizon import light_horizon
+from ctd.model.horizon import light_horizon, weighted_carry
 from ctd.model.probabilities import Probabilities, assemble, strike
 from ctd.reference.calendar import BusinessCalendar
 from ctd.reference.options import OptionExpiry
@@ -89,9 +89,10 @@ class Delivery:
 
     first: date
     last: date
-    ctd: str  # the cheapest at the last delivery day, whose carry decides
-    fwd_first: float  # its forward clean price on each day
-    fwd_last: float
+    carry: float  # probability-weighted carry, converted, price points per 100 face of futures
+    carry_flat: float  # the same at flat SOFR
+    weights: dict[str, float]  # the probabilities it's weighted by (option digitals, envelope at the last day)
+    carry_by_bond: dict[str, float]  # each weighted bond's converted forward, first day minus last
 
 
 @dataclass(frozen=True)
@@ -223,37 +224,52 @@ def run(x: LightInputs) -> LightResult:
         p = x.prices[c]
         return forward_clean(p.price, p.coupon, p.maturity, x.settle, delivery, g)
 
-    def pick(g: Growth):
-        last = {c: fwd(c, x.last_delivery, g) for c in cusips}
-        ctd_last = min(cusips, key=lambda c: last[c] / x.cfs[c])
-        first_fwd = fwd(ctd_last, x.first_delivery, g)
-        return light_horizon(x.first_delivery, x.last_delivery, first_fwd, last[ctd_last]), last, ctd_last, first_fwd
-
-    horizon, last, ctd_last, first_fwd = pick(g)
-    reason = (f"{'positive' if horizon == x.last_delivery else 'negative'} carry: CTD {ctd_last} forward "
-              f"{first_fwd:.4f} on {x.first_delivery}, {last[ctd_last]:.4f} on {x.last_delivery}")
-    if months and (flat_horizon := pick(g_flat)[0]) != horizon:
-        warnings.append(f"carry sign depends on the repo path: flat SOFR would put the horizon on {flat_horizon}")
-    repo = Repo("sr1" if months else "flat", (g(x.settle, horizon) - 1) * 360 / (horizon - x.settle).days,
-                months, why_flat)
-
-    rows = []
-    for c in cusips:
-        p = x.prices[c]
-        f = last[c] if horizon == x.last_delivery else fwd(c, horizon)
-        y = forward_yield(p.price, p.coupon, p.maturity, x.settle, horizon, g)
-        rows.append(BasketRow(c, p.coupon, p.maturity, x.cfs[c], p.price, p.price_from, f, y, f / x.cfs[c],
-                              dv01.per_futures(p.coupon, p.maturity, horizon, y, x.cfs[c]),
-                              tuple(krd.shares(p.coupon, p.maturity, horizon, curves))))
-    bonds = [BasketBond(r.cusip, r.coupon, r.maturity, r.cf, r.fwd_yield) for r in rows]
-
-    e, ctd = envelope(bonds, horizon, 0)
-    e0, ctd0 = float(e[0]), ctd[0]
-    sws = switches(bonds, horizon)  # the crossover table's range, −100 to +150bp
     df = 1 / g(x.settle, x.expiry.expiry)
     chain = [o for o in x.chain if o.product == x.expiry.product and o.label == x.expiry.label]
     if not chain:
         raise ValueError(f"no {x.expiry.product} {x.expiry.label} options in the bulletin for {x.asof}")
+
+    def at(horizon: date):
+        """Steps 1–4 with forwards to ``horizon``: basket rows, E(0), today's CTD, the switches,
+        their strikes and digitals, and the option-implied probabilities."""
+        rows = []
+        for c in cusips:
+            p = x.prices[c]
+            y = forward_yield(p.price, p.coupon, p.maturity, x.settle, horizon, g)
+            f = fwd(c, horizon)
+            rows.append(BasketRow(c, p.coupon, p.maturity, x.cfs[c], p.price, p.price_from, f, y, f / x.cfs[c],
+                                  dv01.per_futures(p.coupon, p.maturity, horizon, y, x.cfs[c]),
+                                  tuple(krd.shares(p.coupon, p.maturity, horizon, curves))))
+        bonds = [BasketBond(r.cusip, r.coupon, r.maturity, r.cf, r.fwd_yield) for r in rows]
+        e, ctd = envelope(bonds, horizon, 0)
+        e0, ctd0 = float(e[0]), ctd[0]
+        sws = switches(bonds, horizon)  # the crossover table's range, −100 to +150bp
+        digs = [(sw, k, digital(chain, k, x.f_market, df)) for sw in sws for k in [strike(sw, x.f_market, e0)]]
+        return rows, bonds, e0, ctd0, sws, digs, assemble(ctd0, sws, [d for _, _, d in digs])
+
+    # The date: probability-weighted carry, weighted by the option-implied probabilities with the
+    # envelope at the last delivery day (model.horizon; decisions.md, Delivery date for the light
+    # model's forward prices).
+    stage = at(x.last_delivery)
+    weights = krd.point_weights(stage[6].by_bond())
+
+    def carry(g: Growth) -> tuple[float, dict[str, float]]:
+        conv = {d: {c: fwd(c, d, g) / x.cfs[c] for c in weights} for d in (x.first_delivery, x.last_delivery)}
+        by_bond = {c: conv[x.first_delivery][c] - conv[x.last_delivery][c] for c in weights}
+        return weighted_carry(weights, conv[x.first_delivery], conv[x.last_delivery]), by_bond
+
+    (c_repo, by_bond), (c_flat, _) = carry(g), carry(g_flat)
+    horizon = light_horizon(x.first_delivery, x.last_delivery, c_repo)
+    reason = (f"{'positive' if horizon == x.last_delivery else 'negative'} probability-weighted carry, "
+              f"{c_repo * 32:+.2f}/32 of converted price from {x.first_delivery} to {x.last_delivery}")
+    flat_horizon = light_horizon(x.first_delivery, x.last_delivery, c_flat)
+    if months and flat_horizon != horizon:
+        warnings.append(f"carry sign depends on the repo path: flat SOFR would put the horizon on {flat_horizon}")
+    if horizon != x.last_delivery:
+        stage = at(horizon)
+    rows, bonds, e0, ctd0, sws, digs, probs = stage
+    repo = Repo("sr1" if months else "flat", (g(x.settle, horizon) - 1) * 360 / (horizon - x.settle).days,
+                months, why_flat)
     per = {r.cusip: r.dv01_cf for r in rows}
     t_h = atm.years(x.asof, horizon)
     vol = atm.atm(chain, x.f_market, df, atm.years(x.asof, x.expiry.expiry))
@@ -263,12 +279,9 @@ def run(x: LightInputs) -> LightResult:
     span = pf.reach(s_h)
     prof = pf.profile(bonds, horizon, x.par_curve, switches(bonds, horizon, -span, span), s_h)
     crossovers = []
-    for sw in sws:
-        k = strike(sw, x.f_market, e0)
-        d = digital(chain, k, x.f_market, df)
+    for sw, k, d in digs:
         crossovers.append(Crossover(sw, k, d, sw.z_bp / s_h, atm.normal_tail(sw.z_bp, s_e)))
         warnings += [f"switch at {sw.z_bp:+.1f}bp (K {k:.3f}): {f}" for f in d.flags]
-    probs = assemble(ctd0, sws, [c.digital for c in crossovers])
     warnings += probs.warnings
     krds = {r.cusip: r.krd for r in rows}
     by_bond = probs.by_bond()
@@ -276,7 +289,7 @@ def run(x: LightInputs) -> LightResult:
     if em_hi - em_lo > EM_WARN_YEARS:
         warnings.append(f"KRDs use interval midpoints of the probabilities; effective maturity could be "
                         f"{em_lo:.2f}–{em_hi:.2f}y")
-    delivery = Delivery(x.first_delivery, x.last_delivery, ctd_last, first_fwd, last[ctd_last])
+    delivery = Delivery(x.first_delivery, x.last_delivery, c_repo, c_flat, weights, by_bond)
     return LightResult(x.contract, x.asof, x.settle, horizon, reason, delivery, x.sofr, x.sofr_date, repo, x.f_market, e0,
                        x.expiry, df, tuple(rows), tuple(crossovers), probs,
                        dv01.weighted(per, by_bond), per[ctd0], x.face,

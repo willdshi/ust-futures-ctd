@@ -97,13 +97,33 @@ Each FedInvest file has buy, sell and end-of-day columns; end of day is filled i
 
 **Decision:** use end of day wherever it exists: all history, and every live date once the next evening's catch-up has completed its file. Only for a date still provisional (a same-evening run), fall back to the buy/sell midpoint (sell where there is no buy) and mark the result provisional.
 
-**To confirm:** that end of day is the snapshot closest to the 2pm CT futures settlement (phase 1b open question), and TreasuryDirect's own definition of the three columns.
+**Confirmed: end of day is the closer snapshot.** Checked 2026-10-26 over 2026-09-01 to 10-23 (37 dates × ZBZ6, ZNZ6, UBZ6, TNZ6, the light model re-run with each snapshot, all else equal): the recentring gap's daily change, as a yield, has a component common to all four contracts with standard deviation **1.32bp with end of day against 3.53bp with the buy/sell midpoint** (largest 3.6bp against 9.6bp); what's left per contract is 0.4bp against 0.6–1.2bp. The two snapshots are taken at different times: end of day minus midpoint is a yield move common to all four contracts (correlation 0.97–0.99), standard deviation 2.5bp, up to 6.2bp. So end of day is much the nearer to the 2pm CT futures settlement, but not simultaneous: the 1.3bp common offset left is the timing gap that remains. A provisional run on the midpoint is about 2.7 times noisier in the gap, one more reason it's replaced once end of day arrives. Still open: TreasuryDirect's own definition of the three columns.
 
 ## Delivery date for the light model's forward prices (design §5.11)
 
 The light model has no horizon logic (§5.2 runs both dates when carry is near zero), so it needs a fixed rule.
 
-**Decision:** take forwards to the last delivery day if the CTD's carry is positive, the first delivery day if negative. Carry is measured directly: the CTD (cheapest converted forward at the last delivery day) has positive carry when its forward clean price at the last delivery day is below the one at the first. One date for the whole basket, as in §5.2. Settled 2026-10-22, replacing a phase 1b open question.
+**Status:** revised 2026-10-26 (first settled 2026-10-22, replacing a phase 1b open question).
+
+**Decision:** take forwards to the last delivery day if the basket's **probability-weighted carry** is positive, the first delivery day if negative; one date for the whole basket, as in §5.2. The carry is `Σ p_i (F_first,i − F_last,i) / CF_i`: each bond's converted forward clean price on the first delivery day minus on the last (positive: holding it to the last day pays), weighted by its option-implied probability of being CTD (the light model's digitals, interval midpoints rescaled to sum to 1) with the envelope at the last delivery day. Code: `model.horizon` (`weighted_carry`, `light_horizon`), called from `model.light.run`, which computes the digitals with the envelope at the last day, decides, and recomputes at the first day only if that's the answer. Every determination of the implied delivery date goes through this one rule (live and historical runs, the saved results' `delivery`, the report's implied delivery column); the full model (§5.2) should use the same definition. Results schema 11 saves the carry, its flat-SOFR value, the weights and each bond's carry.
+
+**Superseded rule:** the carry of today's CTD alone (the cheapest converted forward at the last delivery day).
+
+**Why it changed (phase 1d review, 2026-09-01 to 10-23):** when the CTD alternates between bonds with opposite carry, the old rule moved the date a month with it: ZNZ6 13 times (between its 4½% Aug-33, positive carry, and 3⅞% Aug-33, negative), ZBZ6 and UBZ6 twice. Each flip moved the width to the horizon by about 22% (√ of 91 against 61 days), and with it the normal-model probabilities and the published implied delivery date.
+
+**Effect:** over the same 37 dates the date no longer moves for ZBZ6, UBZ6 or TNZ6 (all 31 December; weighted carry +0.2 to +2.2/32), and ZNZ6 moves 6 times instead of 13: three single days at 1 December (09-15, 09-23, 10-13; weighted carry −0.4 to +1.3/32, within ±0.25/32 of zero on 7 dates). The flat-SOFR cross-check disagrees on 3 ZNZ6 dates instead of 12.
+
+**What the date changes** (each date run at both delivery days): the headline DV01 by under 1% (median $0.5–0.8k per $100mm), effective maturity by 0.08–0.16y, the width by about 22%. But which bond is CTD and the per-bond probabilities can move a lot where two bonds of opposite carry are near a tie: ZNZ6's CTD differs between the two days on 25 of 37 dates and its per-bond probabilities by a median 58–63 points (ZBZ6 15–20).
+
+**Why the digitals, at the last day:**
+- The weights must not depend on the date being chosen: the normal model's width runs to the horizon, so weighting by it is circular; the digitals are measured at option expiry. Weighted by the normal model, the date would flip more (ZBZ6 6 times, ZNZ6 13); it agrees with the digitals' sign on 76–100% of dates.
+- The switch strikes the digitals are read at still depend on the envelope's date, so the envelope is fixed at the last day, the same anchor as the old rule.
+
+**Limitations:**
+- **ZN is genuinely ambiguous.** With the envelope at the first day, the digital weights give the opposite sign on 81% of ZNZ6's dates: each day favours its own bond (the 3⅞% at the first, the 4½% at the last), so both dates are self-consistent and the last-day anchor decides. ZBZ6, UBZ6 and TNZ6 agree on 89–100%. The full treatment is §5.2's: run both dates when carry is near zero.
+- One date for every scenario: in a sell-off ZN's CTD is the 3⅞% (deliver early), in a rally the 4½% (deliver late); a single date is an approximation either way.
+- The digitals are measured at option expiry, with less spread than at delivery, so they lean towards today's CTD and the date towards its carry; they carry the 64ths rounding (about 1–3 points each) and the CME-settlement caveats ([Option strikes with no open interest](#option-strikes-with-no-open-interest-design-55-511-phase-1d)).
+- Carry is today's, at today's term repo (the SR1 strip); the flat-SOFR warning flags dates where the repo path decides the sign.
 
 ## Derived tables: format and columns (design §4)
 

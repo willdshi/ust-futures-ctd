@@ -6,7 +6,7 @@ from ctd.bonds.forward import forward_clean, forward_yield
 from ctd.bonds.pricing import clean_price
 from ctd.data import refdata
 from ctd.funding.repo import flat, growth, term_rate
-from ctd.model.horizon import light_horizon
+from ctd.model.horizon import light_horizon, weighted_carry
 
 SIFMA = refdata.calendar("sifma")
 R = 0.04
@@ -64,7 +64,13 @@ def test_forward_yield_reprices_the_forward():
     assert clean_price(0.045, date(2046, 11, 15), date(2026, 12, 31), y) == pytest.approx(forward_clean(*args), abs=1e-10)
 
 
-def test_light_horizon():
+def test_light_horizon_follows_probability_weighted_carry():
     first, last = date(2026, 12, 1), date(2026, 12, 31)
-    assert light_horizon(first, last, 80.10, 80.05) == last  # forward falls: positive carry
-    assert light_horizon(first, last, 80.05, 80.10) == first
+    # ZNZ6's pair: the 4½% (CTD today, 55%) earns carry, the 3⅞% (45%) costs more than it earns
+    conv_first, conv_last = {"A": 107.40, "B": 107.43}, {"A": 107.38, "B": 107.47}
+    w = {"A": 0.55, "B": 0.45}
+    c = weighted_carry(w, conv_first, conv_last)
+    assert c == pytest.approx(0.55 * 0.02 - 0.45 * 0.04)
+    assert c < 0 and light_horizon(first, last, c) == first  # though today's CTD alone says the last day
+    assert light_horizon(first, last, weighted_carry({"A": 1.0}, conv_first, conv_last)) == last
+    assert light_horizon(first, last, 0.0) == last  # a tie counts as positive carry

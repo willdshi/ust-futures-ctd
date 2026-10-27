@@ -111,7 +111,8 @@ def test_summary_gives_both_probabilities_and_the_carry_behind_implied_delivery(
     assert f"{name} (O {rec['ctd_keeps'][0]:.1%}, N {normal:.1%})</td><td>31 Dec 2026</td>" in html
     assert "CTD today, P(RCaD)<sup>1</sup>" in html and "implied delivery<sup>2</sup>" in html
     assert "<sup>1</sup> P(RCaD): the probability that today's CTD remains CTD at the implied delivery date" in html
-    assert "<sup>2</sup> Implied delivery: the last delivery day if carry against term repo is positive" in html
+    assert ("<sup>2</sup> Implied delivery: the last delivery day if the basket's carry against term repo, weighted by "
+            "each bond's option-implied probability of being CTD, is positive") in html
     i0 = rec["profile"]["points"]
     assert f"({page.duration(i0['dv01'][i], rec['f_market']):.2f}y)" in html and f"{rec['f_market']:.4f}" in html
 

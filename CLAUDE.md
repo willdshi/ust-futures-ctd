@@ -74,7 +74,7 @@ Phase 1b (the light model, design §5.11) is in progress. Status is tracked as c
 
 ## Model invariants that are easy to get wrong
 
-- **Horizon.** Pick one horizon for the whole basket, not one per bond: last delivery day if carry is positive, first delivery day if negative (§5.2).
+- **Horizon.** Pick one horizon for the whole basket, not one per bond: last delivery day if the basket's probability-weighted carry is positive (each bond's carry weighted by its probability of being CTD, not today's CTD's alone), first delivery day if negative (§5.2; `ctd.model.horizon`; [decisions.md](docs/decisions.md), Delivery date). Every implied delivery date goes through that one rule.
 - **Exact cash flows.** Coupons between today and the horizon must be in the forward price, and accrued must be at the correct settlement and delivery dates (§5.1).
 - **Grid centring.** Centre everything on forward yields at the horizon. The per-bond convexity adjustment `c_i` (so that `E[P_i(z)]` equals the forward price) is optional and off by default in v1; add it only if backtests show a bias (§5.6).
 - **Slope-adjusted widths.** The slope-adjusted width `S_eff` is used for **probabilities only**, never for DV01 or KRDs (§5.7).

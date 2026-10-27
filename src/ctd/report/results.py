@@ -15,10 +15,11 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 10  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
+SCHEMA = 11  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
 # 7: repo from the SR1 strip; 8: the delivery window and the carry behind the horizon; 9: inputs read
 # through a derived table are its raw files, each marked with the ``table``; 10: per digital and for the ATM
-# vol, the strikes used that traded that day and those with no open interest (no longer a warning)
+# vol, the strikes used that traded that day and those with no open interest (no longer a warning); 11: the
+# horizon from probability-weighted carry (``delivery``: carry, carry_flat, weights, carry_by_bond)
 
 
 def light_path(root: Path, contract: str, asof: date) -> Path:
@@ -43,8 +44,11 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
         "model": "light", "schema": SCHEMA, "contract": r.contract, "asof": r.asof.isoformat(),
         "settle": r.settle.isoformat(), "horizon": r.horizon.isoformat(), "horizon_reason": r.horizon_reason,
         "delivery": {"first": r.delivery.first.isoformat(), "last": r.delivery.last.isoformat(),
-                     "ctd": r.delivery.ctd, "fwd_first": r.delivery.fwd_first, "fwd_last": r.delivery.fwd_last,
-                     "units": "forward clean prices of the cheapest bond at the last delivery day, per 100 face"},
+                     "carry": r.delivery.carry, "carry_flat": r.delivery.carry_flat,
+                     "weights": r.delivery.weights, "carry_by_bond": r.delivery.carry_by_bond,
+                     "units": "carry: probability-weighted, converted forward on the first delivery day minus on the last, "
+                              "price points per 100 face of futures (positive: the last day); weights: "
+                              "option-implied P(CTD) with the envelope at the last day"},
         "sofr": r.sofr, "sofr_date": r.sofr_date.isoformat(),
         "repo": {"path": r.repo.path, "term": r.repo.term,
                  "months": {m.isoformat(): v for m, v in r.repo.months.items()}, "why_flat": r.repo.why_flat,

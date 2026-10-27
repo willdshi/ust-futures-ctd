@@ -52,6 +52,8 @@ def inputs(**kw):
 def test_run_on_a_synthetic_basket():
     r = run(inputs())
     assert r.horizon == date(2026, 12, 31)  # 5.5% yields over 3.88% SOFR: positive carry
+    assert r.delivery.carry > 0 and sum(r.delivery.weights.values()) == pytest.approx(1)
+    assert set(r.delivery.weights) == set(r.probabilities.by_bond())
     assert [b.cusip for b in r.basket] == ["A", "B", "C", "D"]  # by maturity
     assert r.crossovers, "a sell-off makes the longer bonds cheapest"
     for c in r.crossovers:
@@ -151,7 +153,7 @@ def test_profile_is_the_headline_and_is_saved(tmp_path):
     assert "region-weighted (normal, ATM width; vol ±10%" in out
     assert "Shifted states" in out and "Change in key-rate DV01 from today" in out and "+2σ CTD-based" in out
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 10
+    assert rec["schema"] == 11
     half = pf.half_range(r.width)  # ±100bp, or wider to take in ±2σ
     assert len(rec["profile"]["curve"]["dv01"]) == len(r.profile.curve.centres) == 2 * half + 1
     assert r.profile.curve.centres[-1] == half >= 2 * r.width
@@ -220,7 +222,7 @@ def test_a_rising_strip_raises_repo_and_is_saved(tmp_path):
     assert r.repo.term > run(inputs()).repo.term
     assert "repo: SR1 strip" in format_run(r)
     rec = results.light_record(r, [], None)
-    assert rec["schema"] == 10 and rec["repo"]["path"] == "sr1"
+    assert rec["schema"] == 11 and rec["repo"]["path"] == "sr1"
     assert rec["repo"]["months"]["2026-12-01"] == pytest.approx(r.repo.months[date(2026, 12, 1)])
 
 
