@@ -1,17 +1,19 @@
-"""The single-date report: one self-contained HTML page per as-of date (phase 1c item 5).
+"""The single-date report: a summary page per as-of date and a page per contract (phase 1c item 5).
 
-    output/2026-10-21.html
+    output/2026-10-21.html               summary: contracts, headline numbers, charts 1 to 3 for every contract
+    output/2026-10-21/ZBZ6.html          one contract: its charts, then the full analytics
+    output/2026-10-21/png/ZBZ6-*.png     the same charts as PNGs (README, writeup, print)
 
 Built from the saved results of every contract run on that date (``report.results``), never from a
-model run, so the page can be redrawn from the files alone. Charts 1 and 2 (``report.charts``) as
-base64 PNGs, as small multiples across contracts; chart 3 from each contract's results up to that
-date (``report.series``), so a past date's page never sees later runs; then, per contract, the tables: the shifted
-states (DV01 against CTD-based DV01), the key-rate changes behind chart 2, CTD probabilities from
-both models, and the distance to each switch. Plain string formatting, no template engine
-(decisions.md, Chart rendering).
+model run, so the pages can be redrawn from the files alone. The charts are drawn in the browser by
+plotly.js (``report.interactive``): charts 1 and 2 linked, chart 3 from each contract's results up
+to that date (``report.series``), so a past date's pages never see later runs. Each ticker in the
+summary's contract table links to the contract's page, which repeats its charts and adds the
+tables: the shifted states (DV01 against CTD-based DV01), the key-rate changes behind chart 2, CTD
+probabilities from both models, the distance to each switch, and the inputs. Plain string
+formatting, no template engine (decisions.md, Chart rendering).
 """
 
-import base64
 from datetime import date
 from html import escape
 from pathlib import Path
@@ -19,7 +21,7 @@ from pathlib import Path
 import numpy as np
 
 from ctd.reference.grades import Grade, grade_for
-from ctd.report import charts, results, series
+from ctd.report import charts, interactive, results, series
 from ctd.report.light import money, prob, traded
 from ctd.report.names import bond_name
 from ctd.risk.dv01 import dollars
@@ -41,10 +43,6 @@ def _table(header: list[str], rows: list[list[str]], caption: str = "", cls: str
     body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
     cap = f"<caption>{caption}</caption>" if caption else ""
     return f'<table class="{cls}">{cap}<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
-
-
-def _img(png: bytes, alt: str) -> str:
-    return f'<img alt="{escape(alt)}" src="data:image/png;base64,{base64.b64encode(png).decode()}">'
 
 
 def nearest(rec: dict) -> dict[str, dict | None]:
@@ -100,9 +98,15 @@ def grade_text(g: Grade) -> str:
     return text
 
 
-def contracts_table(recs: list[dict]) -> str:
+def contract_href(asof: str, contract: str) -> str:
+    """A contract's page, relative to the date's summary page."""
+    return f"{asof}/{contract}.html"
+
+
+def contracts_table(recs: list[dict], link: bool = False) -> str:
     """What each contract is: name and month, size, the grade in force for its month (reference data),
-    its delivery days, basket and the options read for vol (the result)."""
+    its delivery days, basket and the options read for vol (the result). With ``link``, each ticker
+    links to the contract's page (on the summary)."""
     from ctd.data import refdata
     from ctd.reference.contracts import parse_contract
 
@@ -112,7 +116,10 @@ def contracts_table(recs: list[dict]) -> str:
     for r in recs:
         code, month = parse_contract(r["contract"], date.fromisoformat(r["asof"]))
         p, d = products[code], r["delivery"]
-        rows.append([f"<b>{r['contract']}</b>", f"{p['name']} futures, {month:%B %Y}", f"${p['face']:,} face",
+        ticker = f"<b>{r['contract']}</b>"
+        if link:
+            ticker = f"<a href='{contract_href(r['asof'], r['contract'])}'>{ticker}</a>"
+        rows.append([ticker, f"{p['name']} futures, {month:%B %Y}", f"${p['face']:,} face",
                      grade_text(grade_for(grades, code, month)), f"{_day(d['first'])} to {_day(d['last'])}",
                      f"{len(r['basket'])} issues",
                      f"{r['options']['label']}, expiry {_day(r['options']['expiry'])}"])
@@ -263,7 +270,7 @@ h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 32px 0 8p
 h3 { font-size: 15px; margin: 24px 0 6px; }
 p.lede, p.note { color: var(--ink2); max-width: 75ch; }
 .grid { display: flex; flex-wrap: wrap; gap: 16px; }
-figure { flex: 1 1 560px; min-width: 0; box-sizing: border-box; margin: 0; background: var(--surface);
+figure { flex: 1 1 560px; min-width: 0; max-width: 900px; box-sizing: border-box; margin: 0; background: var(--surface);
   border: 1px solid var(--grid); border-radius: 6px; padding: 8px; }
 figure img { width: 100%; height: auto; display: block; }
 .scroll { overflow-x: auto; }
@@ -275,7 +282,16 @@ th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: l
 table.text th, table.text td { text-align: left; }
 .flag { color: var(--flag); font-weight: 600; }
 ul.diag { color: var(--ink2); padding-left: 20px; }
-"""
+a { color: #1c5cab; } p.back { margin: 0 0 12px; }
+section h3 { margin-top: 28px; }
+""" + interactive.CSS
+
+# The summary's opening note: where the detail is, and which contracts aren't covered
+SUMMARY_NOTE = (
+    "<p class='note'>Detailed analytics for each contract (the shifted states, key-rate DV01s, CTD "
+    "probabilities, the distance to each switch, and the inputs) are on its own page: follow the ticker links "
+    "in the table below. ZT (2-year) and ZF (5-year) futures are omitted: their deliverable baskets span about "
+    "a year of maturity or less, so a change of CTD moves their duration and DV01 little.</p>")
 
 
 def check_schema(recs: list[dict]) -> None:
@@ -285,57 +301,70 @@ def check_schema(recs: list[dict]) -> None:
                              f"{MIN_SCHEMA} or later; re-run ctd run")
 
 
-def through_time(history: dict[str, list[series.Row]]) -> list[str]:
-    """Chart 3's section: contracts with at least two dates."""
-    shown = {c: rows for c, rows in history.items() if len(rows) >= 2}
-    if not shown:
-        return []
-    return [
-        "<h2>DV01 through time</h2>",
-        "<p class='note'><b>Top:</b> futures DV01 on each date with its −1σ and +1σ states, against the CTD-based DV01, "
-        "which steps at each switch (circled; the interactive page names the CTD), and the DV01 of the first "
-        "date's CTD held throughout. "
-        "The gap between that constant-CTD line and the probability-weighted line is the part of the change "
-        "caused by the basket. <b>Bottom:</b> effective maturity, where on the curve the DV01 sits (the key rates' "
-        "maturities weighted by their DV01); with the CTD unchanged it still lengthens a little as yields rise. "
-        "Guides mark basket changes.</p>",
-        "<div class='grid'>" + "".join(f"<figure>{_img(charts.dv01_series_chart(c, rows), c + ' DV01 through time')}"
-                                       "</figure>" for c, rows in shown.items()) + "</div>",
-    ]
+def _document(title: str, body: list[str], data: list[dict]) -> str:
+    """A page whose charts (``data``, from ``interactive.chart_data``) are drawn in the browser."""
+    head, tail = interactive.scripts(data)
+    return (f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>"
+            f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
+            f"<title>{title}</title><style>{CSS}</style>{head}</head>\n<body><main>\n" + "\n".join(body)
+            + f"\n</main>\n{tail}\n</body></html>\n")
 
 
 def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | None = None) -> str:
-    """The page for ``asof`` from that date's results, in contract order; ``history`` holds each
-    contract's series up to ``asof`` for chart 3."""
+    """The summary page for ``asof`` from that date's results, in contract order: the contract and
+    summary tables, then each contract's charts 1 to 3 under its linked ticker. ``history`` holds
+    each contract's series up to ``asof`` for chart 3. The tables per contract are on its own page
+    (``render_contract``)."""
     check_schema(recs)
     contracts = ", ".join(r["contract"] for r in recs)
-    parts = [
+    data = interactive.chart_data(recs, history or {})
+    return _document(f"CTD report {asof}", [
         f"<h1>Treasury futures duration profile, {asof}</h1>",
         f"<p class='lede'>{contracts}. {LIGHT_MODEL_LEDE}</p>",
-        contracts_table(recs),
+        SUMMARY_NOTE,
+        contracts_table(recs, link=True),
         summary(recs),
-        "<h2>DV01 profile</h2>",
-        "<p class='note'><b>Top:</b> futures DV01 at each shift, with the vol ±10% band and the CTD-based staircase. "
-        "<b>Bottom:</b> each key rate's share of that DV01. Key rates are measured against the Treasury par curve, so "
-        "low-coupon bonds load more than 100% at their own maturity and negatively at shorter tenors.</p>",
-        "<div class='grid'>" + "".join(f"<figure>{_img(charts.profile_chart(r), r['contract'] + ' DV01 profile')}"
-                                       "</figure>" for r in recs) + "</div>",
-        "<h2>Key-rate change at shifted states</h2>",
-        "<p class='note'>Bars: the change in each key-rate DV01 from today at −2σ, −1σ, +1σ and +2σ. "
-        "Markers: the same change for the CTD-based figures, which jump at each switch.</p>",
-        "<div class='grid'>" + "".join(f"<figure>{_img(charts.krd_change_chart(r), r['contract'] + ' key-rate change')}"
-                                       "</figure>" for r in recs) + "</div>",
-        *through_time(history or {}),
-    ]
-    for r in recs:
-        parts += [f"<h2>{r['contract']}</h2>",
-                  *(f"<div class='scroll'>{t}</div>" for t in
-                    (states_table(r), krd_table(r), probability_table(r), switch_table(r))),
-                  "<h3>Inputs and diagnostics</h3>", diagnostics(r)]
-    body = "\n".join(parts)
-    return (f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>"
-            f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
-            f"<title>CTD report {asof}</title><style>{CSS}</style></head>\n<body><main>\n{body}\n</main></body></html>\n")
+        "<h2>Charts</h2>", interactive.NOTE,
+        *(interactive.section(c, f"<h3><a href='{contract_href(r['asof'], r['contract'])}'>{r['contract']}</a></h3>")
+          for c, r in zip(data, recs)),
+    ], data)
+
+
+def render_contract(asof: date, rec: dict, rows: list[series.Row] | None = None) -> str:
+    """One contract's page for ``asof``: its rows of the summary tables, its charts 1 to 3 (``rows``
+    is its series up to ``asof``), then the full analytics."""
+    check_schema([rec])
+    c = rec["contract"]
+    data = interactive.chart_data([rec], {c: rows or []})
+    return _document(f"{c} CTD report {asof}", [
+        f"<p class='back'><a href='../{asof.isoformat()}.html'>← All contracts, {asof}</a></p>",
+        f"<h1>{c} duration profile, {asof}</h1>",
+        f"<p class='lede'>{LIGHT_MODEL_LEDE}</p>",
+        contracts_table([rec]),
+        summary([rec]),
+        "<h2>Charts</h2>", interactive.NOTE,
+        interactive.section(data[0]),
+        "<h2>Analytics</h2>",
+        *(f"<div class='scroll'>{t}</div>" for t in
+          (states_table(rec), krd_table(rec), probability_table(rec), switch_table(rec))),
+        "<h3>Inputs and diagnostics</h3>", diagnostics(rec),
+    ], data)
+
+
+def write_pngs(out_dir: Path, rec: dict, rows: list[series.Row]) -> list[Path]:
+    """The contract's charts as PNG files, ``out_dir/<contract>-dv01-profile.png`` and so on (chart 3
+    from two dates on): the same charts as the pages', for the README, the writeup and print."""
+    c = rec["contract"]
+    drawn = [("dv01-profile", charts.profile_chart(rec)), ("krd-change", charts.krd_change_chart(rec))]
+    if len(rows) >= 2:
+        drawn.append(("dv01-series", charts.dv01_series_chart(c, rows)))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for name, png in drawn:
+        p = out_dir / f"{c}-{name}.png"
+        p.write_bytes(png)
+        paths.append(p)
+    return paths
 
 
 def contracts_on(root: Path, asof: date) -> list[str]:
@@ -349,8 +378,10 @@ def contracts_on(root: Path, asof: date) -> list[str]:
     return sorted(found, key=lambda c: (order.index(parse_contract(c, asof)[0]), parse_contract(c, asof)[1]))
 
 
-def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = None) -> Path:
-    """Write ``out_dir/<asof>.html`` from the results saved under ``root``."""
+def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = None) -> list[Path]:
+    """Write the summary ``out_dir/<asof>.html``, each contract's ``out_dir/<asof>/<contract>.html``
+    and its charts as PNGs under ``out_dir/<asof>/png/``, from the results saved under ``root``;
+    the pages first, the summary's path leading."""
     import json
 
     contracts = contracts or contracts_on(root, asof)
@@ -370,4 +401,11 @@ def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = N
         check_schema(past)
         history[c] = series.series(past)
     out.write_text(render(asof, recs, history), encoding="utf-8")
-    return out
+    paths, pngs = [out], []
+    for r in recs:
+        p = Path(out_dir) / contract_href(asof.isoformat(), r["contract"])
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(render_contract(asof, r, history[r["contract"]]), encoding="utf-8")
+        paths.append(p)
+        pngs += write_pngs(p.parent / "png", r, history[r["contract"]])
+    return paths + pngs

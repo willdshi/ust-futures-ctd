@@ -1,30 +1,29 @@
-"""The interactive single-date page: charts 1 and 2 linked, and chart 3, drawn in the browser with plotly.js.
+"""The report pages' charts, drawn in the browser with plotly.js: charts 1 and 2 linked, and chart 3.
 
-A companion to the static page (``report.page``), from the same saved results: each contract's
-profile and series go into the page as JSON and plotly.js (from a CDN, pinned) draws them, so the
-page is one static file that needs no server (GitHub Pages). Only model outputs go in: DV01s,
-key-rate DV01s, shares, effective maturities and probabilities, no market prices.
+``report.page`` puts each contract's profile and series into its pages as JSON (``chart_data``),
+one block of chart containers per contract (``section``), and the script that draws them
+(``SCRIPT``, with plotly.js from a CDN, pinned), so each page is one static file that needs no
+server (GitHub Pages). Only model outputs go in: DV01s, key-rate DV01s, shares, effective
+maturities and probabilities, no market prices. The same charts as PNGs (``report.charts``) are
+written beside the pages, for the README, the writeup and print.
 
-- Chart 1: the DV01 profile as on the static page; hovering names the CTD at the shift and the
-  likeliest CTDs at delivery from that state, and the heatmap gives each bucket's share.
+- Chart 1: the DV01 profile; hovering names the CTD at the shift and the likeliest CTDs at
+  delivery from that state, and the heatmap gives each bucket's share.
 - Chart 2: the change in each key-rate DV01 from today at the shift selected on chart 1 (hover to
-  move it, click to pin it, or the slider), with the CTD-based change as a marker; the static
-  page shows only ±1σ and ±2σ.
+  move it, click to pin it, or the slider), with the CTD-based change as a marker; the PNG shows
+  only ±1σ and ±2σ.
 - Chart 3: DV01 and effective maturity through time (``report.series``), up to the page's date.
-  The static chart names each new CTD on the plot, which crowds once switches are frequent; here a
-  CTD change is a marker and the hover names the CTD. ±1σ is a band (outputs.md), guides mark
+  A CTD change is a marker and the hover names the CTD. ±1σ is a band (outputs.md), guides mark
   basket changes only, and dragging zooms the dates with the y-axes refitted to the window.
 """
 
 import json
-from datetime import date
 from html import escape
-from pathlib import Path
 
 import numpy as np
 from scipy.special import ndtri
 
-from ctd.report import charts, page, results, series
+from ctd.report import charts, series
 from ctd.report.names import bond_name
 from ctd.risk.dv01 import dollars
 
@@ -115,10 +114,10 @@ STYLE = {
     "share_range": [_LO, _HI],
 }
 
-CSS = page.CSS + """
+CSS = """
 figure.plot { padding: 4px 8px 8px; }
 .chart1 { height: 600px; } .chart2 { height: 360px; } .chart3 { height: 560px; }
-figure.wide { flex-basis: 100%; }
+figure.wide { flex-basis: 100%; max-width: none; }
 .control { display: flex; align-items: center; gap: 12px; margin: 4px 8px 0; color: var(--ink2); font-size: 13px; }
 .control input { flex: 1; }
 .readout { font-variant-numeric: tabular-nums; min-width: 26ch; }
@@ -304,9 +303,42 @@ for (const c of D.contracts) {
 """
 
 
-def _section(c: dict) -> str:
+NOTE = (
+    "<p class='note'><b>Left:</b> futures DV01 at each shift, with the vol ±10% band and the CTD-based staircase; "
+    "below, each key rate's share of that DV01 (key rates are measured against the Treasury par curve, so "
+    "low-coupon bonds load more than 100% at their own maturity and negatively at shorter tenors). Hover to read "
+    "the CTD at a shift and the likeliest CTDs at delivery from there. <b>Right:</b> the change in each key-rate "
+    "DV01 from today at the shift selected on the left: hover to move it, click to pin it, or use the slider. "
+    "Markers are the CTD-based change, which jumps at each switch. <b>Below:</b> DV01 and effective maturity on "
+    "each date, against the CTD-based figures and the first date's CTD held throughout; the gap between that "
+    "constant-CTD line and the probability-weighted line is the part of the change caused by the basket. Circles "
+    "mark a change of CTD, which the hover names. Drag across dates to zoom, double-click to reset.</p>")
+
+
+def chart_data(recs: list[dict], history: dict[str, list[series.Row]]) -> list[dict]:
+    """Each contract's numbers for its charts; chart 3's series from two dates on."""
+    out = []
+    for r in recs:
+        c = payload(r)
+        rows = history.get(r["contract"], [])
+        if len(rows) >= 2:
+            c["series"] = series_payload(rows)
+        out.append(c)
+    return out
+
+
+def scripts(data: list[dict]) -> tuple[str, str]:
+    """The page's head script (plotly.js) and its closing scripts: the data and the drawing code."""
+    blob = json.dumps({"style": STYLE, "contracts": data}, ensure_ascii=False,
+                      separators=(",", ":")).replace("</", "<\\/")
+    return (f"<script src='{PLOTLY}'></script>",
+            f"<script type='application/json' id='data'>{blob}</script>\n<script>{SCRIPT}</script>")
+
+
+def section(c: dict, heading: str = "") -> str:
+    """One contract's chart containers, filled in the browser; ``heading`` above them."""
     n = len(c["x"]) - 1
-    return (f"<section id='{escape(c['contract'])}'><h2>{escape(c['contract'])}</h2><div class='grid'>"
+    return (f"<section id='{escape(c['contract'])}'>{heading}<div class='grid'>"
             f"<figure class='plot'><div class='chart1'></div></figure>"
             f"<figure class='plot'><div class='chart2'></div><div class='control'>"
             f"<label for='s-{escape(c['contract'])}'>shift</label>"
@@ -314,57 +346,3 @@ def _section(c: dict) -> str:
             f"<span class='readout'></span></div></figure>"
             + ("<figure class='plot wide'><div class='chart3'></div></figure>" if "series" in c else "")
             + "</div></section>")
-
-
-def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | None = None) -> str:
-    """The interactive page for ``asof`` from that date's results, in contract order; ``history``
-    holds each contract's series up to ``asof`` for chart 3 (drawn from two dates on)."""
-    page.check_schema(recs)
-    payloads = [payload(r) for r in recs]
-    for c in payloads:
-        rows = (history or {}).get(c["contract"], [])
-        if len(rows) >= 2:
-            c["series"] = series_payload(rows)
-    data = json.dumps({"style": STYLE, "contracts": payloads}, ensure_ascii=False,
-                      separators=(",", ":")).replace("</", "<\\/")
-    contracts = ", ".join(r["contract"] for r in recs)
-    body = "\n".join([
-        f"<h1>Treasury futures duration profile, {asof}</h1>",
-        f"<p class='lede'>{contracts}. {page.LIGHT_MODEL_LEDE}</p>",
-        "<p class='note'><b>Left:</b> futures DV01 at each shift, with the vol ±10% band and the CTD-based staircase; "
-        "below, each key rate's share of that DV01. Hover to read the CTD at a shift and the likeliest CTDs at "
-        "delivery from there. <b>Right:</b> the change in each key-rate DV01 from today at the shift selected on the "
-        "left: hover to move it, click to pin it, or use the slider. Markers are the CTD-based change, which "
-        "jumps at each switch. <b>Below:</b> DV01 and effective maturity on each date, against the CTD-based "
-        "figures and the first date's CTD held throughout; circles mark a change of CTD, which the hover names. "
-        "Drag across dates to zoom, double-click to reset.</p>",
-        *(_section(c) for c in payloads),
-    ])
-    return (f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>"
-            f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
-            f"<title>CTD profile {asof}</title><style>{CSS}</style>"
-            f"<script src='{PLOTLY}'></script></head>\n<body><main>\n{body}\n</main>\n"
-            f"<script type='application/json' id='data'>{data}</script>\n<script>{SCRIPT}</script>\n"
-            f"</body></html>\n")
-
-
-def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = None) -> Path:
-    """Write ``out_dir/interactive/<asof>.html`` from the results saved under ``root``."""
-    contracts = contracts or page.contracts_on(root, asof)
-    if not contracts:
-        raise FileNotFoundError(f"no saved results for {asof}; run ctd run first")
-    recs = []
-    for c in contracts:
-        path = results.light_path(root, c, asof)
-        if not path.exists():
-            raise FileNotFoundError(f"no saved result for {c} on {asof} ({path})")
-        recs.append(json.loads(path.read_text(encoding="utf-8")))
-    history = {}
-    for c in contracts:
-        past = [r for r in results.read_light(root, c) if date.fromisoformat(r["asof"]) <= asof]
-        page.check_schema(past)
-        history[c] = series.series(past)
-    out = Path(out_dir) / "interactive" / f"{asof.isoformat()}.html"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(asof, recs, history), encoding="utf-8")
-    return out

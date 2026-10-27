@@ -1,6 +1,6 @@
-"""The single-date report (phase 1c item 5): charts 1 and 2 and the HTML page, from saved results."""
+"""The single-date report (phase 1c item 5): the charts as PNGs and the HTML pages, from saved results."""
 
-import base64
+import json
 import re
 from datetime import date
 
@@ -10,9 +10,19 @@ from test_light import ASOF, inputs
 
 from ctd.cli import main
 from ctd.model.light import run
-from ctd.report import charts, page, results
+from ctd.report import charts, interactive, page, results
 
 PNG = b"\x89PNG\r\n\x1a\n"
+
+
+def _contracts(html: str) -> list[str]:
+    """The contracts whose charts the page draws, from its embedded data."""
+    m = re.search(r"<script type='application/json' id='data'>(.*?)</script>", html, re.S)
+    return [c["contract"] for c in json.loads(m[1].replace("<\\/", "</"))["contracts"]]
+
+
+def _urls(html: str) -> list[str]:
+    return re.findall(r"https?://[^'\"\s<>]+", html)
 
 
 @pytest.fixture(scope="module")
@@ -65,18 +75,34 @@ def test_nearest_switch_matches_the_model():
     assert {side: c and c["z_bp"] for side, c in got.items()} == want
 
 
-def test_page_holds_both_charts_and_the_tables_per_contract(rec):
+TABLES = ("Probability-weighted against CTD-based DV01", "Key-rate DV01 today", "CTD probabilities",
+          "Distance to each switch", "Inputs and diagnostics")
+
+
+def test_summary_page_holds_the_charts_and_links_each_contract_but_no_tables(rec):
     zn = {**rec, "contract": "ZNZ6"}
     html = page.render(ASOF, [zn, rec])
     assert html.startswith("<!doctype html>") and "<title>CTD report 2026-10-21</title>" in html
-    imgs = re.findall(r'src="data:image/png;base64,([^"]+)"', html)
-    assert len(imgs) == 4 and all(base64.b64decode(i).startswith(PNG) for i in imgs)
-    for heading in ("Probability-weighted against CTD-based DV01", "Key-rate DV01 today", "CTD probabilities",
-                    "Distance to each switch", "Inputs and diagnostics"):
-        assert html.count(heading) == 2, heading
-    assert html.index("<h2>ZNZ6</h2>") < html.index("<h2>ZBZ6</h2>")
-    assert "code abc1234" in html and "http" not in html.replace("http-equiv", "")  # self-contained
+    assert _contracts(html) == ["ZNZ6", "ZBZ6"] and "<section id='ZNZ6'>" in html and "<section id='ZBZ6'>" in html
+    assert "<img" not in html  # the charts are drawn in the browser
+    assert "<caption>" not in html and "<h3>Inputs and diagnostics" not in html  # the tables are per contract
+    assert html.index("<a href='2026-10-21/ZNZ6.html'><b>ZNZ6</b></a>") < html.index("<a href='2026-10-21/ZBZ6.html'>")
+    assert "<h3><a href='2026-10-21/ZBZ6.html'>ZBZ6</a></h3>" in html  # each contract's charts link too
+    assert "follow the ticker links" in html and "ZT (2-year) and ZF (5-year) futures are omitted" in html
+    assert _urls(html) == [interactive.PLOTLY]  # nothing else from the network
     assert page.render(ASOF, [zn, rec]) == html
+
+
+def test_contract_page_holds_its_charts_and_every_table(rec):
+    html = page.render_contract(ASOF, rec)
+    assert "<title>ZBZ6 CTD report 2026-10-21</title>" in html and "<a href='../2026-10-21.html'>" in html
+    assert _contracts(html) == ["ZBZ6"] and "class='chart3'" not in html  # chart 3 needs two dates
+    for t in TABLES:
+        assert html.count(t) == 1, t
+    assert html.index("class='chart1'") < html.index("<h2>Analytics</h2>")  # the charts first
+    assert "<a href='2026-10-21/" not in html  # no links to itself
+    assert "code abc1234" in html and _urls(html) == [interactive.PLOTLY]
+    assert page.render_contract(ASOF, rec) == html
 
 
 def test_page_refuses_results_from_before_the_profile(rec):
@@ -92,9 +118,15 @@ def test_report_command_writes_the_date_page_in_contract_order(tmp_path, rec, ca
     args = ["--data-root", str(tmp_path), "report", "--asof", ASOF.isoformat(), "--out", str(out)]
     assert main(args) == 0
     html = (out / "2026-10-21.html").read_text(encoding="utf-8")
-    assert html.index("<h2>ZNZ6</h2>") < html.index("<h2>ZBZ6</h2>")
+    assert html.index("ZNZ6.html") < html.index("ZBZ6.html")
+    for c in ("ZNZ6", "ZBZ6"):
+        assert "Distance to each switch" in (out / "2026-10-21" / f"{c}.html").read_text(encoding="utf-8")
+        for name in ("dv01-profile", "krd-change"):  # chart 3 needs two dates
+            assert (out / "2026-10-21" / "png" / f"{c}-{name}.png").read_bytes().startswith(PNG)
+    printed = capsys.readouterr().out
+    assert printed.count(".html") == 3 and "wrote 4 chart PNGs" in printed  # summary, two contracts, their PNGs
     assert main([*args, "--contract", "ZBZ6"]) == 0
-    assert "<h2>ZNZ6</h2>" not in (out / "2026-10-21.html").read_text(encoding="utf-8")
+    assert "ZNZ6.html" not in (out / "2026-10-21.html").read_text(encoding="utf-8")
 
 
 def test_report_command_without_results_says_so(tmp_path, capsys):

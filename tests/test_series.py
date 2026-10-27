@@ -1,7 +1,7 @@
 """Chart 3's series (outputs.md Tier 1): rows from saved results, the chart and its page section."""
 
-import base64
 import copy
+import json
 import math
 import re
 from datetime import date
@@ -82,14 +82,19 @@ def test_chart_3_is_a_png_and_the_same_rows_draw_the_same_bytes(rec):
     assert png.startswith(PNG) and png == charts.dv01_series_chart("ZBZ6", rows)
 
 
+def _series_dates(html: str) -> list[str] | None:
+    """Chart 3's dates as the page embeds them, or None without chart 3."""
+    m = re.search(r"<script type='application/json' id='data'>(.*?)</script>", html, re.S)
+    c = json.loads(m[1].replace("<\\/", "</"))["contracts"][0]
+    return c["series"]["dates"] if "series" in c else None
+
+
 def test_the_page_shows_chart_3_only_with_two_dates(rec):
     one = {"ZBZ6": series.series([rec])}
-    assert "DV01 through time" not in page.render(ASOF, [rec], one)
+    assert _series_dates(page.render(ASOF, [rec], one)) is None
     two = {"ZBZ6": series.series([on(rec, "2026-10-20"), rec])}
     html = page.render(ASOF, [rec], two)
-    assert "<h2>DV01 through time</h2>" in html
-    imgs = re.findall(r'src="data:image/png;base64,([^"]+)"', html)
-    assert len(imgs) == 3 and all(base64.b64decode(i).startswith(PNG) for i in imgs)
+    assert _series_dates(html) == ["20 Oct 2026", "21 Oct 2026"] and "class='chart3'" in html
 
 
 def test_report_command_draws_chart_3_from_results_up_to_the_date(tmp_path, rec):
@@ -98,12 +103,13 @@ def test_report_command_draws_chart_3_from_results_up_to_the_date(tmp_path, rec)
     out = tmp_path / "out"
     args = ["--data-root", str(tmp_path), "report", "--out", str(out), "--asof"]
     assert main([*args, "2026-10-20"]) == 0
-    assert "DV01 through time" not in (out / "2026-10-20.html").read_text(encoding="utf-8")
+    assert _series_dates((out / "2026-10-20.html").read_text(encoding="utf-8")) is None
+    assert not (out / "2026-10-20" / "png" / "ZBZ6-dv01-series.png").exists()
     assert main([*args, ASOF.isoformat()]) == 0
     html = (out / f"{ASOF}.html").read_text(encoding="utf-8")
-    assert "DV01 through time" in html  # 10-20 and 10-21; 10-22 is after the date
+    assert _series_dates(html) == ["20 Oct 2026", "21 Oct 2026"]  # 10-22 is after the date
     expected = charts.dv01_series_chart("ZBZ6", series.series([on(rec, "2026-10-20"), rec]))
-    assert base64.b64encode(expected).decode() in html
+    assert (out / f"{ASOF}" / "png" / "ZBZ6-dv01-series.png").read_bytes() == expected
 
 
 def test_report_refuses_an_old_result_in_the_history(tmp_path, rec):

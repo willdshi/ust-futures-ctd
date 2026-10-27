@@ -6,7 +6,7 @@
     ctd backfill
     ctd bookmarklet [--print]
     ctd run --contract ZBZ6 [--asof 2026-10-16]
-    ctd report [--asof 2026-10-16] [--contract ZBZ6 ...] [--out output] [--interactive]
+    ctd report [--asof 2026-10-16] [--contract ZBZ6 ...] [--out output]
     ctd derive [--table options] [--full] [--notify]
     ctd history --contract ZBZ6 [--contract ZNZ6 ...] --from 2026-09-01 [--to 2026-10-23] [--no-save]
 
@@ -370,16 +370,16 @@ def cmd_report(args) -> int:
 
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
     try:
-        paths = [page.write(args.data_root, args.out, asof, args.contract)]
-        if args.interactive:
-            from ctd.report import interactive
-
-            paths.append(interactive.write(args.data_root, args.out, asof, args.contract))
+        paths = page.write(args.data_root, args.out, asof, args.contract)
     except (FileNotFoundError, ValueError) as e:
         print(f"ctd report {asof}: {e}", file=sys.stderr)
         return 1
+    pngs = [p for p in paths if p.suffix == ".png"]
     for path in paths:
-        print(f"wrote {path}")
+        if path.suffix != ".png":
+            print(f"wrote {path}")
+    if pngs:
+        print(f"wrote {len(pngs)} chart PNGs to {pngs[0].parent}")
     return 0
 
 
@@ -481,12 +481,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"where futures, SR1, options, par curve and SOFR come from: derived tables before "
                         f"{LIVE_FROM}, raw pages from it (auto), or forced (design 10, phase 1d)")
     r.set_defaults(func=cmd_run)
-    o = sub.add_parser("report", help="the single-date HTML page (charts 1 and 2, tables) from saved results")
+    o = sub.add_parser("report", help="the single-date HTML pages (a summary with charts 1 to 3, a page per "
+                                      "contract with its tables) and the charts as PNGs, from saved results")
     asof_args(o)
     o.add_argument("--contract", action="append", help="only these contracts (default: every one saved for the date)")
     o.add_argument("--out", type=Path, default=output_dir(), help="output directory (default: <repo>/output)")
-    o.add_argument("--interactive", action="store_true",
-                   help="also write the interactive page (charts 1 and 2 linked) to <out>/interactive/")
     o.set_defaults(func=cmd_report)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
     d.add_argument("--table", action="append", choices=["options", "futures", "bond_prices", "par_curve", "rates"],

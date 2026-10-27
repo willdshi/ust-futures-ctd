@@ -1,4 +1,4 @@
-"""The interactive page: charts 1 and 2 linked in the browser, from saved results."""
+"""The pages' charts, drawn in the browser: charts 1 and 2 linked, and chart 3, from saved results."""
 
 import json
 import re
@@ -7,9 +7,8 @@ import numpy as np
 import pytest
 from test_light import ASOF, inputs
 
-from ctd.cli import main
 from ctd.model.light import run
-from ctd.report import charts, interactive, results, series
+from ctd.report import charts, interactive, page, results, series
 
 
 @pytest.fixture(scope="module")
@@ -49,13 +48,13 @@ def test_share_colors_sit_at_their_linear_positions():
     assert interactive.STYLE["share_scale"][0][0] == 0 and interactive.STYLE["share_scale"][-1][0] == 1
 
 
-def test_page_embeds_the_data_and_the_pinned_library(rec):
-    html = interactive.render(ASOF, [rec])
-    assert interactive.PLOTLY in html and "plotly.js-dist-min@2.35.2" in interactive.PLOTLY
+def test_pages_embed_the_data_and_the_pinned_library(rec):
+    html = page.render(ASOF, [rec])
+    assert f"<script src='{interactive.PLOTLY}'></script>" in html and "plotly.js-dist-min@2.35.2" in interactive.PLOTLY
     data = _data(html)
-    assert [c["contract"] for c in data["contracts"]] == [rec["contract"]]
-    assert f"id='{rec['contract']}'" in html
-    assert html == interactive.render(ASOF, [rec])  # the same result writes the same page
+    assert data["style"] == interactive.STYLE and [c["contract"] for c in data["contracts"]] == [rec["contract"]]
+    assert f"<section id='{rec['contract']}'>" in html and "<\\/" not in json.dumps(data)
+    assert html.index("<script src=") < html.index("</head>") < html.index("id='data'")  # library first, data last
 
 
 def _next_day(rec: dict) -> dict:
@@ -75,18 +74,9 @@ def test_series_payload_marks_ctd_changes_and_has_no_nan(rec):
 
 
 def test_chart_3_only_with_two_dates(rec):
-    one = interactive.render(ASOF, [rec], {rec["contract"]: series.series([rec])})
+    one = page.render(ASOF, [rec], {rec["contract"]: series.series([rec])})
     assert "class='chart3'" not in one and "series" not in _data(one)["contracts"][0]
     later = _next_day(rec)
-    two = interactive.render(ASOF, [later], {rec["contract"]: series.series([rec, later])})
-    assert "class='chart3'" in two and len(_data(two)["contracts"][0]["series"]["dates"]) == 2
-
-
-def test_report_command_writes_the_interactive_page_on_request(tmp_path, rec, capsys):
-    results.write_light(tmp_path, rec)
-    out = tmp_path / "out"
-    args = ["--data-root", str(tmp_path), "report", "--asof", ASOF.isoformat(), "--out", str(out)]
-    assert main(args) == 0
-    assert not (out / "interactive").exists()
-    assert main([*args, "--interactive"]) == 0
-    assert (out / "interactive" / f"{ASOF.isoformat()}.html").exists()
+    rows = series.series([rec, later])
+    for html in (page.render(ASOF, [later], {rec["contract"]: rows}), page.render_contract(ASOF, later, rows)):
+        assert "class='chart3'" in html and len(_data(html)["contracts"][0]["series"]["dates"]) == 2
