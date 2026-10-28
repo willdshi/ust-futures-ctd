@@ -84,6 +84,13 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **R.3** Constant-CTD DV01 line on chart 3
 - [ ] **R.4** The other `[NI]` items in [outputs.md](outputs.md)
 
+## W: Writeup
+
+[writeup.md](writeup.md) lags the other docs between milestones. To reconcile it: check its claims and limitations against the diff of the other docs since the commit in its header (`git diff <commit>..HEAD -- docs ':!docs/writeup.*' ':!docs/images'`); where the model changed, re-run the quoted date and regenerate the figures (`scripts/writeup_figures.py`); rebuild the PDF; record the new commit in its header.
+
+- [x] **W.1** Reconcile with the restructured docs
+- [ ] **W.2** Reconcile at the first milestone
+
 ## Phase 2: one-factor model
 
 - [x] **2.1** Derived tables: futures, options, options quality, bond prices, securities, par curve, rates, baskets (data.md §9)

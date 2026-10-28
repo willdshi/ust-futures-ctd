@@ -10,6 +10,8 @@ numbersections: true
 Figures: python scripts/writeup_figures.py (from data/results/light for 2026-10-23)
 Build: pandoc docs/writeup.md -o docs/writeup.pdf --pdf-engine=xelatex --resource-path=docs
 Numbers quoted are ZBZ6 on 2026-10-23 (light model) unless stated.
+Reconciled with the other docs as of commit 15142a4 (2026-10-28). To reconcile again (roadmap.md, W):
+  git diff 15142a4..HEAD -- docs ':!docs/writeup.*' ':!docs/images'
 -->
 
 # Summary {-}
@@ -88,7 +90,7 @@ This write-up replaces "the CTD" with every deliverable bond, each weighted by i
 
 # Approach
 
-The model runs at the end of each day from public data: Treasury prices, CME futures and option settlements, conversion factors, SOFR futures and the Treasury par curve. It has four steps.
+The model runs at the end of each day from public data (Treasury prices, conversion factors, SOFR and the Treasury par curve) and CME's futures and option settlements, bought daily from a commercial data vendor for a few dollars a year. It has four steps.
 
 **Forward prices.** Each deliverable bond is priced forward to delivery at term repo, built from the SOFR futures strip, and divided by its conversion factor. Delivery is assumed on the last day of the month when carry is positive (as for ZBZ6, on 31 December 2026), and on the first day when it is negative.[^carry]
 
@@ -165,7 +167,7 @@ ZN sits in between, and shows the shape the quality option gives a duration prof
 # Validation
 
 - **Bond math.** All prices, yields, accrued interest and DV01s come from one hand-written street-convention pricing function. Price and yield round trips agree to $10^{-10}$, and prices match QuantLib, used only as an independent test.
-- **Conversion factors and baskets.** Conversion factors from CME's formula match every row of CME's published tables collected so far. Baskets are rebuilt from the eligibility rules and checked against the same tables, including bonds crossing the ZN grade change in 2023 and the 25-year boundary between ZB and UB.
+- **Conversion factors and baskets.** Conversion factors from CME's formula match every row of CME's published tables collected so far. Baskets are rebuilt from the eligibility rules and checked against the same tables, which start in December 2023. Unit tests cover a note crossing the ZN grade change in 2023 and a bond crossing the 25-year boundary between ZB and UB.
 - **The model's mechanics.** Switch points are tested on a two-bond basket with a known answer. On a flat 6% curve every converted price is close to 100. The probability-weighted DV01 matches the slope of the expected envelope computed by finite differences.
 - **Probabilities.** The two independent estimates agree to within the noise of the option settlements (Table 2). Where the same day's options are available from two sources, CME's daily bulletin and a commercial data history, they give the same vol and DV01; only far-wing probabilities differ, by up to a percentage point.
 
@@ -179,7 +181,7 @@ ZN sits in between, and shows the shape the quality option gives a duration prof
 
 **An interest rate model.** One factor can't represent slope moves independent of the level. Yet for a basket that spans 15 to 25 years, slope moves alone can cause a switch. A two-factor model of the curve (or a full term structure model), calibrated to the options, would price those switches directly. It would give probabilities at delivery rather than at option expiry, and is the route to valuing the end-of-month and wildcard options and a futures fair value, all of which are out of scope today.
 
-The futures themselves could help calibrate such a model. A futures price sits below the cheapest converted forward price by the value of the short's delivery options. The quality option's share of that value depends on how likely the curve is to steepen or flatten enough to cause a switch. Across contracts and over time, futures prices therefore carry information about slope volatility, and about how slope moves with the level of yields, that options on the level alone don't reveal. One obstacle is the difficulty of accessing special repo rates. A futures price also depends on the repo rate of the likely CTD: when that bond is special, it funds at a lower rate. The model funds every bond at general collateral, because the special repo rates the market expects for the CTD are difficult to access. Repo on a specific bond trades bilaterally between dealers, so its rates not generally available; there is no free daily history by bond. With an extra degree of freedom for the ctd repo rate, a slope signal can't be can't be cleanly determined by a futures settlement price.
+The futures themselves could help calibrate such a model. A futures price sits below the cheapest converted forward price by the value of the short's delivery options. The quality option's share of that value depends on how likely the curve is to steepen or flatten enough to cause a switch. Across contracts and over time, futures prices therefore carry information about slope volatility, and about how slope moves with the level of yields, that options on the level alone don't reveal. One obstacle is the difficulty of accessing special repo rates. A futures price also depends on the repo rate of the likely CTD: when that bond is special, it funds at a lower rate. The model funds every bond at general collateral, because the special repo rates the market expects for the CTD are difficult to access. Repo on a specific bond trades bilaterally between dealers, so its rates are not generally available; there is no free daily history by bond. With an extra degree of freedom for the CTD repo rate, a slope signal can't be cleanly determined from a futures settlement price.
 
 **Bond-specific spreads.** Individual bonds trade rich or cheap to the curve. The model prices each bond from its own price and funds all of them at general collateral repo. A few basis points of richness, or special repo on one bond, can move a switch point. Modelling spreads as mean-reverting, and adding bond-specific repo where a data source exists, would address this.
 
