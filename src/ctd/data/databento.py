@@ -30,6 +30,7 @@ FUT = "databento_fut_backfill"
 STIR_FUT = "databento_stir_backfill"  # SR1 and ZQ months 3 to 8, read with FUT as one source (data.md 5.13)
 OPT = "databento_opt_backfill"
 SETTLE, VOLUME, OPEN_INTEREST = 3, 6, 9
+TREASURY_FUTURES = ("ZT", "ZF", "ZN", "TN", "ZB", "UB")
 UNDEF_TS = np.iinfo(np.uint64).max
 UNDEF_PRICE = np.iinfo(np.int64).max
 START = np.datetime64("2016-01-01")  # history starts in 2016 (data.md 1)
@@ -122,11 +123,40 @@ def symbol_on(intervals: list[dict], d: date) -> str | None:
     return None
 
 
+def last_day_settlements(stats: pd.DataFrame, symbology: dict, pattern: re.Pattern) -> pd.Series:
+    """The last preliminary settlement per (d, instrument_id) where ``d`` is a futures contract's last
+    date in ``stats`` and it has no final there (data.md 8).
+
+    An expiring Treasury contract settles at 12:01 CT on its last trading day, and that settlement is
+    its final price, but the record flagged final comes in the evening, after the continuous symbol
+    has moved to the next contract, so no pull holds it. The 12:01 settlement is flagged preliminary.
+    For all 258 Treasury contracts that expired from March 2016 to September 2026, it equals the
+    front-month close Yahoo publishes for that day (data.md 5.11).
+    """
+    s = stats[stats["stat_type"] == SETTLE].dropna(subset=["d"]).sort_values("ts_event", kind="stable")
+    final = ((s["stat_flags"] & 1) == 1).groupby([s["d"], s["instrument_id"]]).any()
+    contract = {}
+    for d64, iid in final.index:
+        d = pd.Timestamp(d64).date()
+        sym = symbol_on(symbology["result"].get(str(iid), []), d)
+        if sym is not None and pattern.fullmatch(sym):
+            contract[(d64, iid)] = (sym, parse_contract(sym, d)[1])  # a symbol recurs every ten years
+    last = {}
+    for key, c in contract.items():
+        last[c] = max(last.get(c, key[0]), key[0])
+    keys = [key for key, c in contract.items() if key[0] == last[c] and not final[key]]
+    prelim = _last(s[(s["stat_flags"] & 1) == 0], "price")
+    return prelim.reindex(pd.MultiIndex.from_tuples(keys, names=["d", "instrument_id"])).dropna() if keys else prelim.iloc[:0]
+
+
 def futures_rows(stats: pd.DataFrame, symbology: dict, product: str) -> tuple[list[dict], list[str]]:
     """Futures table rows (asof, product, month, contract, settle, open_interest) from one product's
     statistics (``stats_frame``) and its instrument id -> raw symbol lookup.
 
-    Final settlements (``final_settlements``) on and after the lookup's start. A final of 0.0 on an
+    Final settlements (``final_settlements``) on and after the lookup's start, and for the Treasury
+    futures, a contract's last preliminary on its last date where it has no final
+    (``last_day_settlements``: its last trading day; SR1, SR3 and ZQ settle after it, so their
+    preliminary isn't the final). A final of 0.0 on an
     id that wasn't a futures contract that day is a placeholder sent before the contract was listed
     (SR1M9 on 2018-11-16, its id still a CAD option) and is skipped; any other final that doesn't map
     to a futures contract is an error. Open interest is the last published for the date (a
@@ -137,6 +167,12 @@ def futures_rows(stats: pd.DataFrame, symbology: dict, product: str) -> tuple[li
     oi = _last(stats[stats["stat_type"] == OPEN_INTEREST], "quantity")
     start = date.fromisoformat(symbology["start_date"])
     pattern = re.compile(rf"{re.escape(product)}[{''.join(MONTH_CODES)}]\d")
+    if product in TREASURY_FUTURES:
+        last_day = last_day_settlements(stats, symbology, pattern)
+        if len(last_day):
+            settle = pd.concat([settle, last_day]).sort_index()
+            notes.append(f"{len(last_day)} contract(s) with no final on their last date: the preliminary taken "
+                         f"(the 12:01 CT settlement on the last trading day)")
     rows, early, placeholders = [], 0, 0
     for (d64, iid), price in settle.items():
         d = pd.Timestamp(d64).date()

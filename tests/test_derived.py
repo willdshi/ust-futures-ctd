@@ -197,6 +197,28 @@ def test_databento_futures_rows():
         [], ["1 settlement(s) of 0.0 on instruments not yet a ZN futures contract skipped (placeholders before listing)"])
 
 
+def test_last_trading_day_takes_the_preliminary():
+    """ZNU6's last trading day, 2026-09-21: the 12:01 CT settlement is its final price, flagged
+    preliminary; the final sent that evening isn't in the pull, the continuous symbol having moved on."""
+    lookup = {"start_date": "2026-09-01", "result": {
+        "1": [{"d0": "2026-09-01", "d1": "2026-10-22", "s": "ZNU6"}],
+        "2": [{"d0": "2026-09-01", "d1": "2026-10-22", "s": "ZNZ6"}]}}
+    records = (
+        ("2026-09-18T19:00Z", 1, "2026-09-18", 3, 2, 106.0, None),
+        ("2026-09-18T19:00Z", 2, "2026-09-18", 3, 2, 105.5, None),
+        ("2026-09-18T23:00Z", 2, "2026-09-18", 3, 3, 105.75, None),  # ZNU6 has no final on the 18th: not its last date
+        ("2026-09-21T17:01Z", 1, "2026-09-21", 3, 2, 106.25, None),
+        ("2026-09-21T17:03Z", 1, "2026-09-21", 3, 2, 106.328125, None),
+        ("2026-09-21T23:00Z", 2, "2026-09-21", 3, 3, 106.046875, None))
+    rows, notes = futures_rows(stats(*records), lookup, "ZN")
+    assert [(r["asof"], r["contract"], r["settle"]) for r in rows] == [
+        (date(2026, 9, 18), "ZNZ6", 105.75), (date(2026, 9, 21), "ZNU6", 106.328125),
+        (date(2026, 9, 21), "ZNZ6", 106.046875)]
+    assert notes[-1].startswith("1 contract(s) with no final on their last date")
+    sr1 = {"start_date": "2026-09-01", "result": {"1": [{"d0": "2026-09-01", "d1": "2026-10-22", "s": "SR1U6"}]}}
+    assert futures_rows(stats(*records[3:5]), sr1, "SR1") == ([], [])  # settles after its last day
+
+
 # SR1 around the 2018-06-29 roll: the front-two pull (c.0, c.1) and months 3 to 8 (c.2 on), both
 # from 2018-06-01. Id 3 is c.2 until 07-01, then c.1.
 FRONT = {"start_date": "2018-06-01", "result": {
