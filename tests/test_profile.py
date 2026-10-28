@@ -1,4 +1,4 @@
-"""Shifted states and the duration profile on synthetic baskets (design 5.9, 8; phase 1c item 4)."""
+"""Shifted states and the duration profile on synthetic baskets (design 5.9, 8; roadmap 1c.4)."""
 
 from datetime import date
 

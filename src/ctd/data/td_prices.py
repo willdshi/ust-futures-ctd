@@ -68,7 +68,7 @@ def parse(content: bytes) -> dict[str, BondPrice]:
     """Notes and bonds by CUSIP (bills, FRNs and TIPS are skipped; so is a row with no price).
 
     Price: end of day where filled; otherwise the buy/sell midpoint, or sell where there is no
-    buy (docs/decisions.md). Only a provisional file lacks end of day.
+    buy (design 5.1, Which TreasuryDirect price). Only a provisional file lacks end of day.
     """
     out = {}
     for r in csv.reader(io.StringIO(content.decode("latin-1"))):

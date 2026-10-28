@@ -1,6 +1,6 @@
 """Which delivery day forwards are taken to (pure).
 
-Light model (design 5.11, docs/decisions.md, Delivery date for the light model's forward prices):
+Light model (design 5.2 and 5.11):
 the last delivery day if the basket's probability-weighted carry is positive, the first if
 negative; one date for the whole basket. A bond's carry here is its converted forward at the first
 delivery day minus at the last (positive: holding it to the last day pays), and the weights are

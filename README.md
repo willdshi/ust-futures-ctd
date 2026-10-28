@@ -34,7 +34,7 @@ Intended use is for monitoring duration exposure, not for relative value trading
 3. **Probabilities.** The probability of reaching each switch comes from two models: digitals from put and call spreads on the CME option settlements, and a normal distribution at the at-the-money implied vol. The latter is essentially a 1 factor model moving yields in parallel. Both read CME settlement prices, which CME sets from its implied-vol skew whether or not a strike traded, so they are option-implied rather than traded prices; the report shows which strikes behind each probability traded that day.
 4. **Risk.** Each bond's DV01 and key rate DV01s (tent bumps on the Treasury par curve at 2, 5, 7, 10, 15, 20, 25 and 30 years) are weighted by the probability that it is CTD, and recomputed at every shifted state for the duration profile.
 
-All bond math (pricing, yields, accrued, conversion factors, forwards) is hand-written in one street-convention pricing function, and tested against QuantLib and CME's published conversion factor tables. The full specification is in [docs/design.md](docs/design.md). Outputs are specified in [docs/outputs.md](docs/outputs.md), and settled choices are recorded in [docs/decisions.md](docs/decisions.md).
+All bond math (pricing, yields, accrued, conversion factors, forwards) is hand-written in one street-convention pricing function, and tested against QuantLib and CME's published conversion factor tables. The full specification is in [docs/design.md](docs/design.md). Outputs are specified in [docs/outputs.md](docs/outputs.md), the data in [docs/data.md](docs/data.md), and open questions in [docs/open-questions.md](docs/open-questions.md).
 
 ## Data
 
@@ -62,7 +62,7 @@ Working now, for the December 2026 futures contracts:
 - the single-date HTML report (duration profile and key-rate change charts, with tables)
 - derived Parquet tables over ten years of history
 
-Next: the March 2027 contracts and the December/March roll comparison, total-variance vol interpolation, then the daily time series and a historical backtest. The roadmap is in [design.md §10](docs/design.md).
+Next: the March 2027 contracts and the December/March roll comparison, total-variance vol interpolation, then the daily time series and a historical backtest. The roadmap is in [docs/roadmap.md](docs/roadmap.md).
 
 ## Running it
 

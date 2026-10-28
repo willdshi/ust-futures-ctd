@@ -99,7 +99,7 @@ def test_beyond_listed_strikes():
 
 
 def test_traded_and_no_open_interest_strikes_are_recorded_not_flagged():
-    # every settled strike is used (decisions.md, Option strikes with no open interest)
+    # every settled strike is used (design 3.1, Strikes with no open interest are kept)
     rows = [o if o.strike != 104.0 else OptionSettle(o.product, o.label, o.right, o.strike, o.settle, None, 0, 0)
             for o in chain(step=1.0)]
     rows = [o if o.strike != 105.0 else OptionSettle(o.product, o.label, o.right, o.strike, o.settle, None, 7, 50)

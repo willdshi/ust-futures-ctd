@@ -198,7 +198,7 @@ def test_not_collected_before_the_first_date(store, client):
     assert man["status"] == mf.NOT_EXPECTED and client.calls == []
 
 
-# --- Reading the daily files into the derived tables (phase 1e items 3, 4) ----------------------
+# --- Reading the daily files into the derived tables (roadmap 1e.3, 1e.4) ----------------------
 
 TUE, WED = date(2026, 10, 27), date(2026, 10, 28)
 DEF = np.dtype([("ts_recv", "u8"), ("instrument_id", "u4"), ("instrument_class", "S1"), ("raw_symbol", "S22"),

@@ -46,7 +46,7 @@ def read_known(store, asof: date, since: date, rate: str = "sofr") -> tuple[dict
     """Every ``rate`` fixing dated ``since`` to ``asof``, from any stored file, and the files read as
     (as-of date, source, name).
 
-    Data dated on or before the as-of date counts, whenever it was pulled (docs/decisions.md, Which
+    Data dated on or before the as-of date counts, whenever it was pulled (design 3.3, Which
     data a run uses): the fixing for ``asof`` itself is published the next morning, so it comes from
     a later as-of date's file, and a daily file holds two weeks, so the month to date needs earlier
     ones. Where files overlap, the newest pull wins."""

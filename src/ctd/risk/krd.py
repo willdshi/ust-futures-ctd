@@ -1,11 +1,11 @@
-"""Key-rate DV01s (design 5.9, docs/decisions.md How KRDs are computed; pure).
+"""Key-rate DV01s (design 5.9, Key rate DV01s; pure).
 
 Par-curve tent bumps give each bond's shape: the fall in the present value of its cash flows
 after the horizon for each node's bump, as shares of the total. The shares are scaled to the
 bond's forward DV01 from the pricing function, so a bond's KRDs sum to its DV01 exactly. There is
 no z-spread (a constant spread per bond so the curve reprices it, held fixed through the bumps):
 the scaling sets the level, and the shape is taken at the curve's yields, a difference of about
-0.02y for a bond 10bp off the curve (docs/decisions.md). Low-coupon bonds have negative
+0.02y for a bond 10bp off the curve (design 5.9). Low-coupon bonds have negative
 short-tenor shares: their par-bond hedge is short there.
 
 Futures KRDs are per 100 face of futures, like ``risk.dv01``: each bond's KRDs over its CF,

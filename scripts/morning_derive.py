@@ -1,5 +1,5 @@
-"""Run ``ctd derive --notify`` once the previous business day's data is stored (design §10 phase 1e item 5;
-decisions.md, When the morning derive may run).
+"""Run ``ctd derive --notify`` once the previous business day's data is stored (roadmap 1e.5;
+data.md §4, When the morning derive runs).
 
     python scripts/morning_derive.py [--asof 2026-10-26] [--timeout-minutes 0]
 

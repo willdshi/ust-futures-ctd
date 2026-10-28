@@ -40,7 +40,7 @@ The derived tables (§9) pick one source per date; the others are cross-checks o
 | SR3, ZQ | Databento backfill (ZQ front eight, SR3 front two) to 2026-10-13; `cme_stir` from 2026-10-14, on bookmarklet days only |
 | Treasury options | Databento backfill to 2026-10-15; the Section 42 bulletin 2026-10-16 to 10-23; `databento_daily` from 2026-10-26 |
 
-The bulletin stretch prints only strikes with open interest or volume (§5.9), so its chains are smaller than Databento's on either side. Buying `databento_daily` for 2026-10-20 to 10-23 would close it (about $1; [roadmap.md](roadmap.md) phase 1e). Its measured effect is in design §3.1.
+The bulletin stretch prints only strikes with open interest or volume (§5.9), so its chains are smaller than Databento's on either side. Buying `databento_daily` for 2026-10-20 to 10-23 would close it (about $1; [roadmap.md](roadmap.md) 1e.8). Its measured effect is in design §3.1.
 
 ### History starts in 2016
 
@@ -65,7 +65,7 @@ data/
   inbox/<asof>/<source>/...                     manual-drop folder (2.4)
   inbox/_ingested/...                           originals after ingest
   gaps.log                                      append-only log of every gap reported
-  fetch.log, sofr.log, databento.log, derive.log   one log per scheduled task (§4)
+  morning.log                                   output of the scheduled morning task (§4)
   cme_bookmarklet.html                          page to install the bookmarklet (`ctd bookmarklet`)
   derived/                                      Parquet tables built from raw/ by `ctd derive` (§9); a cache
   results/                                      model output, e.g. results/light/ZBZ6/2026-10-21.json
@@ -161,16 +161,15 @@ A source's recovery window is how many business days after the as-of date it can
 
 ## 4. Operations
 
-All tasks collect for the previous business day D, and each has its own log (two tasks appending to one file at once lose the second one's output: on 2026-10-27 the Databento task's command never ran while it shared a log with the SOFR task, yet reported exit code 0). All four are registered by `scripts/register_morning_tasks.ps1`.
+One scheduled task, `ctd-morning`, collects the previous business day D and derives it. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed step doesn't stop the later ones, and the task exits 1 if any failed.
 
 | Task | Command |
 |---|---|
-| Daily collection | `ctd-daily-fetch` runs `ctd fetch --catch-up --notify --skip-source databento_daily` at 09:00 on weekdays (`data/fetch.log`): every daily source but Databento for D, so TreasuryDirect's file has its end-of-day prices (§5.1). `--catch-up` also retries the 4 business days before D. |
-| Morning SOFR | `ctd-morning-sofr` runs `scripts/morning_sofr.py` at 09:15 (`data/sofr.log`): only `nyfed_rates`, under today's as-of date, and only once D's SOFR is published, so a file without it can't make a later fetch skip it. Other sources are left out of that manifest, not recorded as missing. |
-| Morning Databento | `ctd-morning-databento` runs `ctd fetch --catch-up --source databento_daily` at 09:15 (`data/databento.log`): D's CME futures and options, queryable from 09:00 Eastern (§5.14), and any of the 4 days before still missing. |
-| Morning derive | `ctd-morning-derive` runs `scripts/morning_derive.py` at 09:30 (`data/derive.log`); gated on the data, below. |
-| Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry) and for manual files ingest refused. The newest date's gaps aren't alerted: the next morning's run retries them. The derive task alerts when it skips. |
-| CME files (optional) | Click the bookmarklet on a cmegroup.com tab late on D+1 (§2.4), then `ctd ingest` (or leave it for the next 09:00 fetch). |
+| 1. Collection | `ctd fetch --catch-up --notify`: every daily source for D, Databento included (queryable from 09:00 Eastern, §5.14). TreasuryDirect's file then has its end-of-day prices (§5.1). `--catch-up` also retries the 4 business days before D. |
+| 2. SOFR | `scripts/morning_sofr.py`: only `nyfed_rates`, under today's as-of date, and only once D's SOFR is published, so a file without it can't make a later fetch skip it. Other sources are left out of that manifest, not recorded as missing. |
+| 3. Derive | `scripts/morning_derive.py`: `ctd derive --notify` if D's data is stored, otherwise an alert; gated on the data, below. |
+| Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry) and for manual files ingest refused. The newest date's gaps aren't alerted: the next morning's run retries them. The derive step alerts when it skips. |
+| CME files (optional) | Click the bookmarklet on a cmegroup.com tab late on D+1 (§2.4), then `ctd ingest` (or leave it for the next morning's run). |
 | Check | `ctd check [--from D] [--to D]` |
 | One date / one source | `ctd fetch --asof D [--source ID ...]` |
 | One-off history | `ctd backfill [--asof D] [--prices-from D]`: par curve years, NY Fed since 2018, every TCF file on CME's FTP, Yahoo histories, and (with `--prices-from`) TreasuryDirect prices by date |
@@ -180,19 +179,21 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 ### When the morning derive runs
 
-`scripts/morning_derive.py` gates on the **stored data**, not on the other tasks.
-- D is the previous `cme` business day. Every minute it checks D's manifest for `databento_daily` `ok`, `td_prices` `ok` and not provisional, and `par_curve` `ok`, and that D's SOFR is stored (only when D and today are both `sifma` business days; it's stored under today's as-of date).
-- Once all are there it runs `ctd derive --notify`.
-- After an hour without them it doesn't derive: it logs what's missing and raises a desktop alert (`ctd.data.alert`). The derive is rerun by hand (the script with `--asof D`, or `ctd derive`) once the data is in. There's no automatic retry: a missing source usually needs attention first.
+`scripts/morning_derive.py` gates on the **stored data**, not on the earlier steps' exit codes.
+- D is the previous `cme` business day. It checks D's manifest for `databento_daily` `ok`, `td_prices` `ok` and not provisional, and `par_curve` `ok`, and that D's SOFR is stored (only when D and today are both `sifma` business days; it's stored under today's as-of date).
+- If all are there it runs `ctd derive --notify`.
+- Otherwise it doesn't derive: it logs what's missing, raises a desktop alert (`ctd.data.alert`) and exits 1. The derive is rerun by hand (the script with `--asof D`, or `ctd derive`) once the data is in. There's no automatic retry: a missing source usually needs attention first.
+- It checks once (`--timeout-minutes 0`, the default): the collection steps are over by the time it runs, so waiting can't bring anything new. A larger `--timeout-minutes` checks again every minute until then, for use by hand.
 - On a day that isn't a `cme` business day it does nothing.
-- **Why not wait on the tasks:** a task's exit code can't be trusted as the gate. On 2026-10-27 the Databento task reported 0 without running, and a derive gated on the tasks ran without D's Databento data.
+- **Why not gate on exit codes:** they can't be trusted. On 2026-10-27 a task reported 0 without running its command, and a derive gated on the tasks ran without D's Databento data.
+- **Why one task, steps in order:** separate tasks collide when they start together. After a missed 09:00 start on 2026-10-28 all four morning tasks then in use started at once; both `ctd fetch` runs swept the Downloads folder into the inbox together, one deleted a duplicate download while the other was reading it, and the Databento fetch crashed before pulling D (`collect_downloads` now skips a file another sweep has taken). Two tasks appending to one log also lose the second one's output. Collection had been split only because the main fetch used to run in the evening, before Databento's data was available.
 
 ### When the PC is asleep or off
 
 - If the PC is asleep or hibernating at the scheduled time, the run is missed, but "run as soon as possible after a missed start" is on, so it runs at the next wake. The tasks run only while the user is logged in.
 - Almost every source can be fetched later for a past date (§2.5), so hibernation delays collection rather than losing it, unless the PC is off for more than the 5-business-day catch-up window. The bookmarklet sources don't depend on the schedule.
-- **Planned** ([roadmap.md](roadmap.md) phase 1f):
-  - let the tasks wake the PC (Task Scheduler "Wake the computer to run this task"; needs "Allow wake timers" in the power plan, checked with `powercfg`; doesn't work from shutdown, and laptops on battery often ignore wake timers);
+- **Planned** ([roadmap.md](roadmap.md) 1f.6):
+  - let the task wake the PC (Task Scheduler "Wake the computer to run this task"; needs "Allow wake timers" in the power plan, checked with `powercfg`; doesn't work from shutdown, and laptops on battery often ignore wake timers);
   - add a second trigger at logon, so a missed morning is picked up when the PC is next used;
   - widen `--catch-up` from 5 to 10 business days (`CATCH_UP_DAYS` in `src/ctd/cli.py`), so a week away fills itself in.
 - **Rejected for now: an always-on machine** (mini PC, NAS, small cloud server). It guarantees runs but means moving and backing up the store.

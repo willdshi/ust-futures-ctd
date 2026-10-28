@@ -7,7 +7,7 @@
 
 ``bond_prices`` is every row of the TreasuryDirect price file (data.md 5.1), every security type,
 with all three prices as published: buy, sell and end of day, null where TreasuryDirect gives
-0. Which one a step uses is its own choice (the model's is in decisions.md); ``provisional`` marks
+0. Which one a step uses is its own choice (the model's is in design 5.1); ``provisional`` marks
 a same-evening file without end-of-day prices, replaced once they're in (and then read again).
 
 ``securities`` reduces TreasuryDirect's security terms (data.md 5.2), one record per auction, to

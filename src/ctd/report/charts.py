@@ -1,4 +1,4 @@
-"""Charts 1 to 3 of the report (outputs.md Tier 1; phase 1c item 5), as PNG bytes.
+"""Charts 1 to 3 of the report (outputs.md Tier 1; roadmap 1c.5), as PNG bytes.
 
 Drawn from a saved result (``report.results``), so the same file always draws the same chart:
 the PNGs carry no timestamp or version metadata. matplotlib's object API (no pyplot), so no
@@ -34,7 +34,7 @@ from ctd.risk.dv01 import dollars
 # Chart 1's bucket shares are a heatmap, so the row names the bucket and color only has to carry the
 # share: the sequential blue ramp up from the neutral gray for positive shares, gray down for negative
 # ones (blue ↔ red would clash with chart 2's rally ↔ sell-off). Eight buckets as stacked bands needed
-# eight distinguishable steps of one hue, more than the ramp holds (decisions.md, Chart rendering).
+# eight distinguishable steps of one hue, more than the ramp holds (outputs.md, Chart 1, Why a heatmap).
 SURFACE, INK, INK2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 SERIES = "#2a78d6"
 NEUTRAL = "#f0efec"
@@ -59,8 +59,8 @@ STYLE = {
 }
 DPI = 144
 PERCENTILES = (1, 5, 10, 25, 50, 75, 90, 95, 99)
-# Light model (phase 1c, β = 1): becomes the reference yield ("20y yield change (bp)") when the betas arrive
-# in phase 2 (decisions.md, Probabilities in the published charts); so does page.LIGHT_MODEL_LEDE.
+# Light model (β = 1): becomes the reference yield ("20y yield change (bp)") when the betas arrive
+# (roadmap 2.2; outputs.md, Chart 1 axes); so does page.LIGHT_MODEL_LEDE.
 LIGHT_MODEL_SHIFT_AXIS = "parallel shift in basket forward yields (bp)"
 EMPTY_BUCKET = 0.005  # chart 2 leaves out end buckets below this share of today's DV01 in every state
 

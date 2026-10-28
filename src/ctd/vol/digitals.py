@@ -20,8 +20,8 @@ they are at most one tick apart. A ``K`` beyond the listed strikes
 gets no value. Results are flagged where the slope falls outside [0, 1].
 
 Every settled strike is used, with open interest or without: all settlements come off CME's skew
-for the expiry, so open interest doesn't make a price more market-based (decisions.md, Option
-strikes with no open interest). Instead each digital records which of its strikes traded that day
+for the expiry, so open interest doesn't make a price more market-based (design 3.1, Strikes
+with no open interest are kept). Instead each digital records which of its strikes traded that day
 (volume above zero), the anchor a reader can judge it by, and which had no open interest.
 """
 

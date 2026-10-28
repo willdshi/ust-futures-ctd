@@ -158,6 +158,8 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
 - **Charts in the browser:** drawn by plotly.js (pinned version, from a CDN) from JSON embedded in the page, so each page is one static file that needs no server (GitHub Pages). Charts 1 and 2 are linked. The pages need the CDN to draw their charts (offline viewing not needed).
   - **Only model outputs go in the JSON** (DV01s, key-rate DV01s, shares, probabilities by shift), no market prices.
   - **Rejected: Dash** (needs a running server); **Python plotly** (static export needs `kaleido`, often flaky on Windows); **Altair** (same export problem, poor shared-axis panels).
+- **HTML by plain string formatting**, no template engine.
+  - **Why:** two page types with a fixed layout don't need one, and it keeps a dependency out.
 - **PNGs as files:** the same charts as matplotlib PNGs in `output/<asof>/png/<contract>-dv01-profile.png` (also `-krd-change`, `-dv01-series`), for the README, the writeup and print; not embedded in the pages.
   - **Why matplotlib:** already a dependency, covers every chart feature (shared-axis panels, a secondary percentile axis, the heatmap with negative shares), and the same result file always draws the same chart (no version stamp in the PNG).
 - **Same colors in both:** the heatmap's stops are shared (`charts.SHARE_STOPS`), placed linearly since plotly maps z linearly.

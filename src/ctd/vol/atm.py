@@ -1,4 +1,4 @@
-"""At-the-money implied vol and the factor width (design 5.5 steps 1, 2 and 4; phase 1c item 3; pure).
+"""At-the-money implied vol and the factor width (design 5.5 steps 1, 2 and 4; roadmap 1c.3; pure).
 
 1. Normal (Bachelier) implied price vol of the out-of-the-money option at the priced strikes either
    side of the futures price (a put below, a call at or above, as in ``vol.digitals``), interpolated
@@ -10,7 +10,7 @@
    comparison with the option digitals (both measure the move by the same date).
 
 One expiry, so the width is scaled by √T (design 5.5 fallback); total-variance interpolation with a
-second expiry is phase 1c item 7. Time is calendar days from the as-of date over 365.
+second expiry is roadmap 1c.7. Time is calendar days from the as-of date over 365.
 """
 
 import math

@@ -1,4 +1,4 @@
-"""Saved model results: one JSON file per contract and as-of date (design 10, phase 1b D).
+"""Saved model results: one JSON file per contract and as-of date (design 4).
 
     data/results/light/ZBZ6/2026-10-21.json
 

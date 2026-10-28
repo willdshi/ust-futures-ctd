@@ -18,10 +18,10 @@ when it covers the last delivery day, else flat at the latest SOFR, with a warni
    par-curve bumps scaled to each bond's DV01 (``risk.krd``), with effective maturity.
 6. ATM vol of the same options (``vol.atm``), converted to yield vol with the CTD's DV01/CF: the
    width of the shift distribution to the horizon, each switch's distance in σ, and its normal tail
-   at the width to option expiry, comparable with its digital (the gap is skew, phase 1c item 3).
+   at the width to option expiry, comparable with its digital (the gap is skew, roadmap 1c.3).
 7. Shifted states with that width (``model.profile``): the duration profile from −100 to +100bp,
    its ±1σ and ±2σ points and vol ±10% bands, with normal probabilities and region-weighted DV01
-   and KRDs, each bond evaluated where it is CTD (phase 1c item 4). Its state at 0 is the headline
+   and KRDs, each bond evaluated where it is CTD (roadmap 1c.4). Its state at 0 is the headline
    DV01; step 5's weighting at z = 0 with the option-implied probabilities is the cross-check.
 
 ``F_market − E(0)`` is reported as the recentring gap: the net basis the model holds constant
@@ -195,7 +195,7 @@ def run(x: LightInputs) -> LightResult:
     warnings = []
     if x.expiry.expiry <= x.asof:
         raise ValueError(f"{x.expiry.label} options expired {x.expiry.expiry}; the light model stops "
-                         f"at option expiry (design 10, phase 1b D)")
+                         f"at option expiry (design 7, Why roll at option expiry)")
     missing = sorted(set(x.cfs) - set(x.prices))
     if missing:
         warnings.append(f"no TreasuryDirect price for {', '.join(missing)}: left out of the basket")
@@ -248,8 +248,7 @@ def run(x: LightInputs) -> LightResult:
         return rows, bonds, e0, ctd0, sws, digs, assemble(ctd0, sws, [d for _, _, d in digs])
 
     # The date: probability-weighted carry, weighted by the option-implied probabilities with the
-    # envelope at the last delivery day (model.horizon; decisions.md, Delivery date for the light
-    # model's forward prices).
+    # envelope at the last delivery day (model.horizon; design 5.2).
     stage = at(x.last_delivery)
     weights = krd.point_weights(stage[6].by_bond())
 

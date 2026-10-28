@@ -1,4 +1,4 @@
-"""The single-date report (phase 1c item 5): the charts as PNGs and the HTML pages, from saved results."""
+"""The single-date report (roadmap 1c.5): the charts as PNGs and the HTML pages, from saved results."""
 
 import json
 import re

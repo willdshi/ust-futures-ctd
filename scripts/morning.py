@@ -1,4 +1,4 @@
-"""Collect the previous business day D and derive it, one step after another (design §10 phase 1e item 5).
+"""Collect the previous business day D and derive it, one step after another (roadmap 1e.5; data.md §4).
 
     python scripts/morning.py [--no-notify]
 

@@ -1,4 +1,4 @@
-"""The single-date report: a summary page per as-of date and a page per contract (phase 1c item 5).
+"""The single-date report: a summary page per as-of date and a page per contract (roadmap 1c.5).
 
     output/2026-10-21.html               summary: contracts, headline numbers, charts 1 to 3 for every contract
     output/2026-10-21/ZBZ6.html          one contract: its charts, then the full analytics
@@ -12,7 +12,7 @@ to that date (``report.series``), so a past date's pages never see later runs. E
 summary's contract table links to the contract's page, which repeats its charts and adds the
 tables: the shifted states (DV01 against CTD-based DV01), the key-rate changes behind chart 2, CTD
 probabilities from both models, the distance to each switch, and the inputs. Plain string
-formatting, no template engine (decisions.md, Chart rendering).
+formatting, no template engine (outputs.md, Rendering).
 """
 
 import re
@@ -256,8 +256,8 @@ def diagnostics(rec: dict) -> str:
     return "<ul class='diag'>" + "".join(f"<li>{x}</li>" for x in items) + "</ul>"
 
 
-# Light model (phase 1c: β = 1, ATM vol). Swap out when the betas arrive in phase 2, where the factor
-# becomes a reference yield rather than the CTD's (decisions.md, Probabilities in the published charts);
+# Light model (β = 1, ATM vol). Swap out when the betas arrive (roadmap 2.2), where the factor
+# becomes a reference yield rather than the CTD's (outputs.md, Conventions and Chart 1 axes);
 # so does charts.LIGHT_MODEL_SHIFT_AXIS.
 LIGHT_MODEL_LEDE = (
     "Futures DV01 and key-rate DV01s per $100mm notional, probability-weighted over the deliverable basket with a "

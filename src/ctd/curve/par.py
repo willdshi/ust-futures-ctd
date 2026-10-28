@@ -1,4 +1,4 @@
-"""Par curve, bootstrap and key-rate bumps (docs/decisions.md, How KRDs are computed; pure).
+"""Par curve, bootstrap and key-rate bumps (design 5.9, Key rate DV01s; pure).
 
 Par yields (decimals, semiannual bond-equivalent) are interpolated linearly between the
 published tenors, flat beyond the ends, onto a semiannual grid. Each grid point is a par bond
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-NODES = (2.0, 5.0, 7.0, 10.0, 15.0, 20.0, 25.0, 30.0)  # fixed key-rate grid (docs/decisions.md)
+NODES = (2.0, 5.0, 7.0, 10.0, 15.0, 20.0, 25.0, 30.0)  # fixed key-rate grid (design 5.9)
 BUMP = 1e-4
 
 

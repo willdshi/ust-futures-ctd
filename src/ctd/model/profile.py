@@ -1,4 +1,4 @@
-"""Shifted states and the duration profile (design 5.9; phase 1c item 4; pure).
+"""Shifted states and the duration profile (design 5.9; roadmap 1c.4; pure).
 
 The shift ``z`` (bp) moves every bond's forward yield in parallel (β = 1), and the Treasury par curve
 with it for the key-rate shapes. A state centred at ``c`` has ``z ~ N(c, S²)``, with ``S`` the ATM

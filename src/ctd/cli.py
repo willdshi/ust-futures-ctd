@@ -200,7 +200,7 @@ def _report(gaps) -> int:
 
 def uses_derived(inputs: str = "derived") -> bool:
     """Whether a run reads futures, SR1, options, the par curve and SOFR from the derived tables
-    (the default, design 10 phase 1e item 6) rather than the raw CME pages, bulletin and files of its
+    (the default, roadmap 1e.6) rather than the raw CME pages, bulletin and files of its
     date (``inputs`` "raw": a cross-check, for dates whose bookmarklet files are stored)."""
     return inputs != "raw"
 
@@ -325,7 +325,7 @@ def warning_kind(w: str) -> str:
 
 
 def cmd_history(args) -> int:
-    """``ctd run`` for every ``cme`` business day from ``--from`` to ``--to`` (design 10, phase 1d):
+    """``ctd run`` for every ``cme`` business day from ``--from`` to ``--to`` (design 7; roadmap 1d.4):
     each result saved, a failed date reported and skipped, then a summary. Days the bond market is
     closed (``sifma``; Columbus and Veterans Day) are skipped: there are no TreasuryDirect prices."""
     from collections import Counter
@@ -492,7 +492,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--inputs", choices=["derived", "raw"], default="derived",
                    help="where futures, SR1, options, par curve and SOFR come from: the derived tables (default) "
                         "or the date's raw CME pages, bulletin and files, which need the bookmarklet click "
-                        "(design 10, phase 1e item 6)")
+                        "(roadmap 1e.6)")
     r.set_defaults(func=cmd_run)
     o = sub.add_parser("report", help="the single-date HTML pages (a summary with charts 1 to 3, a page per "
                                       "contract with its tables) and the charts as PNGs, from saved results")

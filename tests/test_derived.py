@@ -502,7 +502,7 @@ def put_part(dstore: DerivedStore, table: str, schema: pa.Schema, key: str, valu
 
 
 def test_light_inputs_from_the_derived_tables(tmp_path):
-    """The derived-path readers (design 10, phase 1d) give what the raw readers give."""
+    """The derived-path readers (roadmap 1d.1, 1d.2) give what the raw readers give."""
     dstore = DerivedStore(tmp_path)
     d, dec, mar = date(2026, 9, 15), date(2026, 12, 1), date(2027, 3, 1)
     fut = [{"asof": d, "product": "ZB", "month": dec, "contract": "ZBZ6", "settle": 115.5, "open_interest": 1,

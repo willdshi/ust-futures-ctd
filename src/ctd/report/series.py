@@ -5,8 +5,8 @@ DV01 at today and at the shifted states (``profile.points``), the CTD-based DV01
 DV01 (the light model's cross-check), the constant-CTD DV01, effective maturity for all three,
 and the event flags any step in the series should be attributed to.
 
-The constant-CTD bond is the CTD on the series' first date (decisions.md, Which bond the
-constant-CTD DV01 holds), so it moves when the series is extended back. A date whose basket no
+The constant-CTD bond is the CTD on the series' first date (design 5.9, Why the
+start-of-series bond), so it moves when the series is extended back. A date whose basket no
 longer holds it gets NaN. Effective maturity of a single bond is ``Σ share_k · T_k``: its shares
 sum to 1.
 

@@ -1,9 +1,9 @@
-"""Store the NY Fed rates under today's as-of date once yesterday's SOFR is published (design §10, phase 1b B7).
+"""Store the NY Fed rates under today's as-of date once yesterday's SOFR is published (roadmap 1b.B7).
 
     python scripts/morning_sofr.py [--asof 2026-10-27]
 
 Run as a step of ``scripts/morning.py`` (scheduled task ``ctd-morning``, 09:15 on weekdays). A date's SOFR is
-published about 8am the next business day and stored under that day's as-of date (docs/decisions.md, Which
+published about 8am the next business day and stored under that day's as-of date (design §3.3, Which
 data a run uses), but the morning fetch collects only the previous business day. This stores
 today's file once the fixing is out, so the previous day's run has its SOFR the same morning; the next
 morning's fetch then finds it stored and skips it.

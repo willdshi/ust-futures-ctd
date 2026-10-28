@@ -1,5 +1,5 @@
-"""Daily Databento pull (paid): CME futures and option statistics for one trading date (design §10
-phase 1e; decisions.md, Daily CME collection from Databento; data.md 5.14).
+"""Daily Databento pull (paid): CME futures and option statistics for one trading date (design §3.2;
+data.md 5.14; roadmap 1e.1).
 
 One source, ``databento_daily``, with a unit per product:
 
@@ -44,7 +44,7 @@ SOURCE = "databento_daily"
 DATASET = "GLBX.MDP3"
 FUT_MONTHS = {"ZT": 2, "ZF": 2, "ZN": 2, "TN": 2, "ZB": 2, "UB": 2, "SR1": 7}
 OPT_UNITS = ["OZT", "OZF", "OZN", "OTN", "OZB", "OUB"]
-FIRST_DATE = date(2026, 10, 26)  # earlier dates have the CME pages and bulletin; buying them back is phase 1e item 8
+FIRST_DATE = date(2026, 10, 26)  # earlier dates have the CME pages and bulletin; buying them back is roadmap 1e.8
 CHICAGO = ZoneInfo("America/Chicago")
 OPTION_SYMBOL = re.compile(r"O[A-Z]{2}[FGHJKMNQUVXZ]\d [CP]\d+")  # a standard call or put, not a spread
 NOT_READY = ("pending", "missing")

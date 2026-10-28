@@ -2,7 +2,7 @@
 
 What's built and what's next. One line per item, ticked in the commit that finishes it. How each piece works is in [design.md](design.md); open questions are in [open-questions.md](open-questions.md).
 
-**Item IDs are stable.** Refer to items by ID (e.g. `1e.5`). Never renumber: a new item takes the next free number in its phase, and a dropped item stays, struck through, with the reason. IDs for phases 1b to 1f match the numbering used in design.md §10 before the roadmap moved here, so older references in code comments still resolve.
+**Item IDs are stable.** Refer to items by ID (e.g. `1e.5`). Never renumber: a new item takes the next free number in its phase, and a dropped item stays, struck through, with the reason.
 
 **First milestone:** Tier 1 outputs ([outputs.md](outputs.md)) for ZN, TN, ZB and UB, plus the December/March roll comparison, before the December options expire on 2026-11-20.
 
@@ -62,7 +62,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **1e.2** Option definitions for new instruments only
 - [x] **1e.3** Readers `read_daily_futures`, `read_daily_options`
 - [x] **1e.4** Derived tables take `databento_daily` from 2026-10-26
-- [ ] **1e.5** Morning tasks (fetch, SOFR, Databento, derive) collect and derive cleanly on a first morning
+- [ ] **1e.5** Morning task `ctd-morning` (fetch with Databento, SOFR, derive, in order; data.md §4) collects and derives cleanly on a first morning
 - [x] **1e.6** Runs read the derived tables by default (`--inputs raw` kept as a cross-check)
 - [ ] ~~**1e.7** Two weeks alongside the bookmarklet before making Databento the record~~ Dropped: Databento is the production source; the bookmarklet is an optional cross-check.
 - [ ] **1e.8** Buy `databento_daily` for 2026-10-20 to 10-23 (about $1), closing the bulletin-only stretch in the options table
@@ -72,7 +72,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [ ] **1f.1** Run-window rule in code: `contracts_on(asof, expiries, products)` in `reference/`, modelled products marked in `cme_products.toml`; `ctd history` and `ctd report` default to it (design §7)
 - [ ] **1f.2** Fill the December series from 2026-08-14 to 08-31: the saved series starts 2026-09-01, run under the earlier start rule (needs SEP26 option records, or `--contract`)
 - [ ] **1f.3** `scripts/morning_run.py [--asof D]`: the day's contracts, `ctd history`, then `ctd report`; alert and non-zero exit on any failure
-- [ ] **1f.4** Chain it to the morning derive, logging to `data/run.log`
+- [ ] **1f.4** Chain it to the morning derive: a fourth step in `scripts/morning.py`, run only when the derive step exits 0, logging to `data/morning.log`
 - [ ] **1f.5** Reference data ahead of each roll (June 2027 calendars by 2027-02-12), with a warning 30 days before a missing record is needed
 - [ ] **1f.6** Robustness: wake timers, a logon trigger, `--catch-up` over 10 business days, tasks run from a `main` worktree (data.md §4)
 - [ ] **1f.7** Later, opt-in: publishing to GitHub Pages

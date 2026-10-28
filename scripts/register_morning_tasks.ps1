@@ -1,5 +1,5 @@
 # Register the weekday-morning scheduled task that collects the previous business day D and derives it
-# (design section 10, phase 1b B7 and phase 1e item 5):
+# (roadmap 1b.B7 and 1e.5; data.md section 4):
 #
 #   ctd-morning  09:15  scripts\morning.py, one step after another:
 #                         1. ctd fetch --catch-up --notify: every daily source for D (end-of-day TreasuryDirect
@@ -41,6 +41,6 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" `
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $At
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 Register-ScheduledTask -TaskName "ctd-morning" -Action $action -Trigger $trigger -Settings $settings `
-    -Description "Previous business day's raw snapshot and derived tables for the CTD model (design section 10, phase 1e item 5)" `
+    -Description "Previous business day's raw snapshot and derived tables for the CTD model (roadmap 1e.5)" `
     -Force | Out-Null
 "ctd-morning at $At, log data\morning.log"

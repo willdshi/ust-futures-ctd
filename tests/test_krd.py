@@ -1,4 +1,4 @@
-"""Par curve, bootstrap and key-rate DV01s (docs/decisions.md, How KRDs are computed)."""
+"""Par curve, bootstrap and key-rate DV01s (design 5.9, Key rate DV01s)."""
 
 from datetime import date
 
@@ -66,7 +66,7 @@ def test_a_par_bond_maturing_on_a_node_loads_only_on_it():
 
 
 def test_low_coupon_bonds_have_negative_short_tenor_shares():
-    # the 2¼% Aug-46 on a flat 5.55% curve: short at 2-15y, more than 100% at 20y (decisions.md)
+    # the 2¼% Aug-46 on a flat 5.55% curve: short at 2-15y, more than 100% at 20y (design 5.9)
     s = shares(0.0225, date(2046, 8, 15), H, key_rate_curves(ParCurve((0.5, 30.0), (0.0555, 0.0555))))
     assert (s[:5] < 0).all()
     assert s[NODES.index(10.0)] == pytest.approx(-0.073, abs=0.003)

@@ -12,8 +12,8 @@ days carried in from the previous month's last business day:
 
     x_m = (N_m · a_m − Σ fixed) / (number of unknown days)
 
-FOMC steps and month-end and year-end turns are spread over their months (path 2 would place
-them; docs/decisions.md). Convexity and term premium are ignored (5.3).
+FOMC steps and month-end and year-end turns are spread over their months (the stepped path would place
+them; design 5.3, roadmap 3.6). Convexity and term premium are ignored (5.3).
 """
 
 from dataclasses import dataclass

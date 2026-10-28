@@ -1,4 +1,4 @@
-"""Text output of a light-model run (design 5.11, phase 1b B5): the basket and crossover tables."""
+"""Text output of a light-model run (design 5.11, roadmap 1b.B5): the basket and crossover tables."""
 
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
@@ -60,7 +60,7 @@ NEXT_CHEAPEST = 3  # bonds listed beyond those with a probability: the cheapest 
 
 def traded(strikes_used, traded_strikes) -> str:
     """Which of the strikes behind a digital or the ATM vol traded that day: ``"all"``, ``"none"``
-    or the strikes that did (decisions.md, Option strikes with no open interest)."""
+    or the strikes that did (design 3.1, Strikes with no open interest are kept)."""
     if not strikes_used:
         return "-"
     if not traded_strikes:

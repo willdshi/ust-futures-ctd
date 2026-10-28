@@ -4,7 +4,7 @@ A futures price tracks the CTD's converted forward price, so per 100 face of fut
 contributes its forward DV01 over its CF, ``DV01_i / CF_i``, with ``DV01_i`` the fall in the
 bond's price at the horizon for a 1bp rise in its forward yield (``ctd.bonds.pricing.dv01``).
 
-- Probability-weighted: ``Σ p_i · DV01_i / CF_i`` at z = 0 (phase 1c item 1). Region-weighting
+- Probability-weighted: ``Σ p_i · DV01_i / CF_i`` at z = 0 (roadmap 1c.1). Region-weighting
   over shifts (5.9) replaces this when the shifted-state model exists.
 - CTD-based: ``DV01 / CF`` of the single CTD at z = 0, the number vendor systems report.
 

@@ -1,4 +1,4 @@
-"""ATM vol against a normal (Bachelier) option model with a known vol (design 5.5, phase 1c item 3)."""
+"""ATM vol against a normal (Bachelier) option model with a known vol (design 5.5, roadmap 1c.3)."""
 
 import math
 from datetime import date
