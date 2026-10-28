@@ -71,7 +71,7 @@ def _alert(gaps, problems, newest: date) -> None:
         return
     for line in lines:
         print("ALERT", line)
-    alert.notify(f"ctd fetch: {len(lines)} problem(s)", "\n".join(lines[:3]) + "\nSee data\\fetch.log")
+    alert.notify(f"ctd fetch: {len(lines)} problem(s)", "\n".join(lines[:3]) + "\nSee data\\morning.log")
 
 
 def cmd_fetch(args) -> int:
@@ -438,7 +438,7 @@ def cmd_derive(args) -> int:
     for line in problems:
         print("ERROR", line)
     if problems and args.notify:
-        alert.notify(f"ctd derive: {len(problems)} problem(s)", "\n".join(problems[:3]) + "\nSee data\\fetch.log")
+        alert.notify(f"ctd derive: {len(problems)} problem(s)", "\n".join(problems[:3]) + "\nSee data\\morning.log")
     return 1 if problems else 0
 
 

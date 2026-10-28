@@ -32,4 +32,4 @@ def test_alert_notifies_only_when_needed(monkeypatch):
     _alert([mf.Gap(D21, "cme_fut", "ZN", mf.MANUAL_NEEDED)], [], D21)
     assert sent == []
     _alert([mf.Gap(D20, "fred", "DFF", mf.FAILED)], [], D21)
-    assert sent == [("ctd fetch: 1 problem(s)", "fred failed: 2026-10-20\nSee data\\fetch.log")]
+    assert sent == [("ctd fetch: 1 problem(s)", "fred failed: 2026-10-20\nSee data\\morning.log")]

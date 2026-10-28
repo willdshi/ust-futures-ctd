@@ -59,7 +59,8 @@ def collect_downloads(downloads: Path, inbox: Path, sources: set[str]) -> list[s
     """Move ``ctd_<asof>_<source>_<name>`` files from ``downloads`` into ``inbox/<asof>/<source>/<name>``.
 
     A repeated download of the same bytes is deleted; a different file whose target name is already
-    in the inbox stays in ``downloads``. Returns one message per file handled.
+    in the inbox stays in ``downloads``. A file that disappears meanwhile (moved by another ``ctd fetch``
+    sweeping at the same time, 2026-10-28) is skipped. Returns one message per file handled.
     """
     out = []
     if not downloads.is_dir():
@@ -74,15 +75,19 @@ def collect_downloads(downloads: Path, inbox: Path, sources: set[str]) -> list[s
             continue
         name = _BROWSER_COPY.sub("", m[2][len(source) + 1:])
         dest = inbox / m[1] / source / name
-        if dest.exists():
-            if dest.read_bytes() == path.read_bytes():
-                path.unlink()
-                out.append(f"{path.name}: duplicate of {dest.relative_to(inbox)}, deleted")
-            else:
-                out.append(f"{path.name}: left in downloads ({dest.relative_to(inbox)} already in inbox)")
+        try:
+            if dest.exists():
+                if dest.read_bytes() == path.read_bytes():
+                    path.unlink()
+                    out.append(f"{path.name}: duplicate of {dest.relative_to(inbox)}, deleted")
+                else:
+                    out.append(f"{path.name}: left in downloads ({dest.relative_to(inbox)} already in inbox)")
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(path, dest)
+        except FileNotFoundError:  # the other sweep got there first
+            out.append(f"{path.name}: gone from downloads, skipped")
             continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(path, dest)
         out.append(f"{path.name} -> inbox/{dest.relative_to(inbox).as_posix()}")
     return out
 

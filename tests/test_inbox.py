@@ -107,3 +107,34 @@ def test_collect_downloads_never_overwrites_inbox(tmp_path):
     collect_downloads(dl, inbox, {"cme_fut"})
     assert [p.name for p in dl.iterdir()] == ["ctd_2026-10-16_cme_fut_ZN (1).json"]  # identical one deleted
     assert (inbox / "2026-10-16" / "cme_fut" / "ZN.json").read_bytes() == b"first"
+
+
+def test_collect_downloads_file_taken_by_another_sweep(tmp_path, monkeypatch):
+    """2026-10-28: two ``ctd fetch`` runs swept Downloads at once and one deleted a duplicate the other was reading."""
+    from pathlib import Path
+
+    from ctd.data import inbox as inbox_mod
+
+    dl, inbox = tmp_path / "Downloads", tmp_path / "inbox"
+    (inbox / "2026-10-16" / "cme_fut").mkdir(parents=True)
+    (inbox / "2026-10-16" / "cme_fut" / "ZN.json").write_bytes(b"zn")
+    dl.mkdir()
+    (dl / "ctd_2026-10-16_cme_fut_ZN.json").write_bytes(b"zn")
+    (dl / "ctd_2026-10-16_cme_fut_ZB.json").write_bytes(b"zb")
+    read_bytes, move = Path.read_bytes, inbox_mod.shutil.move
+
+    def raced_read(self):  # the other sweep deletes the duplicate just before this one reads it
+        if self.parent == dl:
+            self.unlink()
+        return read_bytes(self)
+
+    def raced_move(src, dst):  # ... and moves the new file first
+        move(src, dst)
+        return move(src, dst)
+
+    monkeypatch.setattr(Path, "read_bytes", raced_read)
+    monkeypatch.setattr(inbox_mod.shutil, "move", raced_move)
+    out = inbox_mod.collect_downloads(dl, inbox, {"cme_fut"})
+    assert out == ["ctd_2026-10-16_cme_fut_ZB.json: gone from downloads, skipped",
+                   "ctd_2026-10-16_cme_fut_ZN.json: gone from downloads, skipped"]
+    assert (inbox / "2026-10-16" / "cme_fut" / "ZB.json").read_bytes() == b"zb"

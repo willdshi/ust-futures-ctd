@@ -2,9 +2,9 @@
 
     python scripts/morning_sofr.py [--asof 2026-10-27]
 
-Run by the scheduled task ``ctd-morning-sofr`` (``register_morning_tasks.ps1``) at 09:15 on weekdays. A date's
-SOFR is published about 8am the next business day and stored under that day's as-of date (docs/decisions.md,
-Which data a run uses), but the daily fetch, at 09:00, collects only the previous business day. This stores
+Run as a step of ``scripts/morning.py`` (scheduled task ``ctd-morning``, 09:15 on weekdays). A date's SOFR is
+published about 8am the next business day and stored under that day's as-of date (docs/decisions.md, Which
+data a run uses), but the morning fetch collects only the previous business day. This stores
 today's file once the fixing is out, so the previous day's run has its SOFR the same morning; the next
 morning's fetch then finds it stored and skips it.
 
