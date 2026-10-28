@@ -1,0 +1,23 @@
+# Exceptions to the CBOT delivery and option expiry rules (design section 2). Delivery calendars and
+# option expiries are computed from the rules in ctd.reference.delivery and ctd.reference.options on the
+# cme holiday list; a record here replaces the rule for one contract month or option month, for a date
+# CME sets against the rule (an unscheduled closure, a rule change not yet encoded). None so far.
+#
+# `ctd derive` checks the expiry rule against CME's expiry for every option month in the derived
+# options table and fails on a disagreement; add the record here, with the evidence in `reason`.
+#
+# [[expiry]]
+# product = "ZN"
+# label = "DEC26"
+# expiry = 2026-11-20
+# underlying = "ZNZ6"
+# quarterly = true
+# reason = "..."
+#
+# [[delivery]]
+# contract = "ZN"
+# month = "2026-12"
+# first_delivery = 2026-12-01
+# last_trading = 2026-12-21
+# last_delivery = 2026-12-31
+# reason = "..."

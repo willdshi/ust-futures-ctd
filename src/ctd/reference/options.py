@@ -1,8 +1,9 @@
 """Expiries of the standard (quarterly and serial) options on Treasury futures (pure).
 
-Records are loaded by ``ctd.data.refdata.option_expiries``; the model reads those. The CBOT rule
-they're generated from is kept so a test checks every record against it, and every Section 42
-bulletin prints CME's own last trade dates as a second check (``cme_bulletin.last_trade_dates``).
+Computed from the CBOT rule (design section 2), unless an exception record overrides it; the model
+reads them through ``ctd.data.refdata.option_expiry``, which supplies the ``cme`` calendar and the
+exceptions. ``ctd derive`` checks the rule against CME's own expiry for every option month in the
+derived options table (``ctd.data.derived.options.expiry_disagreements``).
 
 Rule (ZT, ZF, ZN, TN, ZB, UB): the last Friday preceding, by at least two business days, the
 last business day of the month before the option month; if that Friday isn't a business day,
@@ -11,7 +12,7 @@ own month; a serial option on the next quarterly futures (January and February o
 Weekly options aren't used (design section 2) and aren't recorded.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from ctd.reference.calendar import BusinessCalendar
@@ -27,7 +28,7 @@ class OptionExpiry:
     expiry: date  # last trading day
     underlying: str  # futures contract, e.g. "ZNZ6"
     quarterly: bool
-    verified: tuple[str, ...] = field(default=())
+    reason: str = ""  # why an exception record departs from the rule; empty for the rule
 
 
 def option_month(label: str) -> date:
@@ -54,8 +55,10 @@ def rule_expiry(product: str, label: str, cal: BusinessCalendar) -> OptionExpiry
     return OptionExpiry(product, label, expiry, underlying, month.month % 3 == 0)
 
 
-def expiry_for(records: list[OptionExpiry], product: str, label: str) -> OptionExpiry:
-    for r in records:
+def expiry_for(product: str, label: str, cal: BusinessCalendar,
+               exceptions: list[OptionExpiry] = ()) -> OptionExpiry:
+    """The exception record for ``product`` and ``label`` if there is one, else the rule."""
+    for r in exceptions:
         if r.product == product and r.label == label:
             return r
-    raise KeyError(f"no option expiry stored for {product} {label} (reference/data/option_expiries.toml)")
+    return rule_expiry(product, label, cal)

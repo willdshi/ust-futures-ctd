@@ -18,12 +18,12 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **1b.A2** The single pricing function (`bonds/pricing.py`, design §5.1)
 - [x] **1b.A3** CF formula, matching every stored TCF row (`bonds/conversionfactor.py`)
 - [x] **1b.A4** Store readers: TreasuryDirect prices, TCF baskets, CME futures, NY Fed SOFR
-- [x] **1b.A5** Delivery calendars per contract month (`reference/data/delivery_calendar.toml`; Z6 and H7)
+- [x] **1b.A5** Delivery calendars per contract month (`reference/delivery.py`)
 - [x] **1b.A6** Term repo, forward prices and the delivery-date rule (`funding/repo.py`, `bonds/forward.py`, `model/horizon.py`)
 - [x] **1b.A7** Envelope and switch points (`model/envelope.py`)
 
 *B. Light-model pieces*
-- [x] **1b.B1** Option reference data, NOV26 to JUN27 (`reference/options.py`, `option_expiries.toml`)
+- [x] **1b.B1** Option expiries (`reference/options.py`)
 - [x] **1b.B2** Section 42 parser, TN included (`cme_bulletin.parse_options`)
 - [x] **1b.B3** Digitals (`vol/digitals.py`)
 - [x] **1b.B4** Probability assembly (`model/probabilities.py`)
@@ -69,11 +69,12 @@ What's built and what's next. One line per item, ticked in the commit that finis
 
 ## Phase 1f: automated daily run
 
-- [ ] **1f.1** Run-window rule in code: `contracts_on(asof, expiries, products)` in `reference/`, modelled products marked in `cme_products.toml`; `ctd history` and `ctd report` default to it (design §7)
-- [ ] **1f.2** Fill the December series from 2026-08-14 to 08-31: the saved series starts 2026-09-01, run under the earlier start rule (needs SEP26 option records, or `--contract`)
+- [ ] **1f.1** Run-window rule in code: `contracts_on(asof, products, cal)` in `reference/`, expiries from the rule, modelled products marked in `cme_products.toml`; `ctd history` and `ctd report` default to it (design §7)
+- [ ] **1f.2** Fill the December series from 2026-08-14 to 08-31: the saved series starts 2026-09-01, run under the earlier start rule
 - [ ] **1f.3** `scripts/morning_run.py [--asof D]`: the day's contracts, `ctd history`, then `ctd report`; alert and non-zero exit on any failure
 - [ ] **1f.4** Chain it to the morning derive: a fourth step in `scripts/morning.py`, run only when the derive step exits 0, logging to `data/morning.log`
-- [ ] **1f.5** Reference data ahead of each roll (June 2027 calendars by 2027-02-12), with a warning 30 days before a missing record is needed
+- [x] **1f.8** Delivery and option expiry dates computed from the rules, with an exceptions file; `ctd derive` checks the expiry rule against CME's expiries and the delivery rule against each expired contract's last futures settlement (design §2)
+- [ ] **1f.5** Holiday list ahead of each roll: a warning when `holidays.csv` doesn't reach a year ahead, and the coming year's rows verified against CME's calendar (design §2; data.md §2.5)
 - [ ] **1f.6** Robustness: wake timers, a logon trigger, `--catch-up` over 10 business days, tasks run from a `main` worktree (data.md §4)
 - [ ] **1f.7** Later, opt-in: publishing to GitHub Pages
 
@@ -112,7 +113,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 
 ## Phase 4: history and extensions
 
-- [ ] **4.1** Long history (design §7): reference data for every past contract month, the roll, baskets from the derived table before 2023-12-11, repo before May 2018
+- [ ] **4.1** Long history (design §7): the roll, baskets from the derived table before 2023-12-11, repo before May 2018
 - [ ] **4.2** Repo before May 2018 from ZQ, if chosen (open-questions.md)
 - [ ] **4.3** Backtest scoring and reliability plot (design §8)
 - [ ] **4.4** Tier 2 outputs and the fragility dashboard, with their new sources

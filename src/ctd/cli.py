@@ -217,12 +217,11 @@ def light_inputs(store, contract: str, asof: date, inputs: str = "derived"):
     from ctd.data.derived.store import DerivedStore
     from ctd.model.light import LightInputs
     from ctd.reference.contracts import MONTH_CODES, parse_contract
-    from ctd.reference.delivery import delivery_for
-    from ctd.reference.options import LABELS, expiry_for
+    from ctd.reference.options import LABELS
 
     product, month = parse_contract(contract, asof)
     sifma = refdata.calendar("sifma")
-    cal = delivery_for(refdata.delivery_calendar(), product, month)
+    cal = refdata.delivery_dates(product, month)
     # SOFR dated on or before asof, whenever it was pulled (asof's own is in the next morning's
     # file): this month's for the strip, plus the business day before a 1st that isn't one
     since = sifma.latest_business_day(asof.replace(day=1))
@@ -258,7 +257,7 @@ def light_inputs(store, contract: str, asof: date, inputs: str = "derived"):
     sofr = fixings[sofr_date]
     prices, _ = td_prices.read(store, asof)
     label = f"{LABELS[month.month - 1]}{month.year % 100:02d}"
-    expiry = expiry_for(refdata.option_expiries(), product, label)
+    expiry = refdata.option_expiry(product, label)
     assert expiry.underlying[-2] == MONTH_CODES[month.month - 1]
     x = LightInputs(
         contract, asof, sifma.add_business_days(asof, 1), cal.first_delivery, cal.last_delivery,
@@ -428,6 +427,18 @@ def cmd_derive(args) -> int:
               + (f", listed late by CME: {', '.join(b['cme_late'])}" if b["cme_late"] else "")))
         if b and (b["membership_mismatches"] or b["cf_mismatches"]):
             problems.append(f"baskets: the rules disagree with CME's TCF (see data/derived/baskets/_build.json)")
+    if (dstore.table_dir("options") / "_build.json").exists():
+        rows = options.expiries(dstore)
+        wrong, beyond = options.expiry_disagreements(rows)
+        print(f"option expiries: {len(rows) - len(wrong) - len(beyond)} of {len(rows)} option months agree with the "
+              f"rule" + (f"; {len(beyond)} beyond the holiday list not checked: {', '.join(beyond)}" if beyond else ""))
+        problems += [f"option expiry {w} (add a record to reference/data/rule_exceptions.toml if CME is right)"
+                     for w in wrong]
+    if (dstore.table_dir("futures") / "_build.json").exists():
+        checked, wrong = futures.last_trading_disagreements(futures.last_dates(dstore))
+        print(f"futures last trading days: {checked - len(wrong)} of {checked} expired contracts agree with the rule")
+        problems += [f"futures last trading day {w} (add a record to reference/data/rule_exceptions.toml if CME is "
+                     f"right)" for w in wrong]
     if (dstore.table_dir("options") / "_build.json").exists() and (dstore.table_dir("futures") / "_build.json").exists():
         summary = quality.build(dstore, full=args.full, code=code_version())
         if summary is None:

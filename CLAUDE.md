@@ -62,7 +62,7 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
   - Coupons and yields are decimals (0.045); prices are per 100 face. The price functions accept a numpy array of yields.
   - Coupon dates are stepped back from maturity (month-end maturities pay month-end). Treasuries are dated on schedule, so there is no odd-first-coupon logic. A bond in its final coupon period raises rather than being priced (street convention's simple-interest period isn't implemented).
 - **Dates are passed in, never assumed.** Settlement (T+1), delivery and as-of dates are always arguments.
-- **Reference data is data, not code (design §2).** Grades, delivery calendars (per contract month) and option products are records with effective-from dates in `src/ctd/reference/data/`, never constants; verify each against the CBOT rulebook when encoding it.
+- **Reference data is data, not code (design §2).** Grades, option products and holidays are records in `src/ctd/reference/data/` (grades with effective-from dates), never constants; verify each against the CBOT rulebook when encoding it. Delivery calendars and option expiries are computed from the CBOT rules on the holiday list (`refdata.delivery_dates`, `refdata.option_expiry`); a date CME sets against a rule goes in `rule_exceptions.toml`, never in code.
 
 ## Guardrails
 

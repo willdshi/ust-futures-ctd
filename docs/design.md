@@ -57,7 +57,7 @@ The figures are a working summary. **Verify each against the current CBOT rulebo
   - Remaining maturity is measured from the first day of the delivery month, except ZT's maximum (2y), measured from the last day.
   - Remaining-term limits are inclusive, except ZB's "under 25y".
   - Original-term limits apply per tranche: a 7-year note reopened as a 5-year counts as a 5-year for ZT and ZF from that reopening (CME's TCF lists it so; 91282CGQ8, 912828Z78).
-- **Delivery calendar** (stored per contract month, never computed ad hoc). ZN, TN, ZB and UB share it:
+- **Delivery calendar** (computed from the rule, below). ZN, TN, ZB and UB share it:
   - last trading day = 7th business day before the last business day of the month;
   - last delivery day = last business day of the month.
 
@@ -79,9 +79,13 @@ The figures are a working summary. **Verify each against the current CBOT rulebo
 ### Options on futures
 - ZN, TN, ZB and UB each have listed options with quarterly, serial and weekly expiries. **The model uses quarterly and serial options only**; weeklies aren't collected from Databento and get no reference data (the bulletin prints them; the parser skips them).
 - **Quarterly** options settle into the same-month futures contract. **Serial** options (non-quarterly months) settle into the next quarterly contract.
-- **Expiry rule:** quarterly and serial options stop trading on the last Friday that is at least 2 business days before the last business day of the month *preceding* the option month (the business day before, if that Friday is a holiday). The rule is coded in `reference/options.py` and matches every quarterly expiry 2016–2026 for all four products. The dates used are stored in `option_expiries.toml`, with the underlying contract per expiry, and checked against CME.
+- **Expiry rule:** quarterly and serial options stop trading on the last Friday that is at least 2 business days before the last business day of the month *preceding* the option month (the business day before, if that Friday is a holiday). The rule is coded in `reference/options.py`, with the underlying contract per expiry, and matches every expiry CME has stated since 2016 (below).
 - Exercise: American, physically settled into futures, premium paid upfront. Discount at SOFR to expiry when inverting prices.
 - Strike interval and premium tick are read from the chain, not stored. The strike interval limits how finely a digital (5.11) can resolve a crossover.
+
+**Delivery and option expiry dates are computed from the rules, not stored.** `refdata.delivery_dates` and `refdata.option_expiry` apply the rules above (`reference/delivery.py`, `reference/options.py`) on the `cme` holiday list, unless a record in `rule_exceptions.toml` overrides a month (there are none). They raise for a month the holiday list doesn't reach, so the holiday list is the one forward-looking input to keep up (data.md §2.5).
+- **Why:** the rules have held since 2016. Every option expiry in the derived options table (816 option months, FEB16 to SEP26, ZT to UB, from Databento's definitions and the bulletins) equals the expiry rule, and every expired ZN, TN, ZB and UB contract's last row in the derived futures table (172 contracts, H6 2016 to U6 2026) is on the delivery rule's last trading day; `ctd derive` repeats both checks on every build and fails on a disagreement (data.md §9). Records generated from the same rules on the same holiday list add no information, and a record per product and month has to be added before each roll.
+- **Rejected: a record per contract month and option month,** generated from the rule and tested against it: nothing beyond the rule, a chore before each roll, and about 700 records to reach back to 2016.
 
 ## 3. Data
 
@@ -166,7 +170,7 @@ A run for date D uses **data dated on or before D, from any stored file**, whene
 ```
 ctd/
   data/            # fetchers + raw store (one module per source); derived/ builds the Parquet tables
-  reference/       # contract specs, delivery calendars, option expiries, grades, holidays
+  reference/       # contract specs, delivery and option expiry rules, grades, holidays
   bonds/           # cash flows, accrued, price<->yield, conversion factor, forward price
   funding/         # term GC repo: flat SOFR and the SR1 strip
   curve/           # par curve, beta estimation, residual stats, realised vol
@@ -419,7 +423,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 
 **Start: 2016.** Historical mode goes back to the March 2016 contract month and no further, because earlier Treasury futures rule changes aren't encoded. Rule changes since then (e.g. ZN's 8-year cap) are dated reference records.
 
-**Which contract a date runs (the run window).** A contract is run from the **Friday one week before the previous contract's quarterly options expire** (the next `cme` business day if that Friday is a holiday) to the day before its own quarterly options expire. Expiries are read from `option_expiries.toml`, never recomputed.
+**Which contract a date runs (the run window).** A contract is run from the **Friday one week before the previous contract's quarterly options expire** (the next `cme` business day if that Friday is a holiday) to the day before its own quarterly options expire. Expiries come from `refdata.option_expiry` (section 2), never from a separate calculation.
 - In the week before each expiry, two contracts run per product: the old one carries the series and the new one gives the roll comparison ([outputs.md](outputs.md), Tier 2). December 2026 contracts: 2026-08-14 to 11-19; March 2027: from 2026-11-13.
 - Dates before a contract's start are left out by choice, not for lack of data: the December 2026 futures are in the backfill from 2026-06-18 (when they became the second listed contract) and the DEC26 options from 2026-03-23.
 - **The series rolls at option expiry**, to the contract whose quarterly options are the nearest not yet expired.
@@ -431,7 +435,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
   - TN and UB options barely trade before the roll whatever the start (UB had no volume and 1 contract open until the expiry week; TN a few hundred contracts in one week), though CME settles their whole chain daily and every chain passes `options_quality`. A standing caveat on their outputs (3.1), not something a start rule can fix.
 - **Edge cases:** Presidents' Day can fall in the week before the March options expire, leaving four overlap days. On some Fridays a chain's Sunday finals are stale and `options_quality` flags it, which can cost the first day (data.md §9).
 - **Why roll at option expiry:** after its options expire, a contract's vol has to come from the next expiry (5.5 step 3). That case is unsolved (open-questions.md), so the December contract after its options expire, when its CTD question matters most, is left for phase 2.
-- **Data needs nothing extra:** the daily pull takes each Treasury future's front two contracts (which roll at futures expiry, weeks after option expiry) and every standard option, and CME's TCF lists the next three contract months. The reference records (delivery calendars, option expiries) must be added ahead of each roll.
+- **Data needs nothing extra:** the daily pull takes each Treasury future's front two contracts (which roll at futures expiry, weeks after option expiry) and every standard option, and CME's TCF lists the next three contract months. Delivery and expiry dates come from the rules (section 2), so a roll needs no new records, only a holiday list that reaches it.
 
 **Inputs:**
 - **Baskets**: rebuilt per contract month from the security terms (including matured issues) and the grade records, with CFs from the formula (the derived `baskets` table, checked against every TCF file).
@@ -442,7 +446,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
 - Futures DV01 and KRDs need no futures price: they are probability-weighted basket DV01s over conversion factors.
 - Runtime is trivial; data is the constraint. Historical mode doubles as the backtest (8).
 
-**Long history** (more than one contract, or before mid-2026) needs: reference data for every past contract month, the roll between contracts in `ctd history`, baskets from the derived table before the TCF files start (2023-12-11), and a repo rule before May 2018 (roadmap phase 4).
+**Long history** (more than one contract, or before mid-2026) needs: the roll between contracts in `ctd history`, baskets from the derived table before the TCF files start (2023-12-11), and a repo rule before May 2018 (roadmap phase 4).
 
 ## 8. Validation
 
@@ -450,7 +454,7 @@ Goal: time series of CTD probabilities, futures DV01 and KRDs for past contracts
   - accrued interest;
   - price/yield round trip to 1e-10 with the single pricing function;
   - CF formula vs CME's table for ZN, TN, ZB and UB;
-  - delivery calendars, and option expiry dates vs CME's published calendar;
+  - delivery calendars vs CME's published calendar, and option expiry dates vs every expiry CME has stated since 2016;
   - a bond crossing the 25-year ZB/UB boundary between contract months;
   - a note crossing the ZN grade change: 91282CFV8 (4⅛% Nov 2032), 9.46y remaining for June 2023 (deliverable under the 10-year cap), 9.21y for September 2023 (not deliverable under the 8-year cap);
   - forward price vs a hand carry calculation including a coupon between today and delivery;

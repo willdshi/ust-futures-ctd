@@ -12,18 +12,20 @@ One row per date, product, option month, right and strike. Sources and precedenc
 A cabinet settlement (``CAB`` in the bulletin; 0.001 in Databento, 0.0005 for ZT, 0.0 before
 2017-05-19) is ``settle`` null and ``cabinet`` true. No volume or open interest is 0 from both
 sources; null only where not yet published (Databento's last date). ``expiry`` is the last trading day as the source
-states it (page 1 of the bulletin, which doesn't list TN: TN's come from the reference records,
-``option_expiries.toml``; Databento's definitions), and ``underlying_month`` the futures contract
-month it's on, the key of the futures table.
+states it (page 1 of the bulletin, which doesn't list TN: TN's come from the CBOT rule,
+``refdata.option_expiry``; Databento's definitions), and ``underlying_month`` the futures contract
+month it's on, the key of the futures table. ``expiry_disagreements`` checks every option month's
+expiry against the rule (design section 2).
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pyarrow as pa
+import pyarrow.dataset as ds
 
 from ctd.data import cme_bulletin, databento, databento_daily, refdata
-from ctd.data.derived.store import Source, Table, file_ref
-from ctd.reference.options import underlying_month
+from ctd.data.derived.store import Source, Table, file_ref, partitioning
+from ctd.reference.options import option_month, underlying_month
 
 BULLETIN_FROM = date(2026, 10, 16)
 
@@ -54,10 +56,9 @@ def _bulletin_units(store) -> dict[str, list[dict]]:
 def _bulletin_read(store, key: str) -> tuple[list[dict], list[str]]:
     asof = date.fromisoformat(key)
     settles, last_trade = cme_bulletin.read(store, asof)
-    # Page 1 doesn't list TN; its expiries follow the same rule and are in the reference records.
-    for r in refdata.option_expiries():
-        if r.product == "TN":
-            last_trade.setdefault((r.product, r.label), r.expiry)
+    # Page 1 doesn't list TN; its expiries follow the same rule.
+    for label in {o.label for o in settles if o.product == "TN"}:
+        last_trade.setdefault(("TN", label), refdata.option_expiry("TN", label).expiry)
     return bulletin_rows(asof, settles, last_trade)
 
 
@@ -123,6 +124,27 @@ def chain(dstore, product: str, asof: date) -> tuple[list[cme_bulletin.OptionSet
     settles = [cme_bulletin.OptionSettle(product, r.label, r.right, r.strike, None if r.cabinet else r.settle, None,
                                          int(r.volume), int(r.open_interest)) for r in t.itertuples()]
     return settles, sorted(set(t["source"]))
+
+
+def expiries(dstore) -> list[tuple[str, str, date]]:
+    """Every (product, option month, expiry) in the options table, as its sources state the expiry."""
+    t = ds.dataset(dstore.table_dir("options"), format="parquet", partitioning=partitioning()).to_table(
+        columns=["product", "label", "expiry"]).group_by(["product", "label", "expiry"]).aggregate([])
+    return sorted(zip(*(t[c].to_pylist() for c in ("product", "label", "expiry"))))
+
+
+def expiry_disagreements(rows: list[tuple[str, str, date]]) -> tuple[list[str], list[str]]:
+    """Option months whose stated expiry isn't ``refdata.option_expiry`` (the rule, or an exception
+    record), and those not checked because the holiday list doesn't reach them yet."""
+    wrong, beyond = [], []
+    for product, label, expiry in rows:
+        if expiry is None:
+            continue
+        if option_month(label) - timedelta(days=1) > refdata.holidays_through():
+            beyond.append(f"{product} {label}")
+        elif (rule := refdata.option_expiry(product, label).expiry) != expiry:
+            wrong.append(f"{product} {label}: CME {expiry}, rule {rule}")
+    return wrong, beyond
 
 
 TABLE = Table("options", 1, SCHEMA, key=("asof", "product", "label", "right", "strike"),

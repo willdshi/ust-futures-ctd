@@ -1,12 +1,15 @@
-"""Option expiry records (B1) and the Section 42 parser (B2). Rows are copied from stored bulletins."""
+"""Option expiries (B1) and the Section 42 parser (B2). Rows are copied from stored bulletins."""
 
+import csv
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from ctd.data import refdata
 from ctd.data.cme_bulletin import decode_premium, decode_strike, last_trade_dates, parse_options
-from ctd.reference.options import expiry_for, rule_expiry, underlying_month
+from ctd.data.derived.options import expiry_disagreements
+from ctd.reference.options import OptionExpiry, expiry_for, rule_expiry, underlying_month
 
 CME = refdata.calendar("cme")
 
@@ -53,20 +56,41 @@ TC 1040 ---- ---- 21200 ---- ---- 115.00
 """
 
 
-def test_expiry_records_agree_with_the_rule():
-    for r in refdata.option_expiries():
-        rule = rule_expiry(r.product, r.label, CME)
-        assert (r.expiry, r.underlying, r.quarterly) == (rule.expiry, rule.underlying, rule.quarterly), r
+def cme_expiries() -> list[tuple[str, str, date]]:
+    """Every option month's expiry as CME states it, from the derived options table (Databento's definitions
+    and the bulletins; FEB16 to SEP26 for ZT, ZF, ZN, TN, ZB and UB)."""
+    with (Path(__file__).parent / "data" / "option_expiries_cme.csv").open(newline="", encoding="utf-8") as f:
+        return [(r["product"], r["label"], date.fromisoformat(r["expiry"])) for r in csv.DictReader(f)]
+
+
+def test_rule_matches_every_cme_expiry():
+    rows = cme_expiries()
+    assert len(rows) == 816
+    assert expiry_disagreements(rows) == ([], [])
+    assert all(rule_expiry(p, label, CME).expiry == e for p, label, e in rows)
+
+
+def test_disagreements_and_months_beyond_the_holiday_list():
+    beyond = f"MAR{(refdata.holidays_through().year + 1) % 100:02d}"
+    wrong, unchecked = expiry_disagreements([("ZN", "DEC26", date(2026, 11, 19)), ("ZN", "DEC26", None),
+                                             ("ZB", beyond, date(2000, 1, 1))])
+    assert wrong == ["ZN DEC26: CME 2026-11-19, rule 2026-11-20"] and unchecked == [f"ZB {beyond}"]
+    with pytest.raises(ValueError, match="holidays.csv ends"):
+        refdata.option_expiry("ZB", beyond)
 
 
 def test_december_quarterly_and_serials():
-    dec = expiry_for(refdata.option_expiries(), "ZB", "DEC26")
-    assert (dec.expiry, dec.underlying, dec.quarterly) == (date(2026, 11, 20), "ZBZ6", True)
-    jan = expiry_for(refdata.option_expiries(), "ZN", "JAN27")
+    dec = refdata.option_expiry("ZB", "DEC26")
+    assert (dec.expiry, dec.underlying, dec.quarterly, dec.reason) == (date(2026, 11, 20), "ZBZ6", True, "")
+    jan = refdata.option_expiry("ZN", "JAN27")
     assert (jan.expiry, jan.underlying) == (date(2026, 12, 24), "ZNH7")  # Christmas Friday: day before
     assert rule_expiry("ZN", "NOV26", CME).underlying == "ZNZ6"
-    with pytest.raises(KeyError):
-        expiry_for(refdata.option_expiries(), "ZN", "SEP27")
+
+
+def test_an_exception_record_replaces_the_rule():
+    moved = OptionExpiry("ZN", "DEC26", date(2026, 11, 19), "ZNZ6", True, "closure on 2026-11-20")
+    assert expiry_for("ZN", "DEC26", CME, [moved]) == moved
+    assert expiry_for("ZB", "DEC26", CME, [moved]).expiry == date(2026, 11, 20)
 
 
 @pytest.mark.parametrize("label, month", [("NOV26", date(2026, 12, 1)), ("DEC26", date(2026, 12, 1)),
@@ -88,7 +112,7 @@ def test_page_one_last_trade_dates():
     assert ("ZN", "MAR27") in ltd and not any(p == "ZT" for p, _ in ltd)
     for (product, label), d in ltd.items():
         if label != "OCT26":
-            assert expiry_for(refdata.option_expiries(), product, label).expiry == d
+            assert refdata.option_expiry(product, label).expiry == d
 
 
 @pytest.mark.parametrize("product, code, strike", [("ZN", "1045", 104.5), ("ZN", "1047", 104.75),

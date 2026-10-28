@@ -17,6 +17,8 @@ day's, so a CME row for D takes it from D+1's page and stays null until that pag
 Databento row has the evening's first figure from D's file, replaced by the revision (the one CME's
 page shows) once D+1's file is stored.
 Volume isn't kept: CME's page has a same-day estimate, Databento the final cleared volume.
+``last_trading_disagreements`` checks each expired ZN, TN, ZB and UB contract's last row against the
+delivery rule's last trading day (design section 2).
 """
 
 from datetime import date
@@ -26,6 +28,7 @@ import pyarrow as pa
 from ctd.data import cme_settlements, databento, databento_daily, refdata
 from ctd.data.derived.store import Source, Table, file_ref
 from ctd.reference.contracts import MONTH_CODES
+from ctd.reference.delivery import RULE_CONTRACTS
 
 CME_FROM = date(2026, 10, 14)
 
@@ -124,6 +127,28 @@ def settlements(dstore, product: str, asof: date) -> tuple[dict[date, float], li
     sources the rows came from. Empty when the date has no rows."""
     t = dstore.read("futures", products=[product], start=asof, end=asof)
     return dict(zip(t["month"], t["settle"])), sorted(set(t["source"]))
+
+
+def last_dates(dstore) -> list[tuple[str, date, date, date]]:
+    """(product, contract month, its last date, the product's last date) for each ZN, TN, ZB and UB
+    contract month in the futures table."""
+    t = dstore.read("futures", products=list(RULE_CONTRACTS))
+    latest = t.groupby("product")["asof"].max()
+    return [(p, m, d, latest[p]) for (p, m), d in t.groupby(["product", "month"])["asof"].max().items()]
+
+
+def last_trading_disagreements(rows: list[tuple[str, date, date, date]]) -> tuple[int, list[str]]:
+    """How many contract months were checked, and those whose last row isn't on their last trading
+    day (``refdata.delivery_dates``: the rule, or an exception record). Only contracts whose last
+    trading day is on or before the product's last date are checked."""
+    checked, wrong = 0, []
+    for product, month, last, latest in rows:
+        if month > latest or (rule := refdata.delivery_dates(product, month).last_trading) > latest:
+            continue
+        checked += 1
+        if last != rule:
+            wrong.append(f"{contract_code(product, month)} ({month:%Y-%m}): last row {last}, rule {rule}")
+    return checked, wrong
 
 
 TABLE = Table("futures", 1, SCHEMA, key=("asof", "product", "month"), compare=("contract", "settle", "open_interest"),
