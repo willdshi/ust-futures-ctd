@@ -2,7 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-End-of-day model of cheapest-to-deliver (CTD) probabilities, futures DV01s and key rate DV01s for CBOT Treasury futures, built only from free public data. The model covers **ZN, TN, ZB and UB**, all four on an equal footing; ZT and ZF are out of scope for the model. Data collection covers all six Treasury contracts: ZT, ZF, ZN, TN, ZB and UB. **[docs/design.md](docs/design.md) is the spec.** Read the relevant section before implementing anything; the phase roadmap is in section 10 and the open decisions are in section 11. What gets published (charts, tiers, conventions) is in [docs/outputs.md](docs/outputs.md); collected data is described in [docs/data.md](docs/data.md) and settled choices in [docs/decisions.md](docs/decisions.md).
+End-of-day model of cheapest-to-deliver (CTD) probabilities, futures DV01s and key rate DV01s for CBOT Treasury futures, built from public data plus a small paid Databento feed for CME settlements. The model covers **ZN, TN, ZB and UB**, all four on an equal footing; ZT and ZF are collected but not modelled.
+
+## Docs: where things live
+
+Read the relevant doc before changing the code it covers.
+
+| Doc | Holds | Read before |
+|---|---|---|
+| [docs/design.md](docs/design.md) | The spec: how the model works, and every settled design choice with its reasons | any change in `bonds/`, `funding/`, `curve/`, `vol/`, `model/`, `risk/` |
+| [docs/roadmap.md](docs/roadmap.md) | Phases and status, as checkboxes | starting or finishing a task |
+| [docs/open-questions.md](docs/open-questions.md) | Open questions, with options and evidence where worked through | proposing a change in an area it lists |
+| [docs/data.md](docs/data.md) | Sources, raw store, derived tables, data quirks, scheduled tasks, and the settled data choices | any change in `data/` or the scheduled tasks |
+| [docs/outputs.md](docs/outputs.md) | What is published and how it looks; `[NI]` marks what isn't implemented | any change in `report/` |
+
+### Writing docs
+
+- One home per fact (table above). Elsewhere, link to it; don't restate it.
+- Update existing text in place. Don't add a new paragraph next to an old one it contradicts.
+- A settled choice goes in the section it governs (design.md for the model, data.md for data, outputs.md for publishing): the rule, then **Why** (the deciding evidence, a few sentences) and, where useful, **Rejected** (alternatives and why they lost). If it came from open-questions.md, delete that entry in the same commit.
+- An open question goes in open-questions.md.
+- Progress goes in roadmap.md, one line per item, ticked in the commit that finishes it.
+- No dated status ("now", "so far", "until …") or history of the code or docs: git has it. Exception: in data.md, which source covers which dates is part of the data.
+- Run results go in only as evidence: the **Why** behind a rule, a validation result (design §8), a data quirk (data.md), or an example that sizes a published caveat (outputs.md). Give the dates they cover. Example output numbers with no such role stay out.
+- When unsure whether to drop something, keep it and move it to its owning doc.
+- A published output not yet built is marked `[NI]` in outputs.md.
+- When moving or renaming a section, grep the repo (docs, code comments, docstrings) for references to it and update them.
 
 ## Environment and commands
 
@@ -22,81 +47,29 @@ $py = "$env:USERPROFILE\miniconda3\envs\ctd\python.exe"
 - Keep dependencies in sync in both `environment.yml` and `pyproject.toml`. Test-only packages (QuantLib) go in the `dev` extras.
 - pytest runs with `--strict-markers`, so register any new marker in `pyproject.toml`. Mark tests that touch external sources with `network`.
 - No linter or formatter is configured yet.
-- Tests never read the gitignored `/data/` store. When a test needs real files, save a small extract under `tests/data/` (e.g. `tcf_2026-10-21.csv`).
 
-## Current state
+## Architecture rules
 
-Phase 1b (the light model, design §5.11) is in progress. Status is tracked as checkboxes in the phase 1b plan in design §10; tick items there in the commit that finishes them, not here.
-
-## Architecture rules (from the design)
-
-- **Two different `data` directories.**
-  - `src/ctd/data/` is code: one fetcher module per source.
-  - `/data/` at the repo root is the gitignored raw snapshot store.
-  - Keep `.gitignore` anchored as `/data/*`.
-- **Reproducibility.** Store every raw file exactly as downloaded, keyed by as-of date. TreasuryDirect prices and CME settlements under an as-of date are that day's close (checked by hand for TreasuryDirect; data.md §5.1), but rates published the next morning (SOFR) aren't in that day's files yet. A run for a date uses data dated on or before it from any stored file, so it takes that day's SOFR from the next morning's file ([decisions.md](docs/decisions.md), Which data a run uses). The model reads only from that store, never from the network directly, and re-running a past date must give the same answer once the next day's files are stored.
-- **Collect broadly, model narrowly (§3.2).** Data that can't be backfilled for free gets lost on any day it isn't pulled.
-  - Collect it every business day for all products in §3.2, whether the model uses them yet or not:
-    - CME futures settlements for all six contracts, and their option settlements as the Daily Bulletin's Section 42 PDF (saved in a browser with the bookmarklet; CME has no free download feed)
-      - From 2026-10-26 a daily Databento pull (design §10 phase 1e) is the record for both, and runs read the derived tables by default. The bookmarklet sources are `occasional`: a free cross-check, never a gap; a day not clicked is a permanent gap there. Its futures are only the front two Treasury contracts and seven SR1 months: SR3 and ZQ come only from the bookmarklet's CME pages ([decisions.md](docs/decisions.md), Daily CME collection from Databento).
-    - CME conversion factor tables (TCF, from CME's public FTP server)
-    - SOFR and fed funds futures
-    - Yahoo Finance daily bars for the six Treasury futures (cross-check on CME settlements)
-    - the full TreasuryDirect price file
-  - Never narrow a fetcher to the products the model currently reads.
-  - Fetches are idempotent and never overwrite a stored file.
-    - **One exception:** a same-evening TreasuryDirect price file (no end-of-day prices yet) is provisional and replaced by the completed file on a later run (`SourceSpec.provisional`, `RawStore.replace`; data.md §5.1). Only sources that can be pulled again for any past date may use it. Never extend it to CME data.
-  - Each date gets a manifest, and gaps are flagged (the scheduled `ctd fetch --catch-up --notify` raises a desktop alert), never filled from another source.
-- **Purity.**
-  - `bonds/`, `funding/`, `model/` and `risk/` (and the computational parts of `curve/` and `vol/`) are pure functions.
-  - Only `data/` and `report/` do I/O.
-  - `cli.py` connects them:
-    - `ctd fetch --asof 2026-10-16`
-    - `ctd run --contract ZBZ6 --asof 2026-10-16`
-    - `ctd derive` (derived Parquet tables under `/data/derived/`, design §4; incremental, and must equal `--full`)
-    - `ctd report --asof 2026-10-16` (the single-date HTML page in `/output/`, from saved results)
-    - `ctd history --contract ZB --from 2022-01-01 --to 2026-10-16`
-- **Bond math is hand-written (§5.1).** One street-convention pricing function (`ctd.bonds.pricing`) is used for every price, yield and duration calculation. QuantLib is a test-only dependency, used as an independent check.
+- **Two `data` directories.** `src/ctd/data/` is code (one module per source); `/data/` at the repo root is the gitignored store (raw files, derived tables, results). Keep `.gitignore` anchored as `/data/*`.
+- **Purity.** `bonds/`, `funding/`, `model/`, `risk/` and the computational parts of `curve/` and `vol/` are pure functions. Only `data/` and `report/` do I/O; `cli.py` connects them (`ctd fetch`, `derive`, `run`, `history`, `report`).
+- **The model reads only the store**, never the network. `ctd run` reads the derived tables by default; `ctd derive` builds them incrementally and must give the same tables as `--full`.
+- **Reproducibility.** A run for date D uses data dated on or before D from any stored file (so D's SOFR comes from D+1's file). Re-running D gives the same answer once D+1's files are stored (design §3.3).
+- **Raw files are stored exactly as downloaded and never overwritten.** One exception: a provisional same-evening TreasuryDirect price file is replaced once end-of-day prices are published (`SourceSpec.provisional`; data.md §5.1). Never extend it to other sources.
+- **Collect broadly, model narrowly.** Don't narrow a fetcher to the products the model reads. Gaps are flagged in the manifest, never filled from another source (design §3.2). CME futures and option settlements come from the daily Databento pull (data.md §5.14); the bookmarklet's CME pages and bulletin are an optional cross-check, and the only source of SR3 and ZQ.
+- **Bond math is hand-written (design §5.1).** One street-convention pricing function (`ctd.bonds.pricing`) is used for every price, yield and duration calculation. QuantLib is a test-only dependency, used as an independent check.
   - Coupons and yields are decimals (0.045); prices are per 100 face. The price functions accept a numpy array of yields.
   - Coupon dates are stepped back from maturity (month-end maturities pay month-end). Treasuries are dated on schedule, so there is no odd-first-coupon logic. A bond in its final coupon period raises rather than being priced (street convention's simple-interest period isn't implemented).
-- **Explicit conventions.** Settlement (T+1) and delivery dates are always passed in, never assumed. Accrual is actual/actual, compounding is semiannual, and days are business days for delivery calendars.
-- **Reference data is data, not code (§2).**
-  - Contract grades, delivery calendars and option products live in `reference/` as records with effective-from dates, never as constants. Verify each against the current CBOT rulebook when encoding it.
-  - Conversion factors come from the 6% CF formula (`ctd.bonds.conversionfactor`; maturity rounded down to the quarter for ZN, TN, ZB and UB, the month for ZT and ZF, as `cf_round_months` in `cme_products.toml`) in both live and historical mode. CME's published tables (TCF, collected daily from its FTP server, §3.2) are validation data; the formula matches every stored TCF row. The light model (§5.11) reads CFs from TCF as a shortcut.
-  - Baskets are rebuilt from the eligibility rules and Treasury security terms, and checked against the TCF files.
-  - Store delivery calendars per contract month; don't compute them ad hoc.
-  - Basket eligibility, measured from the first day of the delivery month:
-    - ZN is 6.5 to 8y (original maturity ≤ 10y) from the September 2023 contract month; 6.5 to 10y before. Historical rebuilds must use the grade in force for each contract month (records in `src/ctd/reference/data/contract_grades.toml`, looked up with `ctd.reference.grades.grade_for`)
-    - TN is 9y 5m to 10y (original maturity ≤ 10y)
-    - ZB is 15 to under 25y
-    - UB is 25y and over
-    - Original-term limits apply per tranche: a 7-year note reopened as a 5-year counts as a 5-year for ZT and ZF from that reopening (CME's TCF lists it). Remaining-term limits are inclusive except ZB's "under 25y"; ZT's maximum (2y) runs from the last day of the delivery month.
-  - A bond moves from UB's basket to ZB's when it drops below 25y, so baskets are dated per contract.
+- **Dates are passed in, never assumed.** Settlement (T+1), delivery and as-of dates are always arguments.
+- **Reference data is data, not code (design §2).** Grades, delivery calendars (per contract month) and option products are records with effective-from dates in `src/ctd/reference/data/`, never constants; verify each against the CBOT rulebook when encoding it.
 
-## Model invariants that are easy to get wrong
+## Guardrails
 
-- **Horizon.** Pick one horizon for the whole basket, not one per bond: last delivery day if the basket's probability-weighted carry is positive (each bond's carry weighted by its probability of being CTD, not today's CTD's alone), first delivery day if negative (§5.2; `ctd.model.horizon`; [decisions.md](docs/decisions.md), Delivery date). Every implied delivery date goes through that one rule.
-- **Exact cash flows.** Coupons between today and the horizon must be in the forward price, and accrued must be at the correct settlement and delivery dates (§5.1).
-- **Grid centring.** Centre everything on forward yields at the horizon. The per-bond convexity adjustment `c_i` (so that `E[P_i(z)]` equals the forward price) is optional and off by default in v1; add it only if backtests show a bias (§5.6).
-- **Slope-adjusted widths.** The slope-adjusted width `S_eff` is used for **probabilities only**, never for DV01 or KRDs (§5.7).
-- **Vol mapping.** Convert each option expiry's price vol with the CTD duration of *that expiry's* underlying contract, then interpolate total variance to the horizon (§5.5). Use quarterly and serial options only; weeklies are stored in the bulletin but not used (§2). If UB options are too thin, map vol from ZB through betas (TN from ZN), then fall back to realised vol (§3.1).
-- **No fair value (§1, §5.8).** There is no model futures price, no comparison with the market settlement and no implied CTD repo. The end-of-month and wildcard options aren't modelled. Every bond is funded at GC. Market futures prices are used only for vol conversion, open interest and, in the report, to express today's futures DV01 as a duration.
-- **Key rate durations.** KRDs are forward KRDs at the horizon, divided by CF and probability-weighted. Also report them per cluster, for jump risk (§5.9). The key-rate grid is fixed at 2, 5, 7, 10, 15, 20, 25 and 30 years: tent bumps to the linearly interpolated Treasury par curve, each bond's shares scaled to its DV01 from `ctd.bonds.pricing` ([decisions.md](docs/decisions.md)). Short-tenor KRDs of low-coupon bonds are negative by design; units are $/bp per $100mm notional.
-- **Scenarios.** Recompute crossovers and probabilities at each shifted state (±1σ, ±2σ, the duration profile). Never read off the CTD at the shifted yield (§5.9).
+- **Delivery dates come only from `ctd.model.horizon`.** Never compute a horizon or implied delivery date anywhere else (design §5.2).
+- **Out of scope, don't build:** a model futures price or fair value, implied or CTD-specific repo, the end-of-month and wildcard options (design §1). Market futures prices are used only for vol conversion, open interest and the report's futures duration.
+- **Negative short-tenor KRDs, and effective maturity beyond a bond's maturity, are correct** for low-coupon bonds against the par curve. Don't "fix" them (design §5.9).
+- **Implement a model piece from its design section**, and add its test from design §8.
 
-## Validation targets (§8)
+## Tests
 
-Required unit tests:
-- accrued interest
-- price/yield round trips to 1e-10 with the single pricing function
-- CF formula vs the CME table for ZN, TN, ZB and UB
-- delivery calendars, and option expiry dates vs CME's published calendar
-- a bond crossing the 25-year ZB/UB boundary between contract months
-- a note crossing the ZN grade change: 91282CFV8 (4⅛% Nov 2032) is deliverable for June 2023 (6.5–10y) but not September 2023 (6.5–8y)
-- forward price vs a hand carry calculation, including a coupon between today and delivery
-- settlement on a coupon date; end-of-month maturities
-- crossover root-finding on a synthetic two-bond basket with a known answer
-- term repo compounding
-- region-weighted DV01 vs finite difference on a synthetic basket
-
-Sanity check: on a flat 6% curve, all converted prices should be about 100.
+- Required tests are listed in design §8; add the matching test with new model code.
+- Tests never read the gitignored `/data/` store. When a test needs real files, save a small extract under `tests/data/` (e.g. `tcf_2026-10-21.csv`).
