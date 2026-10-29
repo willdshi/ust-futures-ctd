@@ -95,6 +95,17 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **W.1** Reconcile with the restructured docs
 - [ ] **W.2** Reconcile at the first milestone
 
+## V: Model versions
+
+V1 is the light model (design §5.11, with §5.9 at β = 1 and ATM normal), done after 1c.7; Phase 2 starts V2. These items let versions run side by side over the same dates. Detail is in the working note [model-versions-plan.md](model-versions-plan.md).
+
+- [ ] **V.1** Versioning rule in design §4 (a version is a method; shared-code fixes flow into every version), with design.md's other uses of "v1" renamed
+- [ ] **V.2** Results keyed by version (`data/results/v1/...`, a schema per version) and `--model` on `ctd run`, `history` and `report`, defaulting to `v1`
+- [ ] **V.3** V2 extends shared code with V1's behaviour as the default argument (betas = 1, ATM √T width); `model/light.py` stays V1
+- [ ] **V.4** V1 golden test: a real input extract per contract under `tests/data/`, with expected outputs (design §8)
+- [ ] **V.5** The morning run (1f.3) takes a list of versions, defaulting to `[v1]`
+- [ ] **V.6** Same result keys and units across versions so a comparison is a join; how to publish V1 against V2 goes in open-questions.md
+
 ## Phase 2: one-factor model
 
 - [x] **2.1** Derived tables: futures, options, options quality, bond prices, securities, par curve, rates, baskets (data.md §9)
