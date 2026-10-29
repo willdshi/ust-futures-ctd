@@ -16,7 +16,7 @@ Read the relevant doc before changing the code it covers.
 | [docs/data.md](docs/data.md) | Sources, raw store, derived tables, data quirks, scheduled tasks, and the settled data choices | any change in `data/` or the scheduled tasks |
 | [docs/outputs.md](docs/outputs.md) | What is published and how it looks; `[NI]` marks what isn't implemented | any change in `report/` |
 
-[docs/writeup.md](docs/writeup.md) (built to `writeup.pdf`) is the reader-facing write-up: the project's scope, intent and limitations, with results for one date. It isn't a spec and lags the docs above by design. Don't consult or edit it while implementing; where they disagree, the docs above win. It is reconciled at milestones (roadmap.md, W), from the diff of the other docs since the commit recorded in its header.
+[docs/writeup.md](docs/writeup.md) (built to `writeup.pdf`) is the reader-facing write-up: the project's scope, intent and limitations, with results for one date. It isn't a spec and lags the docs above by design. Don't consult or edit it while implementing; where they disagree, the docs above win. It is reconciled at milestones (roadmap.md, W), following the steps in its header comment.
 
 ### Writing docs
 

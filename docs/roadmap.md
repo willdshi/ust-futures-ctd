@@ -89,7 +89,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 
 ## W: Writeup
 
-[writeup.md](writeup.md) lags the other docs between milestones. To reconcile it: check its claims and limitations against the diff of the other docs since the commit in its header (`git diff <commit>..HEAD -- docs ':!docs/writeup.*' ':!docs/images'`); where the model changed, re-run the quoted date and regenerate the figures (`scripts/writeup_figures.py`); rebuild the PDF; record the new commit in its header.
+[writeup.md](writeup.md) lags the other docs between milestones; the steps to reconcile it are in its header comment.
 
 - [x] **W.1** Reconcile with the restructured docs
 - [ ] **W.2** Reconcile at the first milestone

@@ -10,8 +10,13 @@ numbersections: true
 Figures: python scripts/writeup_figures.py (from data/results/light for 2026-10-23)
 Build: pandoc docs/writeup.md -o docs/writeup.pdf --pdf-engine=xelatex --resource-path=docs
 Numbers quoted are ZBZ6 on 2026-10-23 (light model) unless stated.
-Reconciled with the other docs as of commit 15142a4 (2026-10-28). To reconcile again (roadmap.md, W):
-  git diff 15142a4..HEAD -- docs ':!docs/writeup.*' ':!docs/images'
+Reconciled with the other docs as of commit 15142a4 (2026-10-28). To reconcile again:
+  1. Diff the other docs since that commit:
+     git diff 15142a4..HEAD -- docs ':!docs/writeup.*' ':!docs/images'
+  2. Check the write-up's claims and limitations against the diff.
+  3. Where the model changed, re-run the quoted date and regenerate the figures (Figures above).
+  4. Rebuild the PDF (Build above).
+  5. Record the new commit here.
 -->
 
 # Summary {-}
