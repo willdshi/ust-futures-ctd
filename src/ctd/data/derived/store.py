@@ -12,7 +12,8 @@ raw store lacks. ``build`` is incremental and must give the same tables as ``bui
 - A source splits its raw files into units (one date's file, or one product's backfill), each with
   the raw files it's read from. A unit whose files (by sha256) differ from the last build is dirty,
   and only dirty units are read again; their rows replace the old ones in the staging partitions
-  they can fall in (``Source.scope``).
+  they can fall in (``Source.scope``). A partition whose rows come out the same isn't rewritten: a
+  history file pulled again (FRED, a Treasury year) changes only the years it extends or revises.
 - A source whose ``version`` changes is rebuilt from scratch; so is every source of a table whose
   ``version`` (the schema) changes. Bump them by hand when a reader's output or a schema changes.
 - Merged partitions are rebuilt from staging wherever staging changed. On each date the table's
@@ -233,15 +234,21 @@ def _build_source(dstore: DerivedStore, store, table: Table, src: Source, rec: d
     pairs = pa.table({"p": new[pk], "y": years}).group_by(["p", "y"]).aggregate([])
     touched |= set(zip(pairs["p"].to_pylist(), pairs["y"].to_pylist()))
     dirty_keys = pa.array(dirty, pa.string())
+    order = [("asof", "ascending")] + [(c, "ascending") for c in table.key if c not in ("asof", pk)] \
+        + [(UNIT, "ascending")]  # the unit too, so the same rows always give the same file
+    changed = set()
     for product, year in sorted(touched):
         old = dstore.read_part(base, product, year, pk)
         keep = [] if old is None else [old.filter(pc.invert(pc.is_in(old[UNIT], dirty_keys)))]
         mask = pc.and_(pc.equal(new[pk], product), pc.equal(years, year))
         add = [new.filter(mask).drop_columns([pk]).select(staging.names)] if new.num_rows else []
         part = pa.concat_tables([t.cast(staging) for t in keep + add]) if keep + add else staging.empty_table()
-        dstore.write_part(base, product, year, part.sort_by([("asof", "ascending")] + [(c, "ascending") for c in
-                                                            table.key if c not in ("asof", pk)]), pk)
-    return touched, errors, notes, len([k for k in dirty if k in current and k not in errors])
+        part = part.sort_by(order)
+        if (old is None and part.num_rows == 0) or (old is not None and old.cast(staging).equals(part)):
+            continue  # a re-read history file (FRED, a Treasury year) repeats every year it doesn't extend
+        dstore.write_part(base, product, year, part, pk)
+        changed.add((product, year))
+    return changed, errors, notes, len([k for k in dirty if k in current and k not in errors])
 
 
 def _jsonable(v):

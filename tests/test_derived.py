@@ -96,6 +96,42 @@ def test_incremental_equals_full(store, tmp_path):
     assert dstore.read("toy", start=date(2026, 10, 16), end=date(2026, 10, 16))["v"].tolist() == [1.5]
 
 
+def history_source(name: str) -> Source:
+    """One unit holding a whole series: each date's file repeats every earlier row (FRED's way)."""
+    def units(store):
+        refs = [file_ref(store, d, name, "all", "rows.json") for d in store.asofs() if store.names(d, name, "all")]
+        return {"series": refs[-1:]} if refs else {}
+
+    def read(store, key):
+        ref = units(store)[key][0]
+        return [{**r, "asof": date.fromisoformat(r["asof"])}
+                for r in json.loads(store.read(date.fromisoformat(ref["asof"]), name, "all", "rows.json"))], []
+
+    return Source(name, 1, units, read, lambda key: (None, None))
+
+
+HISTORY = Table("history", 1, SCHEMA, key=("asof", "product", "k"), compare=("v",),
+                sources=(history_source("h"),), winner=lambda d, p: "h")
+
+
+def test_a_reread_history_rewrites_only_the_partitions_whose_rows_change(store, tmp_path):
+    dstore = DerivedStore(store.root)
+    series = [{"asof": f"{y}-06-30", "product": "ZN", "k": 0, "v": float(y)} for y in range(2020, 2026)]
+    put(store, date(2026, 10, 15), "h", series)
+    assert build(dstore, store, HISTORY, log=quiet).partitions == 6
+    put(store, date(2026, 10, 16), "h", series)  # the same history again
+    report = build(dstore, store, HISTORY, log=quiet)
+    assert report.read == {"h": 1} and report.partitions == 0
+    series.append({"asof": "2026-10-16", "product": "ZN", "k": 0, "v": 2026.0})  # one new row
+    put(store, date(2026, 10, 19), "h", series)
+    assert build(dstore, store, HISTORY, log=quiet).partitions == 1
+
+    incremental = dstore.read("history")
+    other = DerivedStore(tmp_path / "elsewhere")
+    build(other, store, HISTORY, log=quiet)
+    pd.testing.assert_frame_equal(other.read("history"), incremental)
+
+
 def test_a_unit_that_fails_is_reported_dropped_and_retried(store):
     dstore = DerivedStore(store.root)
     put(store, date(2026, 10, 14), "a", rows(1.0))
