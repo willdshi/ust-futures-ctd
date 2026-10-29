@@ -77,10 +77,12 @@ class FakeClient:
 
     def __init__(self):
         self.available, self.condition, self.listed, self.calls = "2026-10-27T13:10:00Z", "available", None, []
+        self.range_calls = 0
         self.content = {"statistics": b"stats", "definition": b"defs"}
         self.metadata, self.timeseries, self.symbology = self, self, self
 
     def get_dataset_range(self, dataset):
+        self.range_calls += 1
         return {"start": "2010-06-06T00:00:00Z", "end": self.available}
 
     def get_dataset_condition(self, dataset, start_date, end_date):
@@ -111,6 +113,7 @@ def client(monkeypatch, store):
               b"defs": np.array([(101, b"OZNZ6 C1201"), (102, b"OZNZ6 C1202")], dtype=DEFS)}
     c = FakeClient()
     monkeypatch.setattr(dd, "_client", lambda: c)
+    monkeypatch.setattr(dd, "_READY", {})
     monkeypatch.setattr(dd, "_array", lambda content: arrays[content])
     monkeypatch.setenv("CTD_DATA_ROOT", str(store.root))
     return c
@@ -165,6 +168,15 @@ def test_nothing_is_requested_before_the_window_is_queryable(store, client):
     client.available, client.condition = "2026-10-27T13:10:00Z", "pending"
     _, man = fetch(store)
     assert man["status"] == mf.FAILED and client.calls == [] and "pending" in man["units"]["OZB"]["error"]
+
+
+def test_readiness_is_checked_once_per_date_until_it_passes(store, client):
+    client.available = "2026-10-27T04:59:00Z"
+    fetch(store)
+    assert client.range_calls == len(dd.FUT_MONTHS) + len(dd.OPT_UNITS)  # not ready: every unit asks again
+    client.available, client.range_calls = "2026-10-27T13:10:00Z", 0
+    _, man = fetch(store)
+    assert man["status"] == mf.OK and client.range_calls == 1
 
 
 def test_a_degraded_date_is_stored_with_a_note(store, client):

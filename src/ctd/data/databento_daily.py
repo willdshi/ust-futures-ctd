@@ -18,16 +18,18 @@ pairs no stored definitions file has (ids are reused), so new strikes are define
 Without a CME licence the historical API stops about 8 hours behind real time, so a window is
 queryable from about 09:00 Eastern the next business day. Nothing is pulled until the dataset range
 passes the window's end and Databento's condition for each date in it is out of ``pending`` or
-``missing`` (a ``degraded`` date is stored, with a note in the manifest). A pull without a final
+``missing`` (a ``degraded`` date is stored, with a note in the manifest); once a date passes, the
+other units of the run don't ask again. A pull without a final
 settlement and open interest on every futures contract, or with no option finals, isn't stored.
 Each case raises ``NoData``: a gap the next run retries. Files are the DBN streams exactly as
 received (zstd) and the lookup as the client's parsed response; each file's meta records the
-request and its quoted cost.
+request and its quoted cost. Each unit prints one line with the time each call took.
 """
 
 import json
 import re
 import tempfile
+import time
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -48,6 +50,7 @@ FIRST_DATE = date(2026, 10, 26)  # earlier dates have the CME pages and bulletin
 CHICAGO = ZoneInfo("America/Chicago")
 OPTION_SYMBOL = re.compile(r"O[A-Z]{2}[FGHJKMNQUVXZ]\d [CP]\d+")  # a standard call or put, not a spread
 NOT_READY = ("pending", "missing")
+_READY: dict[date, str | None] = {}  # as-of date -> check_ready's note, once it has passed in this process
 
 
 def window(asof: date) -> tuple[datetime, datetime]:
@@ -101,20 +104,38 @@ def check_ready(client, asof: date) -> str | None:
     return f"{DATASET} degraded on {', '.join(degraded)}" if degraded else None
 
 
-def _get(client, asof: date, schema: str, symbols: list, stype_in: str, name: str, note: str | None) -> RawFile:
+def _ready(client, asof: date) -> str | None:
+    """``check_ready`` once per date: every unit asks the same question. A date not ready is asked again."""
+    if asof not in _READY:
+        _READY[asof] = check_ready(client, asof)
+    return _READY[asof]
+
+
+def _timed(times: list[str], label: str, call):
+    """``call()``, appending how long it took to ``times`` (the fetch's log line)."""
+    t0 = time.perf_counter()
+    try:
+        return call()
+    finally:
+        times.append(f"{label} {time.perf_counter() - t0:.1f}s")
+
+
+def _get(client, asof: date, schema: str, symbols: list, stype_in: str, name: str, note: str | None,
+         times: list[str]) -> RawFile:
     """One ``timeseries.get_range`` over the date's window, as received, with the request and its quoted cost."""
     import databento as db
 
     start, end = window(asof)
+    cost = _timed(times, f"{schema} cost", lambda: client.metadata.get_cost(
+        dataset=DATASET, start=start, end=end, symbols=symbols, schema=schema, stype_in=stype_in))
     params = {"dataset": DATASET, "schema": schema, "symbols": symbols, "stype_in": stype_in,
               "stype_out": "instrument_id", "start": start.isoformat(), "end": end.isoformat(),
-              "client": db.__version__,
-              "cost_usd": client.metadata.get_cost(dataset=DATASET, start=start, end=end, symbols=symbols,
-                                                   schema=schema, stype_in=stype_in)}
+              "client": db.__version__, "cost_usd": cost}
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "pull.dbn.zst"
-        client.timeseries.get_range(dataset=DATASET, start=start, end=end, symbols=symbols, schema=schema,
-                                    stype_in=stype_in, stype_out="instrument_id", path=path)
+        _timed(times, schema, lambda: client.timeseries.get_range(
+            dataset=DATASET, start=start, end=end, symbols=symbols, schema=schema, stype_in=stype_in,
+            stype_out="instrument_id", path=path))
         content = path.read_bytes()
     return RawFile(name, content, f"databento:{DATASET}/timeseries.get_range", method="API", params=params, note=note)
 
@@ -159,28 +180,38 @@ def new_options(lookup: dict, asof: date, known: set[tuple[int, str]]) -> list[i
 
 
 def fetch(asof: date, unit: str, http: Http) -> Iterator[RawFile]:
-    client = _client()
-    note = check_ready(client, asof)
+    times = []
+    try:
+        files = _fetch(asof, unit, times)
+    finally:
+        print(f"  {asof} {unit}: {', '.join(times)}", flush=True)  # where a slow pull spends its time
+    yield from files
+
+
+def _fetch(asof: date, unit: str, times: list[str]) -> list[RawFile]:
+    client = _timed(times, "client", _client)
+    note = _timed(times, "ready", lambda: _ready(client, asof))
     option = unit in OPT_UNITS
     if option:
         symbols, stype_in = [f"{unit}.OPT"], "parent"
     else:
         symbols, stype_in = [f"{unit}.c.{k}" for k in range(FUT_MONTHS[unit])], "continuous"
-    stats_file = _get(client, asof, "statistics", symbols, stype_in, f"{unit}_statistics_{asof}.dbn.zst", note)
+    stats_file = _get(client, asof, "statistics", symbols, stype_in, f"{unit}_statistics_{asof}.dbn.zst", note,
+                      times)
     stats = databento.stats_frame(_array(stats_file.content))
     if why := (options_complete(stats, asof) if option else futures_complete(stats, asof, len(symbols))):
         raise NoData(f"{unit} {asof} not complete: {why}")
     ids = sorted(int(i) for i in stats["instrument_id"].unique())
-    lookup, lookup_file = _lookup(client, asof, ids, unit)
+    lookup, lookup_file = _timed(times, "symbology", lambda: _lookup(client, asof, ids, unit))
     files = [stats_file, lookup_file]
     if option:
         name = f"{unit}_definition_{asof}.dbn.zst"
-        known = _known_pairs(asof, unit)
+        known = _timed(times, "known", lambda: _known_pairs(asof, unit))
         if known is None:
-            files.append(_get(client, asof, "definition", symbols, "parent", name, note))
+            files.append(_get(client, asof, "definition", symbols, "parent", name, note, times))
         elif new := new_options(lookup, asof, known):
-            files.append(_get(client, asof, "definition", new, "instrument_id", name, note))
-    yield from files
+            files.append(_get(client, asof, "definition", new, "instrument_id", name, note, times))
+    return files
 
 
 SPECS = [
