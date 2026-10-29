@@ -16,6 +16,9 @@
 # when they started together after a missed start (2026-10-27, 2026-10-28). A non-zero exit code means a gap
 # (see data\gaps.log and `ctd check`), a failed build, or a derive skipped for missing data (with a desktop
 # alert).
+# The task wakes the PC to run (-WakeToRun; Windows sets the wake timer 30 seconds early, listed by
+# `powercfg /waketimers`) and needs "Allow wake timers" on in the power plan (data.md section 4).
+#
 # Remove with: Unregister-ScheduledTask -TaskName ctd-morning
 param(
     [string]$At = "09:15",
@@ -39,7 +42,7 @@ $run = "$utf8& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.l
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$run`"" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $At
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 Register-ScheduledTask -TaskName "ctd-morning" -Action $action -Trigger $trigger -Settings $settings `
     -Description "Previous business day's raw snapshot and derived tables for the CTD model (roadmap 1e.5)" `
     -Force | Out-Null

@@ -15,15 +15,27 @@ One task rather than one per step (until 2026-10-28 there were four): steps that
 missed start collide, as two ``ctd fetch`` runs did sweeping the Downloads folder on 2026-10-28, and a
 derive waiting on other tasks has to guess when they're done. A step that fails doesn't stop the later
 ones (the derive check decides for itself whether D is complete). Exit 1 if any step failed.
+
+The PC is held awake until the last step ends: after the task's timer wake Windows would otherwise sleep
+again within minutes, mid-run (data.md §4).
 """
 
 import argparse
+import ctypes
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
+ES_CONTINUOUS = 0x80000000
+ES_SYSTEM_REQUIRED = 0x00000001
+
+
+def _stay_awake(on: bool) -> None:
+    """Hold the PC awake (or release it) for this process's lifetime; a no-op off Windows."""
+    if sys.platform == "win32":
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0))
 
 
 def main() -> int:
@@ -37,11 +49,15 @@ def main() -> int:
         ("derive", py + [str(SCRIPTS / "morning_derive.py")]),
     ]
     failed = []
-    for name, cmd in steps:
-        print(f"==== {datetime.now():%Y-%m-%dT%H:%M:%S} {name}", flush=True)
-        code = subprocess.call(cmd)
-        if code:
-            failed.append(f"{name} (exit {code})")
+    _stay_awake(True)
+    try:
+        for name, cmd in steps:
+            print(f"==== {datetime.now():%Y-%m-%dT%H:%M:%S} {name}", flush=True)
+            code = subprocess.call(cmd)
+            if code:
+                failed.append(f"{name} (exit {code})")
+    finally:
+        _stay_awake(False)
     print(f"==== {datetime.now():%Y-%m-%dT%H:%M:%S} done" + (f"; failed: {', '.join(failed)}" if failed else ""),
           flush=True)
     return 1 if failed else 0

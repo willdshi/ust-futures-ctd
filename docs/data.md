@@ -191,10 +191,13 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 ### When the PC is asleep or off
 
-- If the PC is asleep or hibernating at the scheduled time, the run is missed, but "run as soon as possible after a missed start" is on, so it runs at the next wake. The tasks run only while the user is logged in.
+- If the PC is asleep at the scheduled time, the task wakes it (`-WakeToRun`: Task Scheduler's "Wake the computer to run this task"). Windows sets the wake timer 30 seconds before the start; `powercfg /waketimers` lists it. This needs "Allow wake timers" enabled in the power plan (`powercfg /query SCHEME_CURRENT SUB_SLEEP RTCWAKE`). It doesn't work from shutdown, waking from hibernation depends on the hardware, and laptops on battery often ignore wake timers. The task runs only while the user is logged in.
+- The power plan on AC sleeps after 30 minutes idle and hibernates 3 hours later, so after an idle night the wake is from hibernation.
+- `scripts/morning.py` holds the PC awake while it runs (`SetThreadExecutionState`). After an unattended timer wake, Windows sleeps again after the unattended sleep timeout (2 minutes by default), and a run takes far longer: 18 minutes on 2026-10-29 for one day (1.5 minutes for the public sources, 9 for Databento, 8 for the derive).
+- "Run as soon as possible after a missed start" is also on, for when the PC can't be woken. It fires about 15 minutes after wake.
+- **Why wake the PC:** on 2026-10-29 the PC was hibernating (sleep 01:09, hibernate 04:09) through the 09:15 start. The missed run started at 10:06, 16 minutes after the PC woke at 09:50, and finished at 10:24.
 - Almost every source can be fetched later for a past date (§2.5), so hibernation delays collection rather than losing it, unless the PC is off for more than the 5-business-day catch-up window. The bookmarklet sources don't depend on the schedule.
 - **Planned** ([roadmap.md](roadmap.md) 1f.6):
-  - let the task wake the PC (Task Scheduler "Wake the computer to run this task"; needs "Allow wake timers" in the power plan, checked with `powercfg`; doesn't work from shutdown, and laptops on battery often ignore wake timers);
   - add a second trigger at logon, so a missed morning is picked up when the PC is next used;
   - widen `--catch-up` from 5 to 10 business days (`CATCH_UP_DAYS` in `src/ctd/cli.py`), so a week away fills itself in.
 - **Rejected for now: an always-on machine** (mini PC, NAS, small cloud server). It guarantees runs but means moving and backing up the store.
