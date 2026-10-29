@@ -66,6 +66,8 @@ data/
   inbox/_ingested/...                           originals after ingest
   gaps.log                                      append-only log of every gap reported
   morning.log                                   output of the scheduled morning task (§4)
+  morning_status.json                           the morning task's last run: started, finished, failed steps (§4)
+  morning_check.log, morning_check.json         the morning check's output and what it has done today (§4)
   cme_bookmarklet.html                          page to install the bookmarklet (`ctd bookmarklet`)
   derived/                                      Parquet tables built from raw/ by `ctd derive` (§9); a cache
   results/                                      model output, e.g. results/light/ZBZ6/2026-10-21.json
@@ -162,7 +164,7 @@ A source's recovery window is how many business days after the as-of date it can
 
 ## 4. Operations
 
-One scheduled task, `ctd-morning`, collects the previous business day D and derives it. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed step doesn't stop the later ones, and the task exits 1 if any failed.
+One scheduled task, `ctd-morning`, collects the previous business day D and derives it. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed step doesn't stop the later ones, and the task exits 1 if any failed. A second task, `ctd-morning-check`, makes sure it ran (below, When the PC is asleep or off).
 
 | Task | Command |
 |---|---|
@@ -183,7 +185,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 `scripts/morning_derive.py` gates on the **stored data**, not on the earlier steps' exit codes.
 - D is the previous `cme` business day. It checks D's manifest for `databento_daily` `ok`, `td_prices` `ok` and not provisional, and `par_curve` `ok`, and that D's SOFR is stored (only when D and today are both `sifma` business days; it's stored under today's as-of date).
 - If all are there it runs `ctd derive --notify`.
-- Otherwise it doesn't derive: it logs what's missing, raises a desktop alert (`ctd.data.alert`) and exits 1. The derive is rerun by hand (the script with `--asof D`, or `ctd derive`) once the data is in. There's no automatic retry: a missing source usually needs attention first.
+- Otherwise it doesn't derive: it logs what's missing, raises a desktop alert (`ctd.data.alert`) and exits 1. The morning check reruns the whole task once from 10:30 (below); after that the derive is rerun by hand (the script with `--asof D`, or `ctd derive`) once the data is in. There's no further automatic retry: a source still missing by then usually needs attention.
 - It checks once (`--timeout-minutes 0`, the default): the collection steps are over by the time it runs, so waiting can't bring anything new. A larger `--timeout-minutes` checks again every minute until then, for use by hand.
 - On a day that isn't a `cme` business day it does nothing.
 - **Why not gate on exit codes:** they can't be trusted. On 2026-10-27 a task reported 0 without running its command, and a derive gated on the tasks ran without D's Databento data.
@@ -196,9 +198,15 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 - `scripts/morning.py` holds the PC awake while it runs (`SetThreadExecutionState`). After an unattended timer wake, Windows sleeps again after the unattended sleep timeout (2 minutes by default), and a run takes far longer: 18 minutes on 2026-10-29 for one day (1.5 minutes for the public sources, 9 for Databento, 8 for the derive).
 - "Run as soon as possible after a missed start" is also on, for when the PC can't be woken. It fires about 15 minutes after wake.
 - **Why wake the PC:** on 2026-10-29 the PC was hibernating (sleep 01:09, hibernate 04:09) through the 09:15 start. The missed run started at 10:06, 16 minutes after the PC woke at 09:50, and finished at 10:24.
+- **The morning check** (`ctd-morning-check`, `scripts/morning_check.py`) runs 15 minutes after logon or unlock (resuming from sleep is an unlock, not a logon) and at 10:30 on weekdays. It reads `data/morning_status.json`, which `morning.py` writes when it starts and finishes. On a `cme` business day from 09:45:
+  - no run started today: it starts `ctd-morning` and raises an alert saying so;
+  - today's run failed a step: from 10:30, it starts `ctd-morning` again, without an alert (the run's steps alert for what's still missing);
+  - today's run has been going for more than 2 hours (the task's time limit) without finishing: an alert.
+
+  It starts the task at most once a day and raises each alert once (`data/morning_check.json`), and is otherwise silent. It starts the task rather than running `morning.py` itself, so there's never more than one run (the task ignores a second start). The 15-minute delay lets a catch-up run that the wake set off start first.
+  - **Why:** a run that never starts raises nothing on its own. On 2026-10-29 the missed run was noticed only by reading the log, and Windows Update restarts (2026-09-19, 09-21, 10-19) leave the user logged out, so the task can't run until the next logon.
 - Almost every source can be fetched later for a past date (§2.5), so hibernation delays collection rather than losing it, unless the PC is off for more than the 5-business-day catch-up window. The bookmarklet sources don't depend on the schedule.
 - **Planned** ([roadmap.md](roadmap.md) 1f.6):
-  - add a second trigger at logon, so a missed morning is picked up when the PC is next used;
   - widen `--catch-up` from 5 to 10 business days (`CATCH_UP_DAYS` in `src/ctd/cli.py`), so a week away fills itself in.
 - **Rejected for now: an always-on machine** (mini PC, NAS, small cloud server). It guarantees runs but means moving and backing up the store.
 - **After a longer absence, by hand:** `ctd fetch --asof <date>` for each missed day, or `ctd backfill`.

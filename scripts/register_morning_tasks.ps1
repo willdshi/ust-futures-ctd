@@ -1,5 +1,5 @@
-# Register the weekday-morning scheduled task that collects the previous business day D and derives it
-# (roadmap 1b.B7 and 1e.5; data.md section 4):
+# Register the weekday-morning scheduled task that collects the previous business day D and derives it, and
+# the task that checks it ran (roadmap 1b.B7, 1e.5 and 1f.10; data.md section 4):
 #
 #   ctd-morning  09:15  scripts\morning.py, one step after another:
 #                         1. ctd fetch --catch-up --notify: every daily source for D (end-of-day TreasuryDirect
@@ -7,6 +7,10 @@
 #                            and the 4 business days before it still missing
 #                         2. scripts\morning_sofr.py: D's SOFR, published about 08:00
 #                         3. scripts\morning_derive.py: ctd derive --notify if D's data is stored, else an alert
+#
+#   ctd-morning-check   15 minutes after logon or unlock, and 10:30 on weekdays: scripts\morning_check.py starts
+#                       ctd-morning if it hasn't run today (with an alert) or, from 10:30, if it failed a step;
+#                       alerts if it has been running for more than 2 hours. Silent otherwise.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\register_morning_tasks.ps1
 #
@@ -19,7 +23,7 @@
 # The task wakes the PC to run (-WakeToRun; Windows sets the wake timer 30 seconds early, listed by
 # `powercfg /waketimers`) and needs "Allow wake timers" on in the power plan (data.md section 4).
 #
-# Remove with: Unregister-ScheduledTask -TaskName ctd-morning
+# Remove with: Unregister-ScheduledTask -TaskName ctd-morning; Unregister-ScheduledTask -TaskName ctd-morning-check
 param(
     [string]$At = "09:15",
     [switch]$NoNotify
@@ -47,3 +51,24 @@ Register-ScheduledTask -TaskName "ctd-morning" -Action $action -Trigger $trigger
     -Description "Previous business day's raw snapshot and derived tables for the CTD model (roadmap 1e.5)" `
     -Force | Out-Null
 "ctd-morning at $At, log data\morning.log"
+
+# The check: logon and unlock (resuming from sleep is an unlock, not a logon), each 15 minutes later so a
+# catch-up run that the wake set off has started; and 10:30, run on wake if the PC was asleep then.
+$user = "$env:USERDOMAIN\$env:USERNAME"
+$logon = New-ScheduledTaskTrigger -AtLogOn -User $user
+$logon.Delay = "PT15M"
+$unlockClass = Get-CimClass -Namespace ROOT\Microsoft\Windows\TaskScheduler -ClassName MSFT_TaskSessionStateChangeTrigger
+$unlock = New-CimInstance -CimClass $unlockClass -ClientOnly
+$unlock.StateChange = 8  # TASK_SESSION_UNLOCK
+$unlock.UserId = $user
+$unlock.Delay = "PT15M"
+$unlock.Enabled = $true
+$late = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At "10:30"
+$check = "$utf8& '$py' '$repo\scripts\morning_check.py' *>> '$repo\data\morning_check.log'; exit `$LASTEXITCODE"
+$checkAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$check`"" -WorkingDirectory $repo
+$checkSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName "ctd-morning-check" -Action $checkAction -Trigger $logon, $unlock, $late `
+    -Settings $checkSettings -Description "Starts ctd-morning if it hasn't run today; alerts if it's stuck (roadmap 1f.10)" `
+    -Force | Out-Null
+"ctd-morning-check after logon and unlock (+15 min) and at 10:30, log data\morning_check.log"
