@@ -78,6 +78,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [ ] **1f.6** Robustness: `--catch-up` over 10 business days, tasks run from a `main` worktree (data.md §4)
 - [x] **1f.9** The morning task wakes the PC to run (`-WakeToRun`) and holds it awake until done (data.md §4)
 - [x] **1f.10** Morning check `ctd-morning-check` (15 minutes after logon or unlock, and 10:30): starts a run that didn't happen, with an alert; reruns a failed one once; alerts on a stuck one (data.md §4)
+- [ ] **1f.11** Log archive: once `data/morning.log` gets long, move each month's entries to its own file in a log archive folder, for easier search (data.md §4)
 - [ ] **1f.7** Later, opt-in: publishing to GitHub Pages
 
 ## R: Report
