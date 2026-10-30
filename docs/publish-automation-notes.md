@@ -11,9 +11,6 @@ It is feasible: most of the pieces already exist, and the roadmap already lists 
 3. **The task runs whatever code is checked out.** If `main` is left half-edited or on another branch overnight, the morning job uses that code and publishes its output. Either run from a clean `main` worktree (1f.6) or have the publish step refuse when the tree isn't clean on `main`.
 4. **Push credentials with nobody at the keyboard.** Git Credential Manager is the credential helper. If its token expires, it opens a sign-in window and the task hangs for up to 2 hours. Set `GCM_INTERACTIVE=never` and `GIT_TERMINAL_PROMPT=0` so the push fails fast and raises an alert.
 5. **Publish only a complete day.** Skip publishing if the derive skipped the date or any contract failed. When there's nothing new to commit, the step should finish cleanly instead of failing.
-6. **Data licensing.** This applies to the manual uploads too. The summary table shows CME futures settlement prices, and the contract pages show their inputs, all pulled from Databento without a CME licence. Check the redistribution terms before publishing this every day.
-7. **Repo size.** At about 1.7 MB a day the repo grows by roughly 430 MB a year, and GitHub Pages sites are limited to 1 GB. Plan to squash the gh-pages history once a year, or stop publishing the PNGs.
-8. **Nobody checks the numbers before they go out.** Today each page is looked at before uploading. Consider holding the publish and alerting instead when a run prints warnings or a DV01 jumps sharply from the day before.
 
 ## Context
 

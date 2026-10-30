@@ -79,6 +79,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **1f.9** The morning task wakes the PC to run (`-WakeToRun`) and holds it awake until done (data.md §4)
 - [x] **1f.10** Morning check `ctd-morning-check` (15 minutes after logon or unlock, and 10:30): starts a run that didn't happen, with an alert; reruns a failed one once; alerts on a stuck one (data.md §4)
 - [ ] **1f.11** Log archive: once `data/morning.log` gets long, move each month's entries to its own file in a log archive folder, for easier search (data.md §4)
+- [ ] **1f.12** Pre-publish sanity check, before publishing is automated or soon after: hold the day's publish and send an alert instead if the model run printed warnings (e.g. SOFR fell back to the previous day) or a DV01 moved by more than a set threshold from the previous day. A held day is released by hand. Thresholds to be chosen
 - [ ] **1f.7** Later, opt-in: publishing to GitHub Pages
 
 ## R: Report
