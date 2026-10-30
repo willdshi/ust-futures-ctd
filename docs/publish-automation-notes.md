@@ -8,7 +8,7 @@ It is feasible: most of the pieces already exist, and the roadmap already lists 
 
 1. **Contract roll on 2026-11-13.** Contract selection is built (1f.1): `refdata.contracts_on(asof)`, which `ctd history` and `ctd report` default to. What's left is to check the March data is stored by 11-13 (concern 1) and to size the overlap week's pages.
 2. **Git shouldn't touch the working checkout.** Do the gh-pages commit and push from a separate git worktree that only the task uses, so a 09:15 branch switch can't collide with editing.
-3. **The task runs whatever code is checked out.** If `main` is left half-edited or on another branch overnight, the morning job uses that code and publishes its output. Either run from a clean `main` worktree (1f.6) or have the publish step refuse when the tree isn't clean on `main`.
+3. **The task runs whatever code is checked out.** Mostly done: `main` lives in its own worktree, `..\ctd-prod`, and development happens on `dev` in `..\ctd`, so the task no longer sees half-edited code. What's left is to register the tasks from `ctd-prod` and run `ctd-morning` once by hand (concern 3).
 4. **Push credentials with nobody at the keyboard.** Git Credential Manager is the credential helper. If its token expires, it opens a sign-in window and the task hangs for up to 2 hours. Set `GCM_INTERACTIVE=never` and `GIT_TERMINAL_PROMPT=0` so the push fails fast and raises an alert.
 5. **Publish only a complete day.** Skip publishing if the derive skipped the date or any contract failed. When there's nothing new to commit, the step should finish cleanly instead of failing.
 
@@ -25,7 +25,15 @@ The `ctd-morning` task (09:15 on weekdays, `scripts/morning.py`) runs fetch, SOF
    - the five overlap days' pages are about twice the size (eight contracts, about 3.4 MB a day against 1.7 MB), a small cost on `gh-pages`;
    - `ctd report` now errors if any of the day's contracts has no saved result, which is the "complete day" gate (concern 5) for free; the new March series has one point on 11-13, so its chart 3 starts on 11-16.
 2. **Keep git off the dev checkout.** The `gh-pages` branch has a `.gitignore` for `/data/` and `/output/`, which suggests the manual upload switches branches in the main working tree. A 09:15 task that runs `git checkout` there could collide with editing. Do the publish in a **dedicated worktree** (`git worktree add ..\ctd-pages gh-pages`) that only the task touches.
-3. **The task runs whatever code is checked out.** If `main` is left mid-edit or on a feature branch overnight, the morning run uses that code and then publishes its output. Options: run from a clean `main` worktree (that is 1f.6), or have the publish step refuse when `git status` on the code tree isn't clean or isn't on `main`.
+3. **The task runs whatever code is checked out.** Mostly done (1f.6). `main` is checked out permanently in a worktree, `..\ctd-prod`, and development happens on `dev` in `..\ctd`. Set up so far:
+   - `ctd-prod\data` is a junction to `ctd\data`, so both checkouts share one store.
+   - `register_morning_tasks.ps1` sets `PYTHONPATH` to `<repo>\src`, because the editable install points `ctd` at `ctd\src`. `morning.py` fails with an alert if `ctd` is imported from a different checkout than its own.
+   - Deploying is `git -C ..\ctd-prod merge --ff-only dev`. `ctd-prod` is never edited, so the fast-forward always works.
+
+   Left to do:
+   - Register the tasks from `ctd-prod`: `powershell -ExecutionPolicy Bypass -File ..\ctd-prod\scripts\register_morning_tasks.ps1`.
+   - Run `schtasks /run /tn ctd-morning` once by hand and read `ctd-prod\data\morning.log`: the three steps should finish with no "ctd is imported from..." line.
+   - Then tick 1f.6 in roadmap.md and record the setup in data.md §4.
 4. **Push authentication with nobody at the keyboard.** The credential helper is Git Credential Manager. Its cached token normally works from the task, which runs as the logged-on user, including when the screen is locked. But if the token expires, GCM opens a sign-in window and the task hangs until its 2-hour limit. Set `GCM_INTERACTIVE=never` and `GIT_TERMINAL_PROMPT=0` for the push so it fails fast and raises an alert. Or use an SSH key that only this repo uses.
 5. **Publish only a complete day.** Gate publishing on: derive actually derived D (not skipped), every contract for D ran, and the report built. A partial run should alert and publish nothing. The morning check's 10:30 re-run then retries it naturally.
 6. **Make re-runs and races harmless.** A re-run of the same date has to work: when nothing has changed, skip the commit rather than letting `git commit` fail. Before committing, `git fetch` and fast-forward `gh-pages`, in case of a manual push from somewhere else. Never force-push.
