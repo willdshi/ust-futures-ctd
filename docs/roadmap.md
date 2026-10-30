@@ -108,7 +108,7 @@ V1 is the light model (design §5.11, with §5.9 at β = 1 and ATM normal), done
 
 ## Phase 2: one-factor model
 
-- [x] **2.1** Derived tables: futures, options, options quality, bond prices, securities, par curve, rates, baskets (data.md §9)
+- [x] **2.1** Derived tables: futures, options, options quality, bond prices, securities, par curve, rates, baskets (data.md §6)
 - [ ] **2.2** Betas, re-estimated daily (design §5.4); then replace the report's β = 1 wording (`LIGHT_MODEL_*` in `report/`)
 - [ ] **2.3** Realised-vol fallback and comparison
 - [ ] **2.4** Constant-CTD effective maturity, from the saved results (design §5.9)
