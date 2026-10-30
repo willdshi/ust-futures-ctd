@@ -97,7 +97,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 
 ## V: Model versions
 
-V1 is the light model (design §5.11, with §5.9 at β = 1 and ATM normal), done after 1c.7; Phase 2 starts V2. These items let versions run side by side over the same dates. Detail is in the working note [model-versions-plan.md](model-versions-plan.md).
+V1 is the light model (design §5.11, with §5.9 at β = 1 and ATM normal), done after 1c.6 except 1c.7, which waits until V2 is complete (V1 meanwhile uses the √T fallback); Phase 2 starts V2. These items let versions run side by side over the same dates. Detail is in the working note [model-versions-plan.md](model-versions-plan.md).
 
 - [ ] **V.1** Versioning rule in design §4 (a version is a method; shared-code fixes flow into every version), with design.md's other uses of "v1" renamed
 - [ ] **V.2** Results keyed by version (`data/results/v1/...`, a schema per version) and `--model` on `ctd run`, `history` and `report`, defaulting to `v1`

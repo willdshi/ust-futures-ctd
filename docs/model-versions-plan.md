@@ -7,7 +7,7 @@
 The light model (design §5.11, plus the §5.9 outputs at β = 1 with ATM-normal probabilities) becomes **V1**. Phase 2 and later work (betas, realised vol, smile and so on) become V2, V3 and later versions, and each version's results must be computable over the same dates so they can be compared.
 
 Decisions taken:
-- **V1 is done after roadmap 1c.7** (tentatively). 1c.6 and 1c.7 are still V1 work.
+- **V1 is done after roadmap 1c.6, except 1c.7.** 1c.7 (total-variance vol interpolation, design §5.5 step 3) waits until V2 is complete, so V1 stays incomplete while V2 is built: it uses the √T fallback from a single expiry (design §5.5 step 3), not the bracketing-expiry interpolation. **Why 1c.7 waits:** it depends on the 5.4 betas, which are V2 work (roadmap 2.2): the January and February serials are options on March futures, and their vol is moved to the December contract's CTD with the betas. Landing 1c.7 later changes V1's vol width, so its results move: re-run V1, update the golden test (step 4 below) in the same commit, and have V2 use the same interpolation.
 - **V1 is a method, not a code snapshot.** A bug fix in shared code (pricing, envelope, DV01) flows into V1's re-runs. Each result records its code version, and a golden test shows what moved.
 - **The report and the daily run stay on V1** until you decide how to publish a comparison. That decision goes in open-questions.md.
 
@@ -37,7 +37,7 @@ Decisions taken:
 - The `LIGHT_MODEL_*` report text becomes V1's text, selected by version. The report itself still publishes only V1.
 
 ### 3. V2 extends shared code; it doesn't edit V1's behaviour
-- **Rule:** the varying piece is an argument with V1's value as the default. Examples: betas default to 1 in `envelope`, `switches` and `profile`; the vol width comes from a function that V1 passes as ATM-√T and later as total-variance. Don't copy modules per version.
+- **Rule:** the varying piece is an argument with V1's value as the default. Examples: betas default to 1 in `envelope`, `switches` and `profile`; the vol width comes from a function that V1 passes as ATM-√T (and as total-variance once 1c.7 lands, after V2). Don't copy modules per version.
 - `model/light.py` stays V1's pipeline. V2 gets its own pipeline module, which reuses `at()`-style steps where they're unchanged.
 - Inputs are per version. V2 will need par-curve history for betas, but provenance (`files` with sha256 and table) is built the same way. Factor the provenance helper out of `light_inputs` when V2's inputs are written, not before.
 

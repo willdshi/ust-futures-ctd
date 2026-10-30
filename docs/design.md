@@ -275,9 +275,11 @@ CLAUDE.md
 1. Futures option implied vol from the contract's own options chain (3.1), ATM to start.
 2. Price vol → normal yield vol of each expiry's CTD: `σ_y ≈ σ_price × F / (100 × D_F)`, using the CTD duration of **that expiry's underlying contract**.
 3. **Interpolate total variance to the horizon** between the bracketing expiries: `V(T) = σ_y² T`, linear in time between expiries; `σ_y(T_h) = √(V(T_h)/T_h)`.
-   - Example: for a December contract with a December horizon, December quarterly options on December futures expire in late November, and January serial options on March futures in late December. Those two bracket the horizon.
-   - Captures vol term structure and event variance (e.g. December FOMC). √T alone isn't enough: when the December options cover 26 days of a 67-day horizon, a 20% error in the extrapolated vol moves S by about 10%, and a switch 1σ away by about ±2.5 points.
-   - When the later expiry's underlying is the next contract, adjust its vol for that contract's different CTD maturity via betas. This matters most for ZB.
+   - Example, for a December contract (2026 expiries): the bracket depends on the horizon (5.2).
+     - **1 December:** the December quarterly options on December futures (20 November) and the January serial options on March futures (24 December).
+     - **31 December:** the January options expire before it, so the bracket is the January and February serial options (22 January 2027), both on March futures.
+   - Captures vol term structure and event variance (e.g. December FOMC). √T alone isn't enough: scaling the December options' vol, which cover 26 days of a 67-day (31 December) horizon, a 20% error in the extrapolated vol moves S by about 10%, and a switch 1σ away by about ±2.5 points.
+   - **Depends on 5.4.** When an expiry's underlying is the next contract (the March futures above), its vol is for that contract's CTD, not the horizon contract's. After step 2 (that contract's own duration), move it to the horizon contract's CTD with the 5.4 betas, interpolated to each CTD's maturity at T: `σ_y(CTD_h) = σ_y(CTD_next) × β(CTD_h) / β(CTD_next)`. Equivalently, convert each expiry to factor units (`σ_x = σ_y / β_CTD`, step 4) before interpolating. This matters most for ZB. Until betas are built (β = 1) the adjustment is nil.
    - **Fallback**: √T scaling from a single expiry, when the horizon is close to the first expiry or only one expiry is usable.
 4. To factor units: `σ_x = σ_y / β_CTD`; width `S = σ_x √T_h`.
 
