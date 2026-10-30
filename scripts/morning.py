@@ -62,10 +62,28 @@ def _stay_awake(on: bool) -> None:
         ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0))
 
 
+def package_mismatch() -> str | None:
+    """A message if ``ctd`` is imported from a different checkout than this script's (the editable install
+    points at one checkout; the scheduled task sets PYTHONPATH to run from another), else None."""
+    import ctd
+
+    repo = SCRIPTS.parent
+    if Path(ctd.__file__).resolve().is_relative_to(repo):
+        return None
+    return f"ctd is imported from {ctd.__file__}, not from {repo}; is PYTHONPATH set to {repo / 'src'}?"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--no-notify", action="store_true", help="no desktop alert for fetch gaps")
     args = ap.parse_args()
+    if message := package_mismatch():
+        print(message, flush=True)
+        if not args.no_notify:
+            from ctd.data import alert
+
+            alert.notify("ctd-morning", message)
+        return 1
     py = [sys.executable, "-u"]  # unbuffered, so the log shows a step while it runs
     steps = [
         ("fetch", py + ["-m", "ctd.cli", "fetch", "--catch-up"] + ([] if args.no_notify else ["--notify"])),

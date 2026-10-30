@@ -42,7 +42,9 @@ foreach ($old in "ctd-daily-fetch", "ctd-morning-sofr", "ctd-morning-databento",
 }
 
 $utf8 = "`$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; "  # >> writes UTF-16 by default
-$run = "$utf8& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.log'; exit `$LASTEXITCODE"
+# The editable install points at one checkout; PYTHONPATH makes the tasks import ctd from the checkout they run from.
+$pypath = "`$env:PYTHONPATH = '$repo\src'; "
+$run = "$utf8$pypath& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.log'; exit `$LASTEXITCODE"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$run`"" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $At
@@ -64,7 +66,7 @@ $unlock.UserId = $user
 $unlock.Delay = "PT15M"
 $unlock.Enabled = $true
 $late = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At "10:30"
-$check = "$utf8& '$py' '$repo\scripts\morning_check.py' *>> '$repo\data\morning_check.log'; exit `$LASTEXITCODE"
+$check = "$utf8$pypath& '$py' '$repo\scripts\morning_check.py' *>> '$repo\data\morning_check.log'; exit `$LASTEXITCODE"
 $checkAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$check`"" -WorkingDirectory $repo
 $checkSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
