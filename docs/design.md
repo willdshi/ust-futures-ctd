@@ -246,7 +246,7 @@ CLAUDE.md
 - Term rate to horizon, actual/360 compounding:
   `R_term = [Π_i (1 + r_i · d_i/360) − 1] × 360/D`
 - **Default: the strip of 1-month SOFR futures** (`funding/strip.py`) whenever it covers the last delivery day; otherwise flat at the latest SOFR, with a warning.
-  - SR1 settles at 100 minus the arithmetic average of daily SOFR over its calendar month, each non-business day at the business day before it (which can be in the previous month). **Verify this averaging rule against CME's SR1 rulebook chapter.**
+  - SR1 settles at 100 minus the arithmetic average of daily SOFR over its calendar month, each non-business day at the business day before it (which can be in the previous month). 
   - Months are solved in order, each with one flat rate on its unknown days; the current month's known fixings and the days carried in from the previous month are fixed. Each month then reprices its SR1 average exactly.
   - Fixings, D's own included (3.3), come from the NY Fed files. A known business day with no fixing (an early-close Good Friday) takes the one before it.
   - Flat SOFR is still computed as a cross-check on the horizon (5.2).
