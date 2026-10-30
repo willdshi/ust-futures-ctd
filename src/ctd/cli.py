@@ -326,7 +326,8 @@ def warning_kind(w: str) -> str:
 def cmd_history(args) -> int:
     """``ctd run`` for every ``cme`` business day from ``--from`` to ``--to`` (design 7; roadmap 1d.4):
     each result saved, a failed date reported and skipped, then a summary. Days the bond market is
-    closed (``sifma``; Columbus and Veterans Day) are skipped: there are no TreasuryDirect prices."""
+    closed (``sifma``; Columbus and Veterans Day) are skipped: there are no TreasuryDirect prices.
+    Each day runs the contracts of the run window (``refdata.contracts_on``) unless ``--contract`` names them."""
     from collections import Counter
 
     from ctd.data import refdata
@@ -343,10 +344,19 @@ def cmd_history(args) -> int:
     days = [d for d in days if cme.is_business_day(d) and sifma.is_business_day(d)]
     if closed:
         print(f"skipped (bond market closed, no TreasuryDirect prices): {', '.join(map(str, closed))}\n")
+    plan = {contract: days for contract in args.contract or ()}  # contract -> the days it runs
+    if not args.contract:
+        try:
+            for d in days:
+                for contract in refdata.contracts_on(d):
+                    plan.setdefault(contract, []).append(d)
+        except ValueError as e:
+            print(f"ctd history: {e}", file=sys.stderr)
+            return 1
     failed = 0
-    for contract in args.contract:
+    for contract, contract_days in plan.items():
         ran, errors, kinds = 0, {}, Counter()
-        for d in days:
+        for d in contract_days:
             try:
                 x, files = light_inputs(store, contract, d, args.inputs)
                 r = light.run(x)
@@ -359,7 +369,7 @@ def cmd_history(args) -> int:
             print(format_line(r))
             ran += 1
             kinds.update(warning_kind(w) for w in r.warnings)
-        print(f"\n{contract}: {ran} of {len(days)} business day(s) from {args.date_from} to {end} run"
+        print(f"\n{contract}: {ran} of {len(contract_days)} business day(s) from {args.date_from} to {end} run"
               f"{'' if args.no_save else ' and saved'}, {len(errors)} failed")
         for d, e in errors.items():
             print(f"  failed {d}: {e}")
@@ -508,7 +518,8 @@ def build_parser() -> argparse.ArgumentParser:
     o = sub.add_parser("report", help="the single-date HTML pages (a summary with charts 1 to 3, a page per "
                                       "contract with its tables) and the charts as PNGs, from saved results")
     asof_args(o)
-    o.add_argument("--contract", action="append", help="only these contracts (default: every one saved for the date)")
+    o.add_argument("--contract", action="append",
+                   help="only these contracts (default: the date's contracts of the run window, design 7)")
     o.add_argument("--out", type=Path, default=output_dir(), help="output directory (default: <repo>/output)")
     o.set_defaults(func=cmd_report)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
@@ -518,7 +529,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--notify", action="store_true", help="desktop alert when a raw file fails to read")
     d.set_defaults(func=cmd_derive)
     h = sub.add_parser("history", help="ctd run for every business day in a range, saving each result")
-    h.add_argument("--contract", action="append", required=True, help="e.g. ZBZ6; repeat for several")
+    h.add_argument("--contract", action="append",
+                   help="e.g. ZBZ6; repeat for several (default: each day's contracts of the run window, design 7)")
     h.add_argument("--from", dest="date_from", type=date.fromisoformat, required=True)
     h.add_argument("--to", dest="date_to", type=date.fromisoformat,
                    help="last date (default: latest settled business day)")

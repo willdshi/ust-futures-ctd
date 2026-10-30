@@ -302,6 +302,26 @@ SUMMARY_NOTE = (
     "a year of maturity or less, so a change of CTD moves their duration and DV01 little.</p>")
 
 
+def roll_note(recs: list[dict]) -> str:
+    """One line for the summary in the weeks two contracts of a product run (design 7): which options
+    expire and which contract has joined. Empty on any other day."""
+    from ctd.reference.contracts import parse_contract
+
+    by_product = {}
+    for r in recs:
+        product, month = parse_contract(r["contract"], date.fromisoformat(r["asof"]))
+        by_product.setdefault(product, []).append((month, r["options"]["expiry"]))
+    rolls = {}
+    for product, contracts in by_product.items():
+        if len(contracts) > 1:
+            (old, expiry), (new, _) = sorted(contracts)[:2]
+            rolls.setdefault((old, new, expiry), []).append(product)
+    return "".join(
+        f"<p class='note'><b>Roll week:</b> the {old:%B %Y} options on {', '.join(products)} expire {_day(expiry)} and the "
+        f"{new:%B %Y} contracts now run alongside them. Each is its own series; there is no roll comparison yet.</p>"
+        for (old, new, expiry), products in rolls.items())
+
+
 def check_schema(recs: list[dict]) -> None:
     for r in recs:
         if r.get("schema", 0) < MIN_SCHEMA:
@@ -337,7 +357,7 @@ def render(asof: date, recs: list[dict], history: dict[str, list[series.Row]] | 
         f"<p class='back'><a href='{ARCHIVE}'>All report dates</a></p>",
         f"<h1>Treasury futures duration profile, {asof}</h1>",
         f"<p class='lede'>{contracts}. {LIGHT_MODEL_LEDE}</p>",
-        SUMMARY_NOTE,
+        SUMMARY_NOTE + roll_note(recs),
         contracts_table(recs, link=True),
         summary(recs, link=True),
         "<h2>Charts</h2>", interactive.NOTE,
@@ -403,27 +423,17 @@ def write_pngs(out_dir: Path, rec: dict, rows: list[series.Row]) -> list[Path]:
     return paths
 
 
-def contracts_on(root: Path, asof: date) -> list[str]:
-    """Contracts with a saved light-model result for ``asof``, ZN before ZB as in cme_products.toml."""
-    from ctd.data import refdata
-    from ctd.reference.contracts import parse_contract
-
-    order = [p["code"] for p in refdata.cme_products()["treasury"]]
-    d = Path(root) / "results" / "light"
-    found = [p.name for p in d.iterdir() if (p / f"{asof.isoformat()}.json").exists()] if d.is_dir() else []
-    return sorted(found, key=lambda c: (order.index(parse_contract(c, asof)[0]), parse_contract(c, asof)[1]))
-
-
 def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = None) -> list[Path]:
     """Write the summary ``out_dir/<asof>.html``, each contract's ``out_dir/<asof>/<contract>.html``
     and its charts as PNGs under ``out_dir/<asof>/png/``, from the results saved under ``root``, then
     ``out_dir/archive.html`` listing every summary page in ``out_dir``; the pages first, the summary's
-    path leading."""
+    path leading. ``contracts`` default to those the run window gives for ``asof`` (design 7), and a
+    missing result for one of them is an error."""
     import json
 
-    contracts = contracts or contracts_on(root, asof)
-    if not contracts:
-        raise FileNotFoundError(f"no saved results for {asof}; run ctd run first")
+    from ctd.data import refdata
+
+    contracts = contracts or refdata.contracts_on(asof)
     recs = []
     for c in contracts:
         path = results.light_path(root, c, asof)

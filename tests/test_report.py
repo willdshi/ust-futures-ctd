@@ -120,20 +120,21 @@ def test_page_refuses_results_from_before_the_profile(rec):
 
 
 def test_report_command_writes_the_date_page_in_contract_order(tmp_path, rec, capsys):
-    results.write_light(tmp_path, rec)
-    results.write_light(tmp_path, {**rec, "contract": "ZNZ6"})
-    assert page.contracts_on(tmp_path, ASOF) == ["ZNZ6", "ZBZ6"]
+    for c in ("ZBZ6", "ZNZ6", "UBZ6", "TNZ6"):  # the run window's four contracts for the date
+        results.write_light(tmp_path, {**rec, "contract": c})
     out = tmp_path / "out"
     args = ["--data-root", str(tmp_path), "report", "--asof", ASOF.isoformat(), "--out", str(out)]
     assert main(args) == 0
     html = (out / "2026-10-21.html").read_text(encoding="utf-8")
-    assert html.index("ZNZ6.html") < html.index("ZBZ6.html")
-    for c in ("ZNZ6", "ZBZ6"):
+    assert [html.index(f"{c}.html") for c in ("ZNZ6", "TNZ6", "ZBZ6", "UBZ6")] == sorted(
+        html.index(f"{c}.html") for c in ("ZNZ6", "TNZ6", "ZBZ6", "UBZ6"))
+    assert "Roll week" not in html
+    for c in ("ZNZ6", "TNZ6", "ZBZ6", "UBZ6"):
         assert "Distance to each switch" in (out / "2026-10-21" / f"{c}.html").read_text(encoding="utf-8")
         for name in ("dv01-profile", "krd-change"):  # chart 3 needs two dates
             assert (out / "2026-10-21" / "png" / f"{c}-{name}.png").read_bytes().startswith(PNG)
     printed = capsys.readouterr().out
-    assert printed.count(".html") == 4 and "wrote 4 chart PNGs" in printed  # summary, two contracts, archive
+    assert printed.count(".html") == 6 and "wrote 8 chart PNGs" in printed  # summary, four contracts, archive
     assert main([*args, "--contract", "ZBZ6"]) == 0
     assert "ZNZ6.html" not in (out / "2026-10-21.html").read_text(encoding="utf-8")
 
@@ -144,7 +145,7 @@ def test_archive_lists_every_summary_page_newest_first(tmp_path, rec):
     out.mkdir()
     for name in ("2026-10-16.html", "index.html", "notes.html"):  # an older summary, and pages that aren't
         (out / name).write_text("", encoding="utf-8")
-    page.write(tmp_path, out, ASOF)
+    page.write(tmp_path, out, ASOF, ["ZBZ6"])
     html = (out / "archive.html").read_text(encoding="utf-8")
     assert re.findall(r"<a href='([^']+)'>", html) == ["2026-10-21.html", "2026-10-16.html"]
     assert "2026-10-21</a> (latest)" in html and "not investment advice" in html
@@ -153,7 +154,7 @@ def test_archive_lists_every_summary_page_newest_first(tmp_path, rec):
 
 def test_report_command_without_results_says_so(tmp_path, capsys):
     assert main(["--data-root", str(tmp_path), "report", "--asof", "2026-10-21", "--out", str(tmp_path)]) == 1
-    assert "no saved results for 2026-10-21" in capsys.readouterr().err
+    assert "no saved result for ZNZ6 on 2026-10-21" in capsys.readouterr().err
 
 
 def test_summary_gives_both_probabilities_and_the_carry_behind_implied_delivery(rec):
@@ -188,3 +189,14 @@ def test_contract_table_comes_before_the_summary(rec):
     assert html.index("U.S. Treasury Bond futures, December 2026") < html.index("CTD today, P(RCaD)")
     assert "15y to under 25y remaining" in html and "1 Dec 2026 to 31 Dec 2026" in html
     assert f"{len(rec['basket'])} issues" in html and "DEC26, expiry 20 Nov 2026" in html
+
+
+def test_roll_week_note_on_the_summary_only(rec):
+    old = {**rec, "contract": "ZBZ6"}
+    new = {**rec, "contract": "ZBH7", "options": {**rec["options"], "label": "MAR27", "expiry": "2027-02-19"}}
+    assert page.roll_note([old, {**rec, "contract": "ZNZ6"}]) == ""
+    note = page.roll_note([old, new, {**old, "contract": "ZNZ6"}, {**new, "contract": "ZNH7"}])
+    assert note.count("Roll week") == 1 and "December 2026 options on ZB, ZN expire 20 Nov 2026" in note
+    assert "March 2027 contracts now run alongside them" in note
+    html = page.render(ASOF, [old, new])
+    assert "Roll week" in html and "Roll week" not in page.render_contract(ASOF, old)

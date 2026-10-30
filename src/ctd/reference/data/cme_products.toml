@@ -18,6 +18,10 @@
 # (ctd.bonds.conversionfactor): whole months for ZT and ZF, quarters for the others.
 # Checked against every stored TCF file, December 2023 to October 2026.
 #
+# modelled = true marks the products the model runs and publishes (ZN, TN, ZB, UB); the others are only
+# collected. The default of `ctd history` and `ctd report` is these products' contracts for the date
+# (ctd.data.refdata.contracts_on, design section 7).
+#
 # Option series are not listed here: for each Treasury future, the collector
 # reads CME's list of option expiries (quarterly, serial and every weekly
 # series) and pulls all of them.
@@ -42,6 +46,7 @@ verified = true
 
 [[treasury]]
 code = "ZN"
+modelled = true
 clearing_code = "21"
 face = 100000
 cf_round_months = 3
@@ -51,6 +56,7 @@ verified = true
 
 [[treasury]]
 code = "TN"
+modelled = true
 clearing_code = "TN"
 face = 100000
 cf_round_months = 3
@@ -60,6 +66,7 @@ verified = true
 
 [[treasury]]
 code = "ZB"
+modelled = true
 clearing_code = "17"
 face = 100000
 cf_round_months = 3
@@ -69,6 +76,7 @@ verified = true
 
 [[treasury]]
 code = "UB"
+modelled = true
 clearing_code = "UBE"
 face = 100000
 cf_round_months = 3

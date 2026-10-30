@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from functools import cache
 from importlib.resources import files
 
+from ctd.reference import window
 from ctd.reference.calendar import BusinessCalendar
 from ctd.reference.delivery import DeliveryDates, delivery_for
 from ctd.reference.grades import Grade
@@ -78,3 +79,13 @@ def option_expiry(product: str, label: str) -> OptionExpiry:
     calendar, or an exception record (design section 2)."""
     _covered(option_month(label) - timedelta(days=1), f"option expiry {product} {label}")
     return expiry_for(product, label, calendar("cme"), rule_exceptions()["expiry"])
+
+
+def contracts_on(asof: date, products: list[str] | None = None) -> list[str]:
+    """The contracts that run on ``asof`` (the run window, design section 7): for the ``modelled`` products
+    in ``cme_products.toml`` unless ``products`` is given, with expiries from ``option_expiry`` (so it
+    raises where the holiday list doesn't reach)."""
+    if products is None:
+        products = [p["code"] for p in cme_products()["treasury"] if p.get("modelled")]
+    return window.contracts_on(asof, products, calendar("cme"),
+                               lambda product, label: option_expiry(product, label).expiry)

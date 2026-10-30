@@ -6,7 +6,7 @@ Temporary. Delete this note once the work is done and its settled rules are in d
 
 It is feasible: most of the pieces already exist, and the roadmap already lists this work as 1f.1, 1f.3, 1f.4 and 1f.7. The main things to settle first:
 
-1. **Contract roll on 2026-11-13.** Contract selection isn't automated yet (1f.1). If the four Dec-26 contracts are hard-coded, the published pages will be wrong or incomplete within two weeks. Build the contract selection first.
+1. **Contract roll on 2026-11-13.** Contract selection is built (1f.1, `refdata.contracts_on`). Don't hard-code contracts: the morning run uses it, so March joins on 11-13 and December drops after 11-19.
 2. **Git shouldn't touch the working checkout.** Do the gh-pages commit and push from a separate git worktree that only the task uses, so a 09:15 branch switch can't collide with editing.
 3. **The task runs whatever code is checked out.** If `main` is left half-edited or on another branch overnight, the morning job uses that code and publishes its output. Either run from a clean `main` worktree (1f.6) or have the publish step refuse when the tree isn't clean on `main`.
 4. **Push credentials with nobody at the keyboard.** Git Credential Manager is the credential helper. If its token expires, it opens a sign-in window and the task hangs for up to 2 hours. Set `GCM_INTERACTIVE=never` and `GIT_TERMINAL_PROMPT=0` so the push fails fast and raises an alert.
@@ -20,7 +20,7 @@ The `ctd-morning` task (09:15 on weekdays, `scripts/morning.py`) runs fetch, SOF
 
 ## Concerns to settle first
 
-1. **The roll on 2026-11-13 (1f.1 isn't built).** From 11-13 the run needs the March contracts too, and the December ones stop after 11-19. Hard-coding `ZNZ6 TNZ6 ZBZ6 UBZ6` would publish wrong or incomplete pages within two weeks. Build `contracts_on(asof, ...)` (1f.1) before automating, or at least in the same change.
+1. **The roll on 2026-11-13.** From 11-13 the run needs the March contracts too, and the December ones stop after 11-19. `refdata.contracts_on(asof)` (1f.1) gives each day's contracts; the run must use it, not hard-coded `ZNZ6 TNZ6 ZBZ6 UBZ6`.
 2. **Keep git off the dev checkout.** The `gh-pages` branch has a `.gitignore` for `/data/` and `/output/`, which suggests the manual upload switches branches in the main working tree. A 09:15 task that runs `git checkout` there could collide with editing. Do the publish in a **dedicated worktree** (`git worktree add ..\ctd-pages gh-pages`) that only the task touches.
 3. **The task runs whatever code is checked out.** If `main` is left mid-edit or on a feature branch overnight, the morning run uses that code and then publishes its output. Options: run from a clean `main` worktree (that is 1f.6), or have the publish step refuse when `git status` on the code tree isn't clean or isn't on `main`.
 4. **Push authentication with nobody at the keyboard.** The credential helper is Git Credential Manager. Its cached token normally works from the task, which runs as the logged-on user, including when the screen is locked. But if the token expires, GCM opens a sign-in window and the task hangs until its 2-hour limit. Set `GCM_INTERACTIVE=never` and `GIT_TERMINAL_PROMPT=0` for the push so it fails fast and raises an alert. Or use an SSH key that only this repo uses.
@@ -30,10 +30,10 @@ The `ctd-morning` task (09:15 on weekdays, `scripts/morning.py`) runs fetch, SOF
 
 ## Implementation (once 1e.5 passes)
 
-1. **1f.1** `contracts_on(asof, products, cal)` in `src/ctd/reference/`, built on `refdata.option_expiry` and the run-window rule (design §7). `ctd history` and `ctd report` default to it.
+1. **1f.1** (done) `refdata.contracts_on(asof)`; `ctd history` and `ctd report` default to it.
 2. **1f.3** `scripts/morning_run.py [--asof D]`:
    - D is the previous `cme` business day, the same as `morning_derive.py`. Exit 0 and do nothing on a non-business day.
-   - Run `ctd history --contract ... --from D --to D` with the contracts from step 1, then `ctd report --asof D --out <pages worktree>`. Writing straight into the worktree makes `archive.html` list every published date.
+   - Run `ctd history --contract ... --from D --to D` with the contracts from `refdata.contracts_on(D)` (or no `--contract`, which does the same), then `ctd report --asof D --out <pages worktree>`. Writing straight into the worktree makes `archive.html` list every published date.
    - Copy `D.html` to `index.html`.
    - Alert through `ctd.data.alert.notify` and exit non-zero on any failure.
 3. **1f.7** `scripts/morning_publish.py`, kept separate so it can be switched off:

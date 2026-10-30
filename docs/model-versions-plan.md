@@ -16,7 +16,7 @@ Decisions taken:
 - Results are already keyed by a model name, `data/results/light/<contract>/<date>.json` with `"model": "light"` ([report/results.py](src/ctd/report/results.py)). Everything else hardcodes `light`:
   - `light_path`, `write_light`, `read_light` and a single `SCHEMA = 11`;
   - `cli.cmd_run` and `cmd_history` call `light_inputs` → `light.run` → `light_record` ([cli.py:208-370](src/ctd/cli.py#L208-L370));
-  - `page.contracts_on` globs `results/light`, `page.write` reads only light results, `check_schema` has one `MIN_SCHEMA`, and the `LIGHT_MODEL_LEDE` and `LIGHT_MODEL_SHIFT_AXIS` text describes β = 1 ([report/page.py:259-450](src/ctd/report/page.py#L259-L450), [report/charts.py:63](src/ctd/report/charts.py#L63));
+  - `page.write` reads only light results, `check_schema` has one `MIN_SCHEMA`, and the `LIGHT_MODEL_LEDE` and `LIGHT_MODEL_SHIFT_AXIS` text describes β = 1 ([report/page.py:259-450](src/ctd/report/page.py#L259-L450), [report/charts.py:63](src/ctd/report/charts.py#L63));
   - `report/series.py` and `scripts/writeup_figures.py` read `results/light`.
 - The shared pure code (`model/envelope`, `model/profile`, `model/horizon`, `risk/`, `vol/atm`) is called with parallel shifts built in. V2's betas change exactly these functions.
 - **Naming clash:** design.md already uses "v1" for something else: "Non-goals (v1)" in §1 and "v1 uses a single ATM-based normal width" in §5.5. It also uses "light model" and "full model".
@@ -33,7 +33,7 @@ Decisions taken:
 ### 2. A version registry instead of hardcoded `light`
 - Add a small registry: version → (input builder, `run`, record function, schema). V1's entry wraps the existing `cli.light_inputs`, `model.light.run` and `results.light_record` unchanged.
 - [report/results.py](src/ctd/report/results.py): generalise `light_path`, `write_light` and `read_light` to take a version. Each version gets its own schema number. Move the store to `data/results/v1/...`; results are rebuilt from raw, so re-running `ctd history` repopulates it (or move the files once). Update data.md §… (the store layout line, `results/light/...`).
-- CLI: add `--model` (default `v1`) to `run`, `history` and `report`. `page.contracts_on`, `page.write`, `check_schema`, `series` and `writeup_figures.py` take the version and default to `v1`.
+- CLI: add `--model` (default `v1`) to `run`, `history` and `report`. `page.write`, `check_schema`, `series` and `writeup_figures.py` take the version and default to `v1`.
 - The `LIGHT_MODEL_*` report text becomes V1's text, selected by version. The report itself still publishes only V1.
 
 ### 3. V2 extends shared code; it doesn't edit V1's behaviour

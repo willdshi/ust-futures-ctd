@@ -78,3 +78,12 @@ def test_piped_output_is_utf8_without_environment_help():
     code = "from ctd.cli import utf8_output; utf8_output(); print('→ ≤ √ σ')"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, env=env, check=True).stdout
     assert out.decode("utf-8").strip() == "→ ≤ √ σ"
+
+
+def test_history_without_contracts_runs_each_days_window(tmp_path, capsys):
+    # 2026-11-12 runs the four December contracts, 11-13 adds the March ones (nothing is stored here)
+    assert main(["--data-root", str(tmp_path), "history", "--from", "2026-11-12", "--to", "2026-11-13"]) == 1
+    out = capsys.readouterr().out
+    assert "ZNZ6: 0 of 2 business day(s)" in out and "UBZ6: 0 of 2 business day(s)" in out
+    assert "ZNH7: 0 of 1 business day(s)" in out and "TNH7: 0 of 1 business day(s)" in out
+    assert "ZTZ6" not in out and "ZFZ6" not in out
