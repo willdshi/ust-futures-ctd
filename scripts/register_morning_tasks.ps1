@@ -48,6 +48,9 @@ $run = "$utf8$pypath& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\mo
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$run`"" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $At
+# -At writes today's UTC offset into the start time, which pins the task to UTC and shifts it an hour at each
+# daylight-saving change; without an offset it stays at local time.
+$trigger.StartBoundary = ([datetime]$trigger.StartBoundary).ToString("yyyy-MM-ddTHH:mm:ss")
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 Register-ScheduledTask -TaskName "ctd-morning" -Action $action -Trigger $trigger -Settings $settings `
     -Description "Previous business day's raw snapshot and derived tables for the CTD model (roadmap 1e.5)" `
@@ -66,6 +69,7 @@ $unlock.UserId = $user
 $unlock.Delay = "PT15M"
 $unlock.Enabled = $true
 $late = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At "10:30"
+$late.StartBoundary = ([datetime]$late.StartBoundary).ToString("yyyy-MM-ddTHH:mm:ss")  # local time, as above
 $check = "$utf8$pypath& '$py' '$repo\scripts\morning_check.py' *>> '$repo\data\morning_check.log'; exit `$LASTEXITCODE"
 $checkAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$check`"" -WorkingDirectory $repo
