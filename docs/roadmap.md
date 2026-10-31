@@ -62,7 +62,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **1e.2** Option definitions for new instruments only
 - [x] **1e.3** Readers `read_daily_futures`, `read_daily_options`
 - [x] **1e.4** Derived tables take `databento_daily` from 2026-10-26
-- [ ] **1e.5** Morning task `ctd-morning` (fetch with Databento, SOFR, derive, in order; data.md §4) collects and derives cleanly on a first morning
+- [x] **1e.5** Morning task `ctd-morning` (fetch with Databento, SOFR, derive, in order; data.md §4) collects and derives cleanly on a first morning
 - [x] **1e.6** Runs read the derived tables by default (`--inputs raw` kept as a cross-check)
 - [ ] ~~**1e.7** Two weeks alongside the bookmarklet before making Databento the record~~ Dropped: Databento is the production source; the bookmarklet is an optional cross-check.
 - [ ] **1e.8** Buy `databento_daily` for 2026-10-20 to 10-23 (about $1), closing the bulletin-only stretch in the options table

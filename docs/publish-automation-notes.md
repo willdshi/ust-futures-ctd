@@ -14,7 +14,7 @@ It is feasible: most of the pieces already exist, and the roadmap already lists 
 
 ## Context
 
-The `ctd-morning` task (09:15 on weekdays, `scripts/morning.py`) runs fetch, SOFR and derive. The model run, `ctd report` and the gh-pages upload are done by hand: commits like "upload 2026-10-28" on `gh-pages`, with `index.html` a copy of the latest summary. The plan is to switch the automation on once a morning job runs clean (1e.5).
+The `ctd-morning` task (09:15 on weekdays, `scripts/morning.py`) runs fetch, SOFR and derive. The model run, `ctd report` and the gh-pages upload are done by hand: commits like "upload 2026-10-28" on `gh-pages`, with `index.html` a copy of the latest summary. The morning job now runs clean (1e.5), so the automation can be switched on.
 
 **Verdict: feasible, and most of the pieces exist.** `ctd history`, `ctd run` and `ctd report` already return non-zero on failure (`src/ctd/cli.py`). `morning.py` is a plain step list, `morning_check.py` already re-runs a failed task, and `gh-pages` is a plain static branch (`.nojekyll`, about 1.7 MB a day). The work is mostly glue. The risks are in the concerns below, roughly in order of importance.
 
@@ -38,7 +38,7 @@ The `ctd-morning` task (09:15 on weekdays, `scripts/morning.py`) runs fetch, SOF
 6. **Make re-runs and races harmless.** A re-run of the same date has to work: when nothing has changed, skip the commit rather than letting `git commit` fail. Before committing, `git fetch` and fast-forward `gh-pages`, in case of a manual push from somewhere else. Never force-push.
 7. **Bad numbers go out unseen.** Today each page is looked at before upload. Consider a hold: publish nothing, and alert instead, if `ctd run` printed warnings (for example SOFR falling back to D−1) or a DV01 moved more than some threshold from the day before. The publish can then be released by hand.
 
-## Implementation (once 1e.5 passes)
+## Implementation
 
 1. **1f.1** (done) `refdata.contracts_on(asof)`; `ctd history` and `ctd report` default to it.
 2. **1f.3** `scripts/morning_run.py [--asof D]`:
