@@ -139,6 +139,20 @@ def test_report_command_writes_the_date_page_in_contract_order(tmp_path, rec, ca
     assert "ZNZ6.html" not in (out / "2026-10-21.html").read_text(encoding="utf-8")
 
 
+def test_report_command_in_the_roll_week_writes_both_contracts_of_each_product(tmp_path, rec):
+    asof = date(2026, 11, 13)  # the first day the March 2027 contracts run (design 7)
+    mar = {**rec["options"], "label": "MAR27", "expiry": "2027-02-19"}
+    contracts = [f"{p}{m}" for p in ("ZN", "TN", "ZB", "UB") for m in ("Z6", "H7")]
+    for c in contracts:
+        results.write_light(tmp_path, {**rec, "asof": asof.isoformat(), "contract": c,
+                                       **({"options": mar} if c.endswith("H7") else {})})
+    out = tmp_path / "out"
+    assert main(["--data-root", str(tmp_path), "report", "--asof", asof.isoformat(), "--out", str(out)]) == 0
+    html = (out / "2026-11-13.html").read_text(encoding="utf-8")
+    assert all(f"{c}.html" in html for c in contracts) and html.count("Roll week") == 1
+    assert all((out / "2026-11-13" / f"{c}.html").exists() for c in contracts)
+
+
 def test_archive_lists_every_summary_page_newest_first(tmp_path, rec):
     results.write_light(tmp_path, rec)
     out = tmp_path / "out"

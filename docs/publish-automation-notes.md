@@ -6,7 +6,7 @@ Temporary. Delete this note once the work is done and its settled rules are in d
 
 It is feasible: most of the pieces already exist, and the roadmap already lists this work as 1f.3, 1f.4 and 1f.7 (1f.1, the contract selection, is built). The main things to settle first:
 
-1. **Contract roll on 2026-11-13.** Contract selection is built (1f.1): `refdata.contracts_on(asof)`, which `ctd history` and `ctd report` default to. What's left is to check the March data is stored by 11-13 (concern 1) and to size the overlap week's pages.
+1. **Contract roll on 2026-11-13.** Contract selection is built (1f.1): `refdata.contracts_on(asof)`, which `ctd history` and `ctd report` default to. The March contracts' inputs are stored and run (concern 1); what's left is the overlap week's page size.
 2. **Git shouldn't touch the working checkout.** Do the gh-pages commit and push from a separate git worktree that only the task uses, so a 09:15 branch switch can't collide with editing.
 3. **The task runs whatever code is checked out.** Mostly done: `main` lives in its own worktree, `..\ctd-prod`, and development happens on `dev` in `..\ctd`, so the task no longer sees half-edited code. What's left is to register the tasks from `ctd-prod` and run `ctd-morning` once by hand (concern 3).
 4. **Push credentials with nobody at the keyboard.** Git Credential Manager is the credential helper. If its token expires, it opens a sign-in window and the task hangs for up to 2 hours. Set `GCM_INTERACTIVE=never` and `GIT_TERMINAL_PROMPT=0` so the push fails fast and raises an alert.
@@ -20,8 +20,7 @@ The `ctd-morning` task (09:15 on weekdays, `scripts/morning.py`) runs fetch, SOF
 
 ## Concerns to settle first
 
-1. **The roll on 2026-11-13.** From 11-13 to 11-19 each product runs two contracts (eight in all), and from 11-20 only March. The automation must call `ctd history` and `ctd report` without `--contract` (or `refdata.contracts_on(D)`), never a hard-coded list. Left to check:
-   - the March contracts' inputs are stored for 11-13: the daily pull's front two futures and the DEC/MAR options are expected, and the TCF basket is listed three contract months ahead (design §7); confirm on the first morning;
+1. **The roll on 2026-11-13.** From 11-13 to 11-19 each product runs two contracts (eight in all), and from 11-20 only March. The automation must call `ctd history` and `ctd report` without `--contract` (or `refdata.contracts_on(D)`), never a hard-coded list. The March contracts' inputs (futures settlements, MAR27 options, TCF basket) are already stored: `ctd history --contract ZNH7 --contract TNH7 --contract ZBH7 --contract UBH7 --from 2026-10-26 --to 2026-10-29 --no-save` ran all four days with no warnings. Left to note:
    - the five overlap days' pages are about twice the size (eight contracts, about 3.4 MB a day against 1.7 MB), a small cost on `gh-pages`;
    - `ctd report` now errors if any of the day's contracts has no saved result, which is the "complete day" gate (concern 5) for free; the new March series has one point on 11-13, so its chart 3 starts on 11-16.
 2. **Keep git off the dev checkout.** The `gh-pages` branch has a `.gitignore` for `/data/` and `/output/`, which suggests the manual upload switches branches in the main working tree. A 09:15 task that runs `git checkout` there could collide with editing. Do the publish in a **dedicated worktree** (`git worktree add ..\ctd-pages gh-pages`) that only the task touches.
