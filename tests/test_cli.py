@@ -35,6 +35,16 @@ def test_run_on_an_empty_store_reports_what_is_missing(tmp_path, capsys):
     assert "no ZB futures settlements stored for 2026-10-21" in capsys.readouterr().err
 
 
+def test_run_carries_on_past_failed_contracts(tmp_path, capsys):
+    assert main(["--data-root", str(tmp_path), "run", "--contract", "ZBZ6", "UBZ6", "--asof", "2026-10-21"]) == 1
+    err = capsys.readouterr().err
+    assert "ctd run ZBZ6 2026-10-21" in err and "ctd run UBZ6 2026-10-21" in err
+    # no --contract: the date's contracts of the run window
+    assert main(["--data-root", str(tmp_path), "run", "--asof", "2026-10-30"]) == 1
+    err = capsys.readouterr().err
+    assert all(f"ctd run {c} 2026-10-30" in err for c in ("ZNZ6", "TNZ6", "ZBZ6", "UBZ6"))
+
+
 def test_history_carries_on_past_failed_dates(tmp_path, capsys):
     # 2026-09-07 is Labor Day; runs read the derived tables, which don't exist here
     assert main(["--data-root", str(tmp_path), "history", "--contract", "ZBZ6", "--from", "2026-09-04",

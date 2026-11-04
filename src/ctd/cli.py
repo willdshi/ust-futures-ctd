@@ -5,10 +5,10 @@
     ctd check [--from 2026-10-01] [--to 2026-10-16]
     ctd backfill
     ctd bookmarklet [--print]
-    ctd run --contract ZBZ6 [--asof 2026-10-16]
+    ctd run [--asof 2026-10-16] [--contract ZBZ6 ...]
     ctd report [--asof 2026-10-16] [--contract ZBZ6 ...] [--out output]
     ctd derive [--table options] [--full] [--notify]
-    ctd history --contract ZBZ6 [--contract ZNZ6 ...] --from 2026-09-01 [--to 2026-10-23] [--no-save]
+    ctd history [--contract ZBZ6 ...] --from 2026-09-01 [--to 2026-10-23] [--no-save]
 
 ``fetch`` and ``check`` exit 1 when there are gaps; ``derive`` when a raw file fails to read. ``fetch --notify`` also shows a desktop alert.
 """
@@ -296,6 +296,9 @@ def code_version() -> str | None:
 
 
 def cmd_run(args) -> int:
+    """The light model for each contract on one date: the date's contracts of the run window
+    (``refdata.contracts_on``) unless ``--contract`` names them. A failed contract is reported and skipped."""
+    from ctd.data import refdata
     from ctd.data.store import RawStore
     from ctd.model import light
     from ctd.report import results
@@ -303,16 +306,26 @@ def cmd_run(args) -> int:
 
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
     try:
-        inputs, files = light_inputs(RawStore(args.data_root), args.contract, asof, args.inputs)
-        result = light.run(inputs)
-    except (FileNotFoundError, KeyError, ValueError) as e:
-        print(f"ctd run {args.contract} {asof}: {e}", file=sys.stderr)
+        contracts = args.contract or refdata.contracts_on(asof)
+    except ValueError as e:
+        print(f"ctd run {asof}: {e}", file=sys.stderr)
         return 1
-    print(format_run(result, all_bonds=args.all_bonds))
-    if not args.no_save:
-        path = results.write_light(args.data_root, results.light_record(result, files, code_version()))
-        print(f"\nsaved {path}")
-    return 0
+    store, failed = RawStore(args.data_root), 0
+    for i, contract in enumerate(contracts):
+        try:
+            inputs, files = light_inputs(store, contract, asof, args.inputs)
+            result = light.run(inputs)
+        except (FileNotFoundError, KeyError, ValueError) as e:
+            print(f"ctd run {contract} {asof}: {e}", file=sys.stderr)
+            failed += 1
+            continue
+        if i:
+            print()
+        print(format_run(result, all_bonds=args.all_bonds))
+        if not args.no_save:
+            path = results.write_light(args.data_root, results.light_record(result, files, code_version()))
+            print(f"\nsaved {path}")
+    return 1 if failed else 0
 
 
 def warning_kind(w: str) -> str:
@@ -505,8 +518,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--to", dest="date_to", type=date.fromisoformat)
     c.set_defaults(func=cmd_check)
 
-    r = sub.add_parser("run", help="light model (design 5.11) for one contract and date, from the store")
-    r.add_argument("--contract", required=True, help="e.g. ZBZ6")
+    r = sub.add_parser("run", help="light model (design 5.11) for one date, from the store")
+    r.add_argument("--contract", nargs="+", action="extend",
+                   help="e.g. ZBZ6 UBZ6 (default: the date's contracts of the run window, design 7)")
     asof_args(r)
     r.add_argument("--no-save", action="store_true", help="print only; don't write data/results/light/...")
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
@@ -518,8 +532,8 @@ def build_parser() -> argparse.ArgumentParser:
     o = sub.add_parser("report", help="the single-date HTML pages (a summary with charts 1 to 3, a page per "
                                       "contract with its tables) and the charts as PNGs, from saved results")
     asof_args(o)
-    o.add_argument("--contract", action="append",
-                   help="only these contracts (default: the date's contracts of the run window, design 7)")
+    o.add_argument("--contract", nargs="+", action="extend",
+                   help="e.g. ZBZ6 UBZ6: only these contracts (default: the date's contracts of the run window, design 7)")
     o.add_argument("--out", type=Path, default=output_dir(), help="output directory (default: <repo>/output)")
     o.set_defaults(func=cmd_report)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
@@ -529,8 +543,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--notify", action="store_true", help="desktop alert when a raw file fails to read")
     d.set_defaults(func=cmd_derive)
     h = sub.add_parser("history", help="ctd run for every business day in a range, saving each result")
-    h.add_argument("--contract", action="append",
-                   help="e.g. ZBZ6; repeat for several (default: each day's contracts of the run window, design 7)")
+    h.add_argument("--contract", nargs="+", action="extend",
+                   help="e.g. ZBZ6 UBZ6 (default: each day's contracts of the run window, design 7)")
     h.add_argument("--from", dest="date_from", type=date.fromisoformat, required=True)
     h.add_argument("--to", dest="date_to", type=date.fromisoformat,
                    help="last date (default: latest settled business day)")

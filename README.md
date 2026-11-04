@@ -74,7 +74,7 @@ conda activate ctd
 pip install -e . --no-deps
 
 ctd fetch --asof 2026-10-23              # snapshot every source into ./data
-ctd run --contract ZBZ6 --asof 2026-10-23    # light model, prints and saves results
+ctd run --asof 2026-10-23                # light model for the date's contracts, prints and saves results
 ctd report --asof 2026-10-23             # single-date HTML page in ./output
 pytest -m "not network and not slow"     # tests that need no downloads
 ```

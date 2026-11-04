@@ -69,7 +69,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 
 ## Phase 1f: automated daily run
 
-- [x] **1f.1** Run-window rule in code: `contracts_on(asof, products, cal)` in `reference/`, expiries from the rule, modelled products marked in `cme_products.toml`; `ctd history` and `ctd report` default to it (design §7)
+- [x] **1f.1** Run-window rule in code: `contracts_on(asof, products, cal)` in `reference/`, expiries from the rule, modelled products marked in `cme_products.toml`; `ctd run`, `history` and `report` default to it (design §7)
 - [ ] **1f.2** Fill the December series from 2026-08-14 to 08-31: the saved series starts 2026-09-01, run under the earlier start rule
 - [ ] **1f.3** `scripts/morning_run.py [--asof D]`: the day's contracts, `ctd history`, then `ctd report`; alert and non-zero exit on any failure
 - [ ] **1f.4** Chain it to the morning derive: a fourth step in `scripts/morning.py`, run only when the derive step exits 0, logging to `data/morning.log`
