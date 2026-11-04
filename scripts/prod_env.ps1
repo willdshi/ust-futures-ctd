@@ -5,10 +5,7 @@
 # unaffected. Paths come from this file's location, so none are hard-coded (data.md section 4).
 #
 #   PYTHONPATH        <repo>\src       import ctd from this checkout, not the editable install's (the development one)
-#   CTD_RESULTS_ROOT  <repo>\prod      saved model results, <root>\results\light\...; apart from the development
-#                                      checkout's, though the raw store and derived tables are shared by junction
 #   CTD_OUTPUT_DIR    <repo>\..\ctd-pages   where `ctd report` writes: the gh-pages worktree that gets published
 $repo = Split-Path -Parent $PSScriptRoot
 $env:PYTHONPATH = "$repo\src"
-$env:CTD_RESULTS_ROOT = "$repo\prod"
 $env:CTD_OUTPUT_DIR = Join-Path (Split-Path -Parent $repo) "ctd-pages"

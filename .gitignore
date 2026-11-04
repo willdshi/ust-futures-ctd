@@ -46,5 +46,5 @@ Desktop.ini
 # Local scratch space: notebooks, one-off scripts, downloads. Never committed.
 /scratch/
 
-# Production results (CTD_RESULTS_ROOT in scripts/prod_env.ps1)
-/prod/
+# Saved model results: rebuilt from data/ by `ctd run`; each checkout keeps its own
+/results/

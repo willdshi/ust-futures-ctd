@@ -123,7 +123,7 @@ def test_report_command_writes_the_date_page_in_contract_order(tmp_path, rec, ca
     for c in ("ZBZ6", "ZNZ6", "UBZ6", "TNZ6"):  # the run window's four contracts for the date
         results.write_light(tmp_path, {**rec, "contract": c})
     out = tmp_path / "out"
-    args = ["--data-root", str(tmp_path), "report", "--asof", ASOF.isoformat(), "--out", str(out)]
+    args = ["--results-dir", str(tmp_path), "report", "--asof", ASOF.isoformat(), "--out", str(out)]
     assert main(args) == 0
     html = (out / "2026-10-21.html").read_text(encoding="utf-8")
     assert [html.index(f"{c}.html") for c in ("ZNZ6", "TNZ6", "ZBZ6", "UBZ6")] == sorted(
@@ -147,7 +147,7 @@ def test_report_command_in_the_roll_week_writes_both_contracts_of_each_product(t
         results.write_light(tmp_path, {**rec, "asof": asof.isoformat(), "contract": c,
                                        **({"options": mar} if c.endswith("H7") else {})})
     out = tmp_path / "out"
-    assert main(["--data-root", str(tmp_path), "report", "--asof", asof.isoformat(), "--out", str(out)]) == 0
+    assert main(["--results-dir", str(tmp_path), "report", "--asof", asof.isoformat(), "--out", str(out)]) == 0
     html = (out / "2026-11-13.html").read_text(encoding="utf-8")
     assert all(f"{c}.html" in html for c in contracts) and html.count("Roll week") == 1
     assert all((out / "2026-11-13" / f"{c}.html").exists() for c in contracts)
@@ -167,7 +167,7 @@ def test_archive_lists_every_summary_page_newest_first(tmp_path, rec):
 
 
 def test_report_command_without_results_says_so(tmp_path, capsys):
-    assert main(["--data-root", str(tmp_path), "report", "--asof", "2026-10-21", "--out", str(tmp_path)]) == 1
+    assert main(["--results-dir", str(tmp_path), "report", "--asof", "2026-10-21", "--out", str(tmp_path)]) == 1
     assert "no saved result for ZNZ6 on 2026-10-21" in capsys.readouterr().err
 
 

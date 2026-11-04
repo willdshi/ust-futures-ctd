@@ -46,7 +46,7 @@ foreach ($old in "ctd-daily-fetch", "ctd-morning-sofr", "ctd-morning-databento",
 
 $utf8 = "`$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; "  # >> writes UTF-16 by default
 # The editable install points at one checkout. prod_env.ps1 makes the tasks import ctd from the checkout they run
-# from, and sets where results and reports go (PYTHONPATH, CTD_RESULTS_ROOT, CTD_OUTPUT_DIR).
+# from, and sets where results and reports go (PYTHONPATH, CTD_OUTPUT_DIR).
 $pypath = ". '$repo\scripts\prod_env.ps1'; "
 $run = "$utf8$pypath& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.log'; exit `$LASTEXITCODE"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `

@@ -7,7 +7,7 @@ as-of date D is the previous ``cme`` business day, as for the derive. Nothing ha
 today isn't a ``cme`` business day or D isn't a ``sifma`` one (no TreasuryDirect prices). Otherwise:
 
 1. ``ctd run --asof D``: every contract of the run window (design 7), so the 2026-11-13 roll needs no
-   change here, saving each result under ``$CTD_RESULTS_ROOT``;
+   change here, saving each result in the checkout's ``results/``;
 2. ``ctd report --asof D --out <output dir>``: the pages in ``$CTD_OUTPUT_DIR``, the ``gh-pages`` worktree
    (``prod_env.ps1``), so ``archive.html`` lists every published date. ``ctd report`` fails if any of D's
    contracts has no saved result, so a partly failed run never builds a page;
@@ -62,7 +62,7 @@ def main() -> int:
         print(f"{datetime.now():%Y-%m-%dT%H:%M:%S} {why}: nothing to run")
         return 0
     out = cli.output_dir()
-    print(f"{datetime.now():%Y-%m-%dT%H:%M:%S} morning run for {asof}: results {cli.results_root()},"
+    print(f"{datetime.now():%Y-%m-%dT%H:%M:%S} morning run for {asof}: results {cli.results_dir()},"
           f" pages {out}", flush=True)
     problem = run_steps(asof, out, [sys.executable, "-u"])
     if problem:

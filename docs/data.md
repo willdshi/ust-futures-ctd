@@ -70,9 +70,9 @@ data/
   morning_check.log, morning_check.json         the morning check's output and what it has done today (§4)
   cme_bookmarklet.html                          page to install the bookmarklet (`ctd bookmarklet`)
   derived/                                      Parquet tables built from raw/ by `ctd derive` (§6); a cache
-  results/                                      model output, e.g. results/light/ZBZ6/2026-10-21.json (production's are under `$CTD_RESULTS_ROOT`, §4)
 ```
 
+- **Model results aren't in the store.** They are in `results/` at the root of each checkout (§4, Production checkout and environment).
 - **`<asof>`** is the business day the data describes, as `YYYY-MM-DD`. For history-type sources (§3) it's the day the file was pulled.
 - **`<unit>`** splits a source into independently tracked pieces: a product (`ZN`), a series (`DGS10`), a security type (`Bond`), a table, or a file format (`csv`/`xlsx`). A source-level manual drop that can't be matched to a unit goes under `_manual`.
 - **`<name>`** is chosen by the fetcher, usually the remote file name with the date added (e.g. `securityprice_2026-10-19.csv`, `TCF_20261019.csv`). Files from the bookmarklet keep the short names ingest gives them (`ZN.json`, `Section42.pdf`), since the date and source are already in the path.
@@ -186,9 +186,9 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 
 - **Code:** the tasks run `main`, checked out permanently in the worktree `..\ctd-prod`; development is on `dev` in `..\ctd`. Deploying is `git -C ..\ctd-prod merge --ff-only dev`; `ctd-prod` is never edited. `morning.py` exits with an alert if `ctd` is imported from another checkout than its own.
 - **Data:** `ctd-prod\data` is a junction to `ctd\data`: one raw store and one set of derived tables, so a paid Databento pull is made once.
-- **Results:** production's saved results are apart from development's, in `ctd-prod\prod\results\light\...` (`CTD_RESULTS_ROOT`), so a dev run, or a different model version, never changes what is published. `ctd run`, `history` and `report` use `--results-root`, else `$CTD_RESULTS_ROOT`, else the data root.
+- **Results:** model output is not in the store: it is in `results\light\<contract>\<asof>.json` at the root of each checkout (gitignored), so production's (`ctd-prod\results`) are apart from development's (`ctd\results`) and a dev run, or a different model version, never changes what is published. `ctd run`, `history` and `report` use `--results-dir`, else `$CTD_RESULTS_DIR`, else `<repo>\results`.
 - **Pages:** `ctd report` writes to `--out`, else `$CTD_OUTPUT_DIR`, else `<repo>\output`. Production sets it to `..\ctd-pages`, the worktree of the `gh-pages` branch, so `archive.html` lists every published date. Only the task touches that worktree.
-- **Environment in one file:** `scripts/prod_env.ps1` sets `PYTHONPATH`, `CTD_RESULTS_ROOT` and `CTD_OUTPUT_DIR` from its own location, for the current process only. The scheduled tasks dot-source it; for a manual production run, `. ..\ctd-prod\scripts\prod_env.ps1` first. It is not set machine-wide, which would leak into development shells.
+- **Environment in one file:** `scripts/prod_env.ps1` sets `PYTHONPATH` and `CTD_OUTPUT_DIR` from its own location, for the current process only. The scheduled tasks dot-source it; for a manual production run, `. ..\ctd-prod\scripts\prod_env.ps1` first. It is not set machine-wide, which would leak into development shells.
 - **Why separate results but shared data:** raw files can't all be re-fetched and derived tables are a cache of them, so sharing costs nothing; results are what gets published, and a development experiment must not overwrite them.
 
 ### When the morning derive runs

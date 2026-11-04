@@ -1,10 +1,11 @@
 """Saved model results: one JSON file per contract and as-of date (design 4).
 
-    data/results/light/ZBZ6/2026-10-21.json
+    results/light/ZBZ6/2026-10-21.json
 
 A result is derived from the raw store, so re-running a date overwrites it; it records the raw
 files it was read from (with their sha256) and the code version, so two runs can be told apart.
-A series is the files of one contract read in date order (``read_light``).
+A series is the files of one contract read in date order (``read_light``). Every function takes the
+results directory itself, the folder holding ``light/`` (``ctd.cli.results_dir``).
 """
 
 import json
@@ -22,8 +23,8 @@ SCHEMA = 11  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and d
 # horizon from probability-weighted carry (``delivery``: carry, carry_flat, weights, carry_by_bond)
 
 
-def light_path(root: Path, contract: str, asof: date) -> Path:
-    return Path(root) / "results" / "light" / contract / f"{asof.isoformat()}.json"
+def light_path(results_dir: Path, contract: str, asof: date) -> Path:
+    return Path(results_dir) / "light" / contract / f"{asof.isoformat()}.json"
 
 
 def _states(s) -> dict:
@@ -102,9 +103,9 @@ def light_record(r: LightResult, inputs: list[dict], code: str | None) -> dict:
     }
 
 
-def write_light(root: Path, record: dict) -> Path:
+def write_light(results_dir: Path, record: dict) -> Path:
     """Write (or overwrite) ``record``'s file, atomically."""
-    path = light_path(root, record["contract"], date.fromisoformat(record["asof"]))
+    path = light_path(results_dir, record["contract"], date.fromisoformat(record["asof"]))
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -112,7 +113,7 @@ def write_light(root: Path, record: dict) -> Path:
     return path
 
 
-def read_light(root: Path, contract: str) -> list[dict]:
+def read_light(results_dir: Path, contract: str) -> list[dict]:
     """Every saved light-model result for ``contract``, in date order."""
-    d = Path(root) / "results" / "light" / contract
+    d = Path(results_dir) / "light" / contract
     return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(d.glob("*.json"))] if d.is_dir() else []

@@ -101,7 +101,7 @@ def test_report_command_draws_chart_3_from_results_up_to_the_date(tmp_path, rec)
     for day in ("2026-10-20", ASOF.isoformat(), "2026-10-22"):
         results.write_light(tmp_path, on(rec, day))
     out = tmp_path / "out"
-    args = ["--data-root", str(tmp_path), "report", "--contract", "ZBZ6", "--out", str(out), "--asof"]
+    args = ["--results-dir", str(tmp_path), "report", "--contract", "ZBZ6", "--out", str(out), "--asof"]
     assert main([*args, "2026-10-20"]) == 0
     assert _series_dates((out / "2026-10-20.html").read_text(encoding="utf-8")) is None
     assert not (out / "2026-10-20" / "png" / "ZBZ6-dv01-series.png").exists()
@@ -115,5 +115,5 @@ def test_report_command_draws_chart_3_from_results_up_to_the_date(tmp_path, rec)
 def test_report_refuses_an_old_result_in_the_history(tmp_path, rec):
     results.write_light(tmp_path, {**on(rec, "2026-10-20"), "schema": 7})
     results.write_light(tmp_path, rec)
-    assert main(["--data-root", str(tmp_path), "report", "--contract", "ZBZ6", "--asof", ASOF.isoformat(),
+    assert main(["--results-dir", str(tmp_path), "report", "--contract", "ZBZ6", "--asof", ASOF.isoformat(),
                  "--out", str(tmp_path)]) == 1

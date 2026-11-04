@@ -10,7 +10,7 @@
 Run ``ctd run`` for each contract and date first. Then rebuild the PDF:
 
     python scripts/writeup_figures.py                  # 2026-10-23, the write-up's date
-    python scripts/writeup_figures.py --asof 2026-10-23 --data data --out docs/images
+    python scripts/writeup_figures.py --asof 2026-10-23 --results results --out docs/images
     pandoc docs/writeup.md -o docs/writeup.pdf --pdf-engine=xelatex --resource-path=docs
 """
 
@@ -97,10 +97,10 @@ def envelope_chart(rec: dict) -> bytes:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--asof", type=date.fromisoformat, default=date(2026, 10, 23))
-    p.add_argument("--data", type=Path, default=Path("data"))
+    p.add_argument("--results", type=Path, default=Path("results"), help="the results directory")
     p.add_argument("--out", type=Path, default=Path("docs/images"))
     a = p.parse_args()
-    recs = {c: json.loads(light_path(a.data, c, a.asof).read_text()) for c in PROFILES}
+    recs = {c: json.loads(light_path(a.results, c, a.asof).read_text()) for c in PROFILES}
     out = {"zbz6-envelope": envelope_chart(recs["ZBZ6"]), "zbz6-krd-change": krd_change_chart(recs["ZBZ6"])}
     out |= {f"{c.lower()}-dv01-profile": profile_chart(recs[c]) for c in PROFILES}
     for name, png in out.items():

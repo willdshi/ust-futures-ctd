@@ -99,25 +99,23 @@ def test_history_without_contracts_runs_each_days_window(tmp_path, capsys):
     assert "ZTZ6" not in out and "ZFZ6" not in out
 
 
-def test_results_root_and_output_dir_follow_the_environment(tmp_path, monkeypatch):
+def test_results_dir_and_output_dir_follow_the_environment(tmp_path, monkeypatch):
     from ctd import cli
 
-    for name in ("CTD_DATA_ROOT", "CTD_RESULTS_ROOT", "CTD_OUTPUT_DIR"):
+    for name in ("CTD_RESULTS_DIR", "CTD_OUTPUT_DIR"):
         monkeypatch.delenv(name, raising=False)
-    assert cli.results_root() == cli.data_root()  # dev: results sit in the store
-    assert cli.output_dir().name == "output"
-    monkeypatch.setenv("CTD_DATA_ROOT", str(tmp_path / "data"))
-    monkeypatch.setenv("CTD_RESULTS_ROOT", str(tmp_path / "prod"))
+    assert cli.results_dir().name == "results" and cli.output_dir().name == "output"  # <repo>/results, <repo>/output
+    assert cli.results_dir().parent == cli.output_dir().parent  # the checkout's root, not the shared data store
+    monkeypatch.setenv("CTD_RESULTS_DIR", str(tmp_path / "res"))
     monkeypatch.setenv("CTD_OUTPUT_DIR", str(tmp_path / "pages"))
-    assert cli.data_root() == tmp_path / "data"
-    assert cli.results_root() == tmp_path / "prod"
+    assert cli.results_dir() == tmp_path / "res"
     assert cli.output_dir() == tmp_path / "pages"
 
 
-def test_report_reads_results_from_the_results_root_not_the_data_root(tmp_path, capsys):
-    data, prod = tmp_path / "data", tmp_path / "prod"
-    argv = ["--data-root", str(data), "--results-root", str(prod), "report", "--asof", "2026-10-21",
+def test_report_reads_results_from_the_results_dir_not_the_data_root(tmp_path, capsys):
+    data, res = tmp_path / "data", tmp_path / "res"
+    argv = ["--data-root", str(data), "--results-dir", str(res), "report", "--asof", "2026-10-21",
             "--contract", "ZBZ6", "--out", str(tmp_path / "out")]
     assert main(argv) == 1
     err = capsys.readouterr().err
-    assert str(prod / "results" / "light" / "ZBZ6") in err and str(data) not in err
+    assert str(res / "light" / "ZBZ6") in err and str(data) not in err

@@ -423,9 +423,9 @@ def write_pngs(out_dir: Path, rec: dict, rows: list[series.Row]) -> list[Path]:
     return paths
 
 
-def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = None) -> list[Path]:
+def write(results_dir: Path, out_dir: Path, asof: date, contracts: list[str] | None = None) -> list[Path]:
     """Write the summary ``out_dir/<asof>.html``, each contract's ``out_dir/<asof>/<contract>.html``
-    and its charts as PNGs under ``out_dir/<asof>/png/``, from the results saved under ``root``, then
+    and its charts as PNGs under ``out_dir/<asof>/png/``, from the results saved under ``results_dir``, then
     ``out_dir/archive.html`` listing every summary page in ``out_dir``; the pages first, the summary's
     path leading. ``contracts`` default to those the run window gives for ``asof`` (design 7), and a
     missing result for one of them is an error."""
@@ -436,7 +436,7 @@ def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = N
     contracts = contracts or refdata.contracts_on(asof)
     recs = []
     for c in contracts:
-        path = results.light_path(root, c, asof)
+        path = results.light_path(results_dir, c, asof)
         if not path.exists():
             raise FileNotFoundError(f"no saved result for {c} on {asof} ({path})")
         recs.append(json.loads(path.read_text(encoding="utf-8")))
@@ -444,7 +444,7 @@ def write(root: Path, out_dir: Path, asof: date, contracts: list[str] | None = N
     out.parent.mkdir(parents=True, exist_ok=True)
     history = {}
     for c in contracts:
-        past = [r for r in results.read_light(root, c) if date.fromisoformat(r["asof"]) <= asof]
+        past = [r for r in results.read_light(results_dir, c) if date.fromisoformat(r["asof"]) <= asof]
         check_schema(past)
         history[c] = series.series(past)
     out.write_text(render(asof, recs, history), encoding="utf-8")

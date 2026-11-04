@@ -196,7 +196,7 @@ CLAUDE.md
   | Derived tables (`data/derived/`, Parquet) | the standard records across all dates, one table per kind of data | no: one schema whatever the source |
 
 - **Runs read the derived tables** by default (`--inputs derived`); `--inputs raw` reads the date's own files and is kept as a cross-check.
-- **Results** (`data/results/`, JSON) are the model's output, one file per model, contract and date. Like derived tables they are rebuilt from the raw store, never edited by hand, and a re-run overwrites them. Each records the raw files behind every input (with sha256, and the derived table it came through) and the code version (`git describe --dirty`).
+- **Results** (`results/` beside `data/`, JSON) are the model's output, one file per model, contract and date. Like derived tables they are rebuilt from the raw store, never edited by hand, and a re-run overwrites them. Each records the raw files behind every input (with sha256, and the derived table it came through) and the code version (`git describe --dirty`).
   - **Why JSON:** one small file per run, readable by eye; a table can be built from them if a series needs one.
 - **Derived tables** are a cache of the raw store, built by `ctd derive`. Table-by-table contents are in data.md; the rules are:
   - **Every row has a `source` column**, and a precedence rule per table says which source wins on a date where several exist. The winner's gaps are never filled from another source. Each build compares the sources where they overlap (`overlap` in `_build.json`), so overlap days are an automatic cross-check, and changing a source is a rule change and a rebuild, not a model change.

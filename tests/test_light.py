@@ -111,7 +111,7 @@ def test_results_round_trip_and_overwrite(tmp_path):
     files = [{"source": "cme_fut", "unit": "ZB", "name": "ZB.json", "sha256": "ab"}]
     rec = results.light_record(r, files, "45683f7")
     path = results.write_light(tmp_path, rec)
-    assert path == tmp_path / "results" / "light" / "ZBZ6" / "2026-10-21.json"
+    assert path == tmp_path / "light" / "ZBZ6" / "2026-10-21.json"
     [back] = results.read_light(tmp_path, "ZBZ6")
     assert back["inputs"] == files and back["code"] == "45683f7" and back["ctd"] == r.probabilities.ctd
     assert len(back["crossovers"]) == len(r.crossovers) and len(back["basket"]) == len(r.basket)
