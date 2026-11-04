@@ -29,6 +29,15 @@ def data_root() -> Path:
     return repo / "data" if (repo / "pyproject.toml").exists() else Path.cwd() / "data"
 
 
+def results_root(data: Path | None = None) -> Path:
+    """Where saved model results live (``<root>/results/light/...``): $CTD_RESULTS_ROOT, else the data root
+    (``data``, or the default one). The production checkout sets the variable so its results stay apart from
+    the development checkout's."""
+    if env := os.environ.get("CTD_RESULTS_ROOT"):
+        return Path(env)
+    return data or data_root()
+
+
 def downloads_dir() -> Path:
     return Path(os.environ.get("CTD_DOWNLOADS", Path.home() / "Downloads"))
 
@@ -323,7 +332,7 @@ def cmd_run(args) -> int:
             print()
         print(format_run(result, all_bonds=args.all_bonds))
         if not args.no_save:
-            path = results.write_light(args.data_root, results.light_record(result, files, code_version()))
+            path = results.write_light(args.results_root, results.light_record(result, files, code_version()))
             print(f"\nsaved {path}")
     return 1 if failed else 0
 
@@ -378,7 +387,7 @@ def cmd_history(args) -> int:
                 print(f"{d}  {contract}  FAILED: {e}")
                 continue
             if not args.no_save:
-                results.write_light(args.data_root, results.light_record(r, files, code))
+                results.write_light(args.results_root, results.light_record(r, files, code))
             print(format_line(r))
             ran += 1
             kinds.update(warning_kind(w) for w in r.warnings)
@@ -394,6 +403,9 @@ def cmd_history(args) -> int:
 
 
 def output_dir() -> Path:
+    """Where ``ctd report`` writes: $CTD_OUTPUT_DIR, else ``<repo>/output``."""
+    if env := os.environ.get("CTD_OUTPUT_DIR"):
+        return Path(env)
     return Path(__file__).resolve().parents[2] / "output"
 
 
@@ -402,7 +414,7 @@ def cmd_report(args) -> int:
 
     asof = args.asof or default_asof(datetime.now(), args.cutoff_hour)
     try:
-        paths = page.write(args.data_root, args.out, asof, args.contract)
+        paths = page.write(args.results_root, args.out, asof, args.contract)
     except (FileNotFoundError, ValueError) as e:
         print(f"ctd report {asof}: {e}", file=sys.stderr)
         return 1
@@ -482,6 +494,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ctd", description=__doc__.splitlines()[0])
     p.add_argument("--data-root", default=data_root(), type=Path,
                    help="raw store root (default: $CTD_DATA_ROOT or <repo>/data)")
+    p.add_argument("--results-root", type=Path,
+                   help="root of the saved model results, <root>/results/light/... "
+                        "(default: $CTD_RESULTS_ROOT, else --data-root)")
     sub = p.add_subparsers(dest="command", required=True)
 
     def asof_args(sp):
@@ -522,7 +537,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--contract", nargs="+", action="extend",
                    help="e.g. ZBZ6 UBZ6 (default: the date's contracts of the run window, design 7)")
     asof_args(r)
-    r.add_argument("--no-save", action="store_true", help="print only; don't write data/results/light/...")
+    r.add_argument("--no-save", action="store_true", help="print only; don't write results/light/...")
     r.add_argument("--all-bonds", action="store_true", help="list every basket bond, not just the contenders")
     r.add_argument("--inputs", choices=["derived", "raw"], default="derived",
                    help="where futures, SR1, options, par curve and SOFR come from: the derived tables (default) "
@@ -534,7 +549,8 @@ def build_parser() -> argparse.ArgumentParser:
     asof_args(o)
     o.add_argument("--contract", nargs="+", action="extend",
                    help="e.g. ZBZ6 UBZ6: only these contracts (default: the date's contracts of the run window, design 7)")
-    o.add_argument("--out", type=Path, default=output_dir(), help="output directory (default: <repo>/output)")
+    o.add_argument("--out", type=Path, default=output_dir(),
+                   help="output directory (default: $CTD_OUTPUT_DIR or <repo>/output)")
     o.set_defaults(func=cmd_report)
     d = sub.add_parser("derive", help="bring the derived Parquet tables up to date with the raw store")
     d.add_argument("--table", action="append", choices=["options", "futures", "bond_prices", "par_curve", "rates"],
@@ -567,6 +583,7 @@ def utf8_output() -> None:
 def main(argv: list[str] | None = None) -> int:
     utf8_output()
     args = build_parser().parse_args(argv)
+    args.results_root = args.results_root or results_root(args.data_root)
     return args.func(args)
 
 

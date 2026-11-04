@@ -71,8 +71,8 @@ What's built and what's next. One line per item, ticked in the commit that finis
 
 - [x] **1f.1** Run-window rule in code: `contracts_on(asof, products, cal)` in `reference/`, expiries from the rule, modelled products marked in `cme_products.toml`; `ctd run`, `history` and `report` default to it (design §7)
 - [ ] **1f.2** Fill the December series from 2026-08-14 to 08-31: the saved series starts 2026-09-01, run under the earlier start rule
-- [ ] **1f.3** `scripts/morning_run.py [--asof D]`: the day's contracts, `ctd history`, then `ctd report`; alert and non-zero exit on any failure
-- [ ] **1f.4** Chain it to the morning derive: a fourth step in `scripts/morning.py`, run only when the derive step exits 0, logging to `data/morning.log`
+- [x] **1f.3** `scripts/morning_run.py [--asof D]`: the day's contracts, `ctd run`, then `ctd report`; alert and non-zero exit on any failure
+- [x] **1f.4** Chain it to the morning derive: steps in `scripts/morning.py`, each run only when the one before exits 0, logging to `data/morning.log`
 - [x] **1f.8** Delivery and option expiry dates computed from the rules, with an exceptions file; `ctd derive` checks the expiry rule against CME's expiries and the delivery rule against each expired contract's last futures settlement (design §2)
 - [ ] **1f.5** Holiday list ahead of each roll: a warning when `holidays.csv` doesn't reach a year ahead, and the coming year's rows verified against CME's calendar (design §2; data.md §2.5)
 - [ ] **1f.6** Robustness: `--catch-up` over 10 business days, tasks run from a `main` worktree (data.md §4)
@@ -80,7 +80,8 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **1f.10** Morning check `ctd-morning-check` (15 minutes after logon or unlock, and 10:30): starts a run that didn't happen, with an alert; reruns a failed one once; alerts on a stuck one (data.md §4)
 - [ ] **1f.11** Log archive: once `data/morning.log` gets long, move each month's entries to its own file in a log archive folder, for easier search (data.md §4)
 - [ ] **1f.12** Pre-publish sanity check, before publishing is automated or soon after: hold the day's publish and send an alert instead if the model run printed warnings (e.g. SOFR fell back to the previous day) or a DV01 moved by more than a set threshold from the previous day. A held day is released by hand. Thresholds to be chosen
-- [ ] **1f.7** Later, opt-in: publishing to GitHub Pages
+- [x] **1f.7** `scripts/morning_publish.py`: commit and push the pages to `gh-pages` from its own worktree, as the last morning step; production results and pages kept apart from development's (data.md §4)
+- [ ] **1f.13** Test the automation end to end: a real scheduled run with the screen locked, and the first roll week (2026-11-13 to 11-19)
 
 ## R: Report
 

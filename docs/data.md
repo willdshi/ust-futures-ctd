@@ -70,7 +70,7 @@ data/
   morning_check.log, morning_check.json         the morning check's output and what it has done today (§4)
   cme_bookmarklet.html                          page to install the bookmarklet (`ctd bookmarklet`)
   derived/                                      Parquet tables built from raw/ by `ctd derive` (§6); a cache
-  results/                                      model output, e.g. results/light/ZBZ6/2026-10-21.json
+  results/                                      model output, e.g. results/light/ZBZ6/2026-10-21.json (production's are under `$CTD_RESULTS_ROOT`, §4)
 ```
 
 - **`<asof>`** is the business day the data describes, as `YYYY-MM-DD`. For history-type sources (§3) it's the day the file was pulled.
@@ -164,14 +164,16 @@ A source's recovery window is how many business days after the as-of date it can
 
 ## 4. Operations
 
-One scheduled task, `ctd-morning`, collects the previous business day D and derives it. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed step doesn't stop the later ones, and the task exits 1 if any failed. A second task, `ctd-morning-check`, makes sure it ran (below, When the PC is asleep or off).
+One scheduled task, `ctd-morning`, collects the previous business day D, derives it, runs the model and publishes the report. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed collection step doesn't stop the later ones, but the run starts only if the derive exited 0 and the publish only if the run did (a skipped step is logged and counted as failed, so the check below starts the task again). The task exits 1 if any step failed. A second task, `ctd-morning-check`, makes sure it ran (below, When the PC is asleep or off).
 
 | Task | Command |
 |---|---|
 | 1. Collection | `ctd fetch --catch-up --notify`: every daily source for D, Databento included (queryable from 09:00 Eastern, §5.14). TreasuryDirect's file then has its end-of-day prices (§5.1). `--catch-up` also retries the 4 business days before D. |
 | 2. SOFR | `scripts/morning_sofr.py`: only `nyfed_rates`, under today's as-of date, and only once D's SOFR is published, so a file without it can't make a later fetch skip it. Other sources are left out of that manifest, not recorded as missing. |
 | 3. Derive | `scripts/morning_derive.py`: `ctd derive --notify` if D's data is stored, otherwise an alert; gated on the data, below. |
-| Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry) and for manual files ingest refused. The newest date's gaps aren't alerted: the next morning's run retries them. The derive step alerts when it skips. |
+| 4. Run | `scripts/morning_run.py`: `ctd run --asof D` (every contract of the run window, so the roll needs no change), then `ctd report --asof D --out $CTD_OUTPUT_DIR`, then `D.html` copied to `index.html`. A non-business D (weekend, or a day the bond market was closed) is skipped. `ctd report` fails if any of D's contracts has no saved result, so a partly failed run builds no page. |
+| 5. Publish | `scripts/morning_publish.py`: in the `gh-pages` worktree, `git fetch`, a fast-forward to `origin/gh-pages`, `git add -A`, commit "upload D" and push. Nothing to commit is not an error; an unpushed earlier commit goes out with the next run; never forced. The code checkout must be on `main` and clean, the worktree on `gh-pages`. Prompts are off (`GCM_INTERACTIVE=never`, `GIT_TERMINAL_PROMPT=0`), so an expired credential fails at once with an alert. |
+| Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry) and for manual files ingest refused. The newest date's gaps aren't alerted: the next morning's run retries them. The derive, run and publish steps alert when they fail or skip. |
 | CME files (optional) | Click the bookmarklet on a cmegroup.com tab late on D+1 (§2.4), then `ctd ingest` (or leave it for the next morning's run). |
 | Check | `ctd check [--from D] [--to D]` |
 | One date / one source | `ctd fetch --asof D [--source ID ...]` |
@@ -179,6 +181,15 @@ One scheduled task, `ctd-morning`, collects the previous business day D and deri
 | Rebuild the bookmarklet | `ctd bookmarklet` (after editing `cme_products.toml`) |
 
 Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.cli <command>`.
+
+### Production checkout and environment
+
+- **Code:** the tasks run `main`, checked out permanently in the worktree `..\ctd-prod`; development is on `dev` in `..\ctd`. Deploying is `git -C ..\ctd-prod merge --ff-only dev`; `ctd-prod` is never edited. `morning.py` exits with an alert if `ctd` is imported from another checkout than its own.
+- **Data:** `ctd-prod\data` is a junction to `ctd\data`: one raw store and one set of derived tables, so a paid Databento pull is made once.
+- **Results:** production's saved results are apart from development's, in `ctd-prod\prod\results\light\...` (`CTD_RESULTS_ROOT`), so a dev run, or a different model version, never changes what is published. `ctd run`, `history` and `report` use `--results-root`, else `$CTD_RESULTS_ROOT`, else the data root.
+- **Pages:** `ctd report` writes to `--out`, else `$CTD_OUTPUT_DIR`, else `<repo>\output`. Production sets it to `..\ctd-pages`, the worktree of the `gh-pages` branch, so `archive.html` lists every published date. Only the task touches that worktree.
+- **Environment in one file:** `scripts/prod_env.ps1` sets `PYTHONPATH`, `CTD_RESULTS_ROOT` and `CTD_OUTPUT_DIR` from its own location, for the current process only. The scheduled tasks dot-source it; for a manual production run, `. ..\ctd-prod\scripts\prod_env.ps1` first. It is not set machine-wide, which would leak into development shells.
+- **Why separate results but shared data:** raw files can't all be re-fetched and derived tables are a cache of them, so sharing costs nothing; results are what gets published, and a development experiment must not overwrite them.
 
 ### When the morning derive runs
 

@@ -164,6 +164,7 @@ Why DV01 is primary: it is the number people act on. But duration on its own mix
   - **Why matplotlib:** already a dependency, covers every chart feature (shared-axis panels, a secondary percentile axis, the heatmap with negative shares), and the same result file always draws the same chart (no version stamp in the PNG).
 - **Same colors in both:** the heatmap's stops are shared (`charts.SHARE_STOPS`), placed linearly since plotly maps z linearly.
 - Written by `report/` from saved results only (`ctd report --asof D`); an older results schema is refused with a request to re-run.
+- **Publishing:** the morning task writes each day's pages straight into the `gh-pages` worktree, copies the latest summary to `index.html`, then commits and pushes ("upload D"); the steps are in [data.md](data.md) §4. A day is published only if every contract of the run window ran and the report built; otherwise nothing is published and an alert is raised. Earlier days are never rewritten or force-pushed.
 
 ## Dropped or reframed from the original plan
 

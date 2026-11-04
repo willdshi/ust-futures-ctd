@@ -7,6 +7,9 @@
 #                            and the 4 business days before it still missing
 #                         2. scripts\morning_sofr.py: D's SOFR, published about 08:00
 #                         3. scripts\morning_derive.py: ctd derive --notify if D's data is stored, else an alert
+#                         4. scripts\morning_run.py: ctd run and ctd report for D, into the gh-pages worktree (only
+#                            if the derive succeeded)
+#                         5. scripts\morning_publish.py: commit and push the pages (only if the run succeeded)
 #
 #   ctd-morning-check   15 minutes after logon or unlock, and 10:30 on weekdays: scripts\morning_check.py starts
 #                       ctd-morning if it hasn't run today (with an alert) or, from 10:30, if it failed a step;
@@ -42,8 +45,9 @@ foreach ($old in "ctd-daily-fetch", "ctd-morning-sofr", "ctd-morning-databento",
 }
 
 $utf8 = "`$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; "  # >> writes UTF-16 by default
-# The editable install points at one checkout; PYTHONPATH makes the tasks import ctd from the checkout they run from.
-$pypath = "`$env:PYTHONPATH = '$repo\src'; "
+# The editable install points at one checkout. prod_env.ps1 makes the tasks import ctd from the checkout they run
+# from, and sets where results and reports go (PYTHONPATH, CTD_RESULTS_ROOT, CTD_OUTPUT_DIR).
+$pypath = ". '$repo\scripts\prod_env.ps1'; "
 $run = "$utf8$pypath& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.log'; exit `$LASTEXITCODE"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$run`"" -WorkingDirectory $repo
