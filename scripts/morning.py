@@ -19,11 +19,13 @@ missed start collide, as two ``ctd fetch`` runs did sweeping the Downloads folde
 derive waiting on other tasks has to guess when they're done. A failed collection step doesn't stop
 the later ones (the derive check decides for itself whether D is complete), but the run only starts if the
 derive exited 0, and the publish only if the run did: a partial day is never published. A skipped step is
-logged and counted as failed, so the morning check starts the task again. Exit 1 if any step failed.
+logged and counted as failed, so the morning check starts the task again. Exit 1 if any step failed, with
+one desktop alert listing the failed steps; the run and publish steps raise none of their own.
 
 The PC is held awake until the last step ends: after the task's timer wake Windows would otherwise sleep
 again within minutes, mid-run (data.md §4). Each run records when it started and finished, and which steps
-failed, in ``data/morning_status.json``, which ``scripts/morning_check.py`` reads.
+failed, in ``data/morning_status.json``, which ``scripts/morning_check.py`` reads, and appends one line to
+``data/morning_runs.log``, the history of runs at a glance.
 """
 
 import argparse
@@ -32,7 +34,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -61,6 +63,19 @@ def read_status(path: Path) -> dict | None:
         return None
 
 
+def summary_line(started: datetime, finished: datetime, asof: date | None, failed: list[str], rerun: bool) -> str:
+    """The run's line in ``data/morning_runs.log``: start, D (``-`` when there is nothing to run), outcome,
+    duration, ``(rerun)`` for a second run the same day, and the failed steps."""
+    took = int((finished - started).total_seconds())
+    line = (f"{started:%Y-%m-%dT%H:%M}  D={str(asof) if asof else '-':<10}  {'FAILED' if failed else 'ok':<6}  "
+            f"{took // 60:>2}m{took % 60:02d}s")
+    if rerun:
+        line += "  (rerun)"
+    if failed:
+        line += "  " + ", ".join(failed)
+    return line
+
+
 def _stay_awake(on: bool) -> None:
     """Hold the PC awake (or release it) for this process's lifetime; a no-op off Windows."""
     if sys.platform == "win32":
@@ -80,7 +95,7 @@ def package_mismatch() -> str | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--no-notify", action="store_true", help="no desktop alert for fetch gaps")
+    ap.add_argument("--no-notify", action="store_true", help="no desktop alerts")
     args = ap.parse_args()
     if message := package_mismatch():
         print(message, flush=True)
@@ -89,18 +104,24 @@ def main() -> int:
 
             alert.notify("ctd-morning", message)
         return 1
-    notify_off = ["--no-notify"] if args.no_notify else []
+    from ctd.data import alert
+    from morning_run import choose_asof
+
     py = [sys.executable, "-u"]  # unbuffered, so the log shows a step while it runs
     steps = [
         ("fetch", py + ["-m", "ctd.cli", "fetch", "--catch-up"] + ([] if args.no_notify else ["--notify"])),
         ("sofr", py + [str(SCRIPTS / "morning_sofr.py")]),
         ("derive", py + [str(SCRIPTS / "morning_derive.py")]),
-        ("run", py + [str(SCRIPTS / "morning_run.py")] + notify_off),
-        ("publish", py + [str(SCRIPTS / "morning_publish.py")] + notify_off),
+        ("run", py + [str(SCRIPTS / "morning_run.py"), "--no-notify"]),  # the alert below covers these two
+        ("publish", py + [str(SCRIPTS / "morning_publish.py"), "--no-notify"]),
     ]
     gated = {"run": "derive", "publish": "run"}  # runs only if this earlier step succeeded
     failed, path = [], status_path()
-    status = {"started": f"{datetime.now():%Y-%m-%dT%H:%M:%S}", "finished": None, "failed": []}
+    started = datetime.now()
+    previous = read_status(path)
+    rerun = bool(previous) and datetime.fromisoformat(previous["started"]).date() == started.date()
+    asof = choose_asof(started.date())[0]
+    status = {"started": f"{started:%Y-%m-%dT%H:%M:%S}", "finished": None, "failed": []}
     write_status(path, status)
     _stay_awake(True)
     try:
@@ -115,9 +136,15 @@ def main() -> int:
                 failed.append(f"{name} (exit {code})")
     finally:
         _stay_awake(False)
-    print(f"==== {datetime.now():%Y-%m-%dT%H:%M:%S} done" + (f"; failed: {', '.join(failed)}" if failed else ""),
+    finished = datetime.now()
+    print(f"==== {finished:%Y-%m-%dT%H:%M:%S} done" + (f"; failed: {', '.join(failed)}" if failed else ""),
           flush=True)
-    write_status(path, {**status, "finished": f"{datetime.now():%Y-%m-%dT%H:%M:%S}", "failed": failed})
+    write_status(path, {**status, "finished": f"{finished:%Y-%m-%dT%H:%M:%S}", "failed": failed})
+    with open(path.with_name("morning_runs.log"), "a", encoding="utf-8") as f:
+        f.write(summary_line(started, finished, asof, failed, rerun) + "\n")
+    if failed and not args.no_notify:
+        alert.notify(f"ctd-morning failed for {asof or started.date()}",
+                     f"{', '.join(failed)}\nSee data\\morning.log")
     return 1 if failed else 0
 
 

@@ -82,6 +82,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [ ] **1f.12** Pre-publish sanity check, before publishing is automated or soon after: hold the day's publish and send an alert instead if the model run printed warnings (e.g. SOFR fell back to the previous day) or a DV01 moved by more than a set threshold from the previous day. A held day is released by hand. Thresholds to be chosen
 - [x] **1f.7** `scripts/morning_publish.py`: commit and push the pages to `gh-pages` from its own worktree, as the last morning step; production results and pages kept apart from development's (data.md §4)
 - [ ] **1f.13** Test the automation end to end: a real scheduled run with the screen locked, and the first roll week (2026-11-13 to 11-19)
+- [x] **1f.14** One line per morning run in `data/morning_runs.log`, and one alert from `morning.py` naming the failed steps, so a crash in any step is alerted (data.md §4)
 
 ## R: Report
 

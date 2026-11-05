@@ -67,6 +67,7 @@ data/
   gaps.log                                      append-only log of every gap reported
   morning.log                                   output of the scheduled morning task (§4)
   morning_status.json                           the morning task's last run: started, finished, failed steps (§4)
+  morning_runs.log                              one line per morning run: start, D, ok or FAILED, duration, failed steps (§4)
   morning_check.log, morning_check.json         the morning check's output and what it has done today (§4)
   cme_bookmarklet.html                          page to install the bookmarklet (`ctd bookmarklet`)
   derived/                                      Parquet tables built from raw/ by `ctd derive` (§6); a cache
@@ -164,7 +165,7 @@ A source's recovery window is how many business days after the as-of date it can
 
 ## 4. Operations
 
-One scheduled task, `ctd-morning`, collects the previous business day D, derives it, runs the model and publishes the report. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed collection step doesn't stop the later ones, but the run starts only if the derive exited 0 and the publish only if the run did (a skipped step is logged and counted as failed, so the check below starts the task again). The task exits 1 if any step failed. A second task, `ctd-morning-check`, makes sure it ran (below, When the PC is asleep or off).
+One scheduled task, `ctd-morning`, collects the previous business day D, derives it, runs the model and publishes the report. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed collection step doesn't stop the later ones, but the run starts only if the derive exited 0 and the publish only if the run did (a skipped step is logged and counted as failed, so the check below starts the task again). The task exits 1 if any step failed. Each run appends one line to `data/morning_runs.log`, for example `2026-11-05T09:15  D=2026-11-04  ok       6m46s`, or `FAILED` with `(rerun)` for a second run that day and the failed steps. A second task, `ctd-morning-check`, makes sure it ran (below, When the PC is asleep or off).
 
 | Task | Command |
 |---|---|
@@ -173,7 +174,7 @@ One scheduled task, `ctd-morning`, collects the previous business day D, derives
 | 3. Derive | `scripts/morning_derive.py`: `ctd derive --notify` if D's data is stored, otherwise an alert; gated on the data, below. |
 | 4. Run | `scripts/morning_run.py`: `ctd run --asof D` (every contract of the run window, so the roll needs no change), then `ctd report --asof D --out $CTD_OUTPUT_DIR`, then `D.html` copied to `index.html`. A non-business D (weekend, or a day the bond market was closed) is skipped. `ctd report` fails if any of D's contracts has no saved result, so a partly failed run builds no page. |
 | 5. Publish | `scripts/morning_publish.py`: in the `gh-pages` worktree, `git fetch`, a fast-forward to `origin/gh-pages`, `git add -A`, commit "upload D" and push. Nothing to commit is not an error; an unpushed earlier commit goes out with the next run; never forced. The code checkout must be on `main` and clean, the worktree on `gh-pages`. Prompts are off (`GCM_INTERACTIVE=never`, `GIT_TERMINAL_PROMPT=0`), so an expired credential fails at once with an alert. |
-| Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry) and for manual files ingest refused. The newest date's gaps aren't alerted: the next morning's run retries them. The derive, run and publish steps alert when they fail or skip. |
+| Alerts | `--notify` shows a Windows notification for gaps on dates before the newest one in the run (they survived a retry) and for manual files ingest refused. The newest date's gaps aren't alerted: the next morning's run retries them. The derive step alerts when D's data is incomplete (naming what's missing) and `ctd derive --notify` when a raw file fails to read. Whenever any step fails or is skipped, `morning.py` raises one alert at the end listing the failed steps; the run and publish steps raise none of their own (`--no-notify`), since their details are in `data/morning.log`. **Why one alert at the end:** a step that crashes raises nothing itself; the end of the run sees every failure, and gives one alert instead of one per step. |
 | CME files (optional) | Click the bookmarklet on a cmegroup.com tab late on D+1 (§2.4), then `ctd ingest` (or leave it for the next morning's run). |
 | Check | `ctd check [--from D] [--to D]` |
 | One date / one source | `ctd fetch --asof D [--source ID ...]` |
@@ -211,7 +212,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
 - **Why wake the PC:** on 2026-10-29 the PC was hibernating (sleep 01:09, hibernate 04:09) through the 09:15 start. The missed run started at 10:06, 16 minutes after the PC woke at 09:50, and finished at 10:24.
 - **The morning check** (`ctd-morning-check`, `scripts/morning_check.py`) runs 15 minutes after logon or unlock (resuming from sleep is an unlock, not a logon) and at 10:30 on weekdays. It reads `data/morning_status.json`, which `morning.py` writes when it starts and finishes. On a `cme` business day from 09:45:
   - no run started today: it starts `ctd-morning` and raises an alert saying so;
-  - today's run failed a step: from 10:30, it starts `ctd-morning` again, without an alert (the run's steps alert for what's still missing);
+  - today's run failed a step: from 10:30, it starts `ctd-morning` again, without an alert (the rerun alerts if it fails again);
   - today's run has been going for more than 2 hours (the task's time limit) without finishing: an alert.
 
   It starts the task at most once a day and raises each alert once (`data/morning_check.json`), and is otherwise silent. It starts the task rather than running `morning.py` itself, so there's never more than one run (the task ignores a second start). The 15-minute delay lets a catch-up run that the wake set off start first.
