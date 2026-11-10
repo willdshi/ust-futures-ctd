@@ -473,6 +473,7 @@ The third digit is the same code for every product (2 = ¼ and 7 = ¾ for ZF too
   - The fetch requests nothing until `metadata.get_dataset_range` passes the window's end and `get_dataset_condition` lists each of the window's dates (Friday to Sunday for a Friday) as `available` or `degraded`; a `degraded` date is stored with a note on the unit's manifest entry (`notes`).
   - A pull with no final settlement or open interest on any futures contract, or no option finals, isn't stored.
   - Each such case is a gap retried by the next run (§4).
+  - A call that fails in transit (a 5xx from Databento, a dropped connection) is retried up to three times, after 30, 60 and 120 seconds, before the unit is a gap. Other errors (a bad key, a bad request) aren't retried. **Why:** on 2026-11-09 two calls (ZF's symbology lookup, OUB's statistics) hit `504 The remote gateway timed out` after about a minute, which failed the source, so the derive didn't run and nothing was published that morning.
 - **Files** under `raw/<D>/databento_daily/<unit>/`:
   - `<unit>_statistics_<D>.dbn.zst`: the DBN stream as received;
   - `<unit>_symbology_raw_symbol_<D>.json`: the free id-to-symbol lookup for D, the client's parsed response;

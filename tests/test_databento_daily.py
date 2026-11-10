@@ -311,3 +311,39 @@ def test_storing_the_next_day_rereads_the_date(store, daily):
     assert build(dstore, store, futures.TABLE, log=lambda _: None).read[dd.SOURCE] == 2  # the 26th again, and the 27th
     t = dstore.read("futures")
     assert list(zip(t["asof"], t["settle"], t["open_interest"])) == [(MON, 106.0, 1100), (TUE, 106.5, 1200)]
+
+
+def test_a_call_that_fails_in_transit_is_retried(monkeypatch):
+    from databento.common.error import BentoClientError, BentoServerError
+
+    waits = []
+    monkeypatch.setattr(dd.time, "sleep", waits.append)
+
+    def server_error():
+        return BentoServerError(http_status=504, http_body="", message="gateway timed out", headers={})
+
+    failures = [server_error(), server_error()]
+
+    def flaky():
+        if failures:
+            raise failures.pop()
+        return "ok"
+
+    times = []
+    assert dd._timed(times, "statistics", flaky) == "ok" and waits == [30, 60] and len(times) == 1
+
+    def always():
+        raise server_error()
+
+    waits.clear()
+    with pytest.raises(BentoServerError):
+        dd._timed([], "statistics", always)
+    assert waits == [30, 60, 120]  # a failure that persists is raised after the last retry
+
+    def bad_key():
+        raise BentoClientError(http_status=401, http_body="", message="bad key", headers={})
+
+    waits.clear()
+    with pytest.raises(BentoClientError):
+        dd._timed([], "statistics", bad_key)
+    assert waits == []  # a client error is raised at once

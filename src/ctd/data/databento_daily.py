@@ -23,7 +23,9 @@ other units of the run don't ask again. A pull without a final
 settlement and open interest on every futures contract, or with no option finals, isn't stored.
 Each case raises ``NoData``: a gap the next run retries. Files are the DBN streams exactly as
 received (zstd) and the lookup as the client's parsed response; each file's meta records the
-request and its quoted cost. Each unit prints one line with the time each call took.
+request and its quoted cost. A call that fails in transit (a 5xx from Databento, a dropped connection)
+is retried up to three times, after 30, 60 and 120 seconds. Each unit prints one line with the time
+each call took.
 """
 
 import json
@@ -111,10 +113,31 @@ def _ready(client, asof: date) -> str | None:
     return _READY[asof]
 
 
+RETRY_WAITS = (30, 60, 120)  # seconds before each retry of a call that failed in transit
+
+
+def _transient(exc: Exception) -> bool:
+    """A failure worth another attempt: a 5xx from Databento (a gateway timeout), or a dropped connection.
+    Not a bad key, a bad request or ``NoData``, which another attempt can't change."""
+    import requests
+    from databento.common.error import BentoServerError
+
+    return isinstance(exc, BentoServerError | requests.ConnectionError | requests.Timeout)
+
+
 def _timed(times: list[str], label: str, call):
-    """``call()``, appending how long it took to ``times`` (the fetch's log line)."""
+    """``call()``, retried after ``RETRY_WAITS`` on a transient failure, appending how long it took in all to
+    ``times`` (the fetch's log line)."""
     t0 = time.perf_counter()
     try:
+        for wait in RETRY_WAITS:
+            try:
+                return call()
+            except Exception as exc:
+                if not _transient(exc):
+                    raise
+                print(f"  {label}: {type(exc).__name__}, retrying in {wait}s", flush=True)
+                time.sleep(wait)
         return call()
     finally:
         times.append(f"{label} {time.perf_counter() - t0:.1f}s")
