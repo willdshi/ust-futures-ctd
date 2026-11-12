@@ -65,7 +65,8 @@ data/
   inbox/<asof>/<source>/...                     manual-drop folder (2.4)
   inbox/_ingested/...                           originals after ingest
   gaps.log                                      append-only log of every gap reported
-  morning.log                                   output of the scheduled morning task (§4)
+  morning.log                                   output of the scheduled morning task, current month (§4)
+  log_archive/morning-<YYYY-MM>.log             earlier months of morning.log (§4)
   morning_status.json                           the morning task's last run: started, finished, failed steps (§4)
   morning_runs.log                              one line per morning run: start, D, ok or FAILED, duration, failed steps (§4)
   morning_check.log, morning_check.json         the morning check's output and what it has done today (§4)
@@ -165,7 +166,7 @@ A source's recovery window is how many business days after the as-of date it can
 
 ## 4. Operations
 
-One scheduled task, `ctd-morning`, collects the previous business day D, derives it, runs the model and publishes the report. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Its steps run one after another, each its own process; a failed collection step doesn't stop the later ones, but the run starts only if the derive exited 0 and the publish only if the run did (a skipped step is logged and counted as failed, so the check below starts the task again). The task exits 1 if any step failed. Each run appends one line to `data/morning_runs.log`, for example `2026-11-05T09:15  D=2026-11-04  ok       6m46s`, or `FAILED` with `(rerun)` for a second run that day and the failed steps. A second task, `ctd-morning-check`, makes sure it ran (below, When the PC is asleep or off).
+One scheduled task, `ctd-morning`, collects the previous business day D, derives it, runs the model and publishes the report. It is registered by `scripts/register_morning_tasks.ps1` and runs `scripts/morning.py` at 09:15 Eastern on weekdays, logging to `data/morning.log`. Just before `morning.py`, `scripts/rotate_logs.py` moves the log's earlier months to `data/log_archive/morning-<YYYY-MM>.log` (a run that crosses a month end stays whole in the earlier month); it runs outside the log redirect because PowerShell holds the file open during a run, and its failure doesn't stop the run. Its steps run one after another, each its own process; a failed collection step doesn't stop the later ones, but the run starts only if the derive exited 0 and the publish only if the run did (a skipped step is logged and counted as failed, so the check below starts the task again). The task exits 1 if any step failed. Each run appends one line to `data/morning_runs.log`, for example `2026-11-05T09:15  D=2026-11-04  ok       6m46s`, or `FAILED` with `(rerun)` for a second run that day and the failed steps. A second task, `ctd-morning-check`, makes sure it ran (below, When the PC is asleep or off).
 
 | Task | Command |
 |---|---|

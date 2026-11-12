@@ -48,7 +48,9 @@ $utf8 = "`$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; "  # >> write
 # The editable install points at one checkout. prod_env.ps1 makes the tasks import ctd from the checkout they run
 # from, and sets where results and reports go (PYTHONPATH, CTD_OUTPUT_DIR).
 $pypath = ". '$repo\scripts\prod_env.ps1'; "
-$run = "$utf8$pypath& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.log'; exit `$LASTEXITCODE"
+# rotate_logs.py archives earlier months of the log first, while nothing holds it open; its failure is ignored.
+$rotate = "& '$py' '$repo\scripts\rotate_logs.py' *>> '$repo\data\morning_check.log'; "
+$run = "$utf8$pypath$rotate& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.log'; exit `$LASTEXITCODE"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$run`"" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $At
