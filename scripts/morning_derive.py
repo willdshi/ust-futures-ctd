@@ -4,19 +4,20 @@ data.md §4, When the morning derive runs).
     python scripts/morning_derive.py [--asof 2026-10-26] [--timeout-minutes 0]
 
 Run as the last step of ``scripts/morning.py`` (scheduled task ``ctd-morning``), after the collection steps.
-The as-of date D is the previous ``cme`` business day. It checks the raw store for what the morning brings
+The as-of date D is the previous day that was a business day on both the ``cme`` and ``sifma`` calendars
+(``morning_run.choose_asof``). It checks the raw store for what the morning brings
 for D:
 
 - ``databento_daily`` ``ok`` in D's manifest (the fetch step);
 - ``td_prices`` ``ok`` and not provisional, and ``par_curve`` ``ok`` in D's manifest (the fetch step);
 - D's SOFR fixing stored (the SOFR step; only when D and today are both ``sifma`` business days, since it
-  is published the next bond-market morning).
+  is published the next bond-market morning; D is always one now, unless given by ``--asof``).
 
 It derives if all are there. It checks the data, not the steps' exit codes, which can't be trusted
 (2026-10-27: a task reported 0 without running its command). Otherwise it doesn't derive: it prints what's
 missing, raises a desktop alert and exits 1. Run it, or ``ctd derive``, by hand once the data is in;
 ``--timeout-minutes`` makes it look again every minute until then. Nothing happens on a day that isn't a
-``cme`` business day.
+business day on both calendars.
 """
 
 import argparse
@@ -24,11 +25,15 @@ import subprocess
 import sys
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
-from ctd import cli
-from ctd.data import alert, nyfed, refdata
-from ctd.data import manifest as mf
-from ctd.data.store import RawStore
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from morning_run import choose_asof  # noqa: E402
+
+from ctd import cli  # noqa: E402
+from ctd.data import alert, nyfed, refdata  # noqa: E402
+from ctd.data import manifest as mf  # noqa: E402
+from ctd.data.store import RawStore  # noqa: E402
 
 
 def missing(store: RawStore, asof: date, today: date) -> list[str]:
@@ -60,11 +65,11 @@ def main() -> int:
     ap.add_argument("--asof", type=date.fromisoformat)
     ap.add_argument("--timeout-minutes", type=int, default=0)
     args = ap.parse_args()
-    today, cme = date.today(), refdata.calendar("cme")
-    if args.asof is None and not cme.is_business_day(today):
-        print(f"{datetime.now():%Y-%m-%dT%H:%M:%S} {today} isn't a cme business day: nothing new to derive")
+    today = date.today()
+    asof, why = choose_asof(today, args.asof)
+    if asof is None:
+        print(f"{datetime.now():%Y-%m-%dT%H:%M:%S} {why}: nothing new to derive")
         return 0
-    asof = args.asof or cme.prev_business_day(today)
     store = RawStore(cli.data_root())
     deadline = datetime.now() + timedelta(minutes=args.timeout_minutes)
     print(f"{datetime.now():%Y-%m-%dT%H:%M:%S} morning derive for {asof}: checking its data", flush=True)

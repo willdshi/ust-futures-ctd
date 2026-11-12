@@ -3,8 +3,11 @@
     python scripts/morning_run.py [--asof 2026-10-28] [--no-notify]
 
 Run as a step of ``scripts/morning.py`` (scheduled task ``ctd-morning``), after ``morning_derive.py``. The
-as-of date D is the previous ``cme`` business day, as for the derive. Nothing happens, with exit 0, when
-today isn't a ``cme`` business day or D isn't a ``sifma`` one (no TreasuryDirect prices). Otherwise:
+as-of date D is the previous day that was a business day on both the ``cme`` and ``sifma`` calendars
+(``choose_asof``, shared with the derive and publish steps): the day after a bond-market holiday such as
+Veterans Day is D's day, not the holiday. Nothing happens, with exit 0, when today isn't a business day on
+both (TreasuryDirect's end-of-day prices for D come the next bond-market morning), or when ``--asof`` names a
+``sifma`` holiday (no prices). Otherwise:
 
 1. ``ctd run --asof D``: every contract of the run window (design 7), so the 2026-11-13 roll needs no
    change here, saving each result in the checkout's ``results/``;
@@ -21,7 +24,7 @@ import argparse
 import shutil
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from ctd import cli
@@ -34,7 +37,11 @@ def choose_asof(today: date, asof: date | None = None) -> tuple[date | None, str
     if asof is None:
         if not cme.is_business_day(today):
             return None, f"{today} isn't a cme business day"
-        asof = cme.prev_business_day(today)
+        if not sifma.is_business_day(today):
+            return None, f"{today} isn't a bond-market business day (no end-of-day prices for D yet)"
+        asof = today - timedelta(days=1)
+        while not (cme.is_business_day(asof) and sifma.is_business_day(asof)):
+            asof -= timedelta(days=1)
     if not sifma.is_business_day(asof):
         return None, f"{asof} isn't a bond-market business day (no TreasuryDirect prices)"
     return asof, ""

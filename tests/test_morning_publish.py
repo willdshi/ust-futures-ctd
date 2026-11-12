@@ -21,10 +21,20 @@ def test_asof_is_the_previous_business_day():
     assert choose_asof(date(2026, 11, 3), date(2026, 10, 28)) == (date(2026, 10, 28), "")  # --asof wins
 
 
-def test_nothing_to_run_on_a_weekend_or_when_the_bond_market_was_closed():
+def test_asof_skips_a_day_the_bond_market_was_closed():
+    # Veterans Day 2026-11-11 (Wed): CME open, no TreasuryDirect prices. 11-12's D is Tuesday 11-10, not 11-11.
+    assert choose_asof(date(2026, 11, 12)) == (date(2026, 11, 10), "")
+    assert choose_asof(date(2026, 11, 13)) == (date(2026, 11, 12), "")
+    # Columbus Day 2026-10-12 (Mon): Tuesday's D is the Friday before.
+    assert choose_asof(date(2026, 10, 13)) == (date(2026, 10, 9), "")
+
+
+def test_nothing_to_run_on_a_weekend_or_a_bond_market_holiday():
     asof, why = choose_asof(date(2026, 11, 1))  # Sunday
     assert asof is None and "isn't a cme business day" in why
-    asof, why = choose_asof(date(2026, 10, 13))  # Columbus Day was D: CME open, no TreasuryDirect prices
+    asof, why = choose_asof(date(2026, 11, 11))  # Veterans Day: final prices for D can't be out yet
+    assert asof is None and "bond-market" in why
+    asof, why = choose_asof(date(2026, 11, 12), date(2026, 11, 11))  # --asof on a holiday: no prices
     assert asof is None and "bond-market" in why
 
 
