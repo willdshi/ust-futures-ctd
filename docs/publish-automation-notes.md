@@ -8,7 +8,7 @@ It is feasible: most of the pieces already exist, and the roadmap already lists 
 
 1. **Contract roll on 2026-11-13.** Contract selection is built (1f.1): `refdata.contracts_on(asof)`, which `ctd history` and `ctd report` default to. The March contracts' inputs are stored and run (concern 1); what's left is the overlap week's page size.
 2. **Git shouldn't touch the working checkout.** Do the gh-pages commit and push from a separate git worktree that only the task uses, so a 09:15 branch switch can't collide with editing.
-3. **The task runs whatever code is checked out.** Mostly done: `main` lives in its own worktree, `..\ctd-prod`, and development happens on `dev` in `..\ctd`, so the task no longer sees half-edited code. What's left is to register the tasks from `ctd-prod` and run `ctd-morning` once by hand (concern 3).
+3. **The task runs whatever code is checked out.** Mostly done: `main` lives in its own worktree, `..\ctd-prod`, and development happens on `dev` in `..\ctd`, so the task no longer sees half-edited code. THe daily tasks have been registered from `ctd-prod` and run `ctd-morning` once by hand (concern 3).
 4. **Push credentials with nobody at the keyboard.** Git Credential Manager is the credential helper. If its token expires, it opens a sign-in window and the task hangs for up to 2 hours. Set `GCM_INTERACTIVE=never` and `GIT_TERMINAL_PROMPT=0` so the push fails fast and raises an alert.
 5. **Publish only a complete day.** Skip publishing if the derive skipped the date or any contract failed. When there's nothing new to commit, the step should finish cleanly instead of failing.
 

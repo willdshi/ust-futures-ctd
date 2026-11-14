@@ -220,7 +220,7 @@ Run any command as `& "$env:USERPROFILE\miniconda3\envs\ctd\python.exe" -m ctd.c
   It starts the task at most once a day and raises each alert once (`data/morning_check.json`), and is otherwise silent. It starts the task rather than running `morning.py` itself, so there's never more than one run (the task ignores a second start). The 15-minute delay lets a catch-up run that the wake set off start first.
   - **Why:** a run that never starts raises nothing on its own. On 2026-10-29 the missed run was noticed only by reading the log, and Windows Update restarts (2026-09-19, 09-21, 10-19) leave the user logged out, so the task can't run until the next logon.
 - Almost every source can be fetched later for a past date (§2.5), so hibernation delays collection rather than losing it, unless the PC is off for more than the 5-business-day catch-up window. The bookmarklet sources don't depend on the schedule.
-- **Planned** ([roadmap.md](roadmap.md) 1f.6):
+- **Planned** ([roadmap.md](roadmap.md) 1f.15):
   - widen `--catch-up` from 5 to 10 business days (`CATCH_UP_DAYS` in `src/ctd/cli.py`), so a week away fills itself in.
 - **Rejected for now: an always-on machine** (mini PC, NAS, small cloud server). It guarantees runs but means moving and backing up the store.
 - **After a longer absence, by hand:** `ctd fetch --asof <date>` for each missed day, or `ctd backfill`.

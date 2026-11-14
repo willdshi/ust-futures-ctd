@@ -75,7 +75,8 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **1f.4** Chain it to the morning derive: steps in `scripts/morning.py`, each run only when the one before exits 0, logging to `data/morning.log`
 - [x] **1f.8** Delivery and option expiry dates computed from the rules, with an exceptions file; `ctd derive` checks the expiry rule against CME's expiries and the delivery rule against each expired contract's last futures settlement (design §2)
 - [ ] **1f.5** Holiday list ahead of each roll: a warning when `holidays.csv` doesn't reach a year ahead, and the coming year's rows verified against CME's calendar (design §2; data.md §2.5)
-- [ ] **1f.6** Robustness: `--catch-up` over 10 business days, tasks run from a `main` worktree (data.md §4)
+- [x] **1f.6** Robustness: tasks run from a `main` worktree, so half-edited code on `dev` is never run (data.md §4)
+- [ ] **1f.15** Widen `--catch-up` from 5 to 10 business days, so a week away fills itself in (data.md §4)
 - [x] **1f.9** The morning task wakes the PC to run (`-WakeToRun`) and holds it awake until done (data.md §4)
 - [x] **1f.10** Morning check `ctd-morning-check` (15 minutes after logon or unlock, and 10:30): starts a run that didn't happen, with an alert; reruns a failed one once; alerts on a stuck one (data.md §4)
 - [x] **1f.11** Log archive: each month's entries of `data/morning.log` move to their own file in `data/log_archive/`, for easier search (data.md §4)
