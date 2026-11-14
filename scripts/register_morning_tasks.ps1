@@ -26,6 +26,10 @@
 # The task wakes the PC to run (-WakeToRun; Windows sets the wake timer 30 seconds early, listed by
 # `powercfg /waketimers`) and needs "Allow wake timers" on in the power plan (data.md section 4).
 #
+# Both tasks launch through `conhost.exe --headless`, so no console window opens over the user's work (they run
+# in the interactive session, where a plain powershell.exe action opens a window even with -NonInteractive).
+# Everything they start (python, git, the toast's PowerShell) inherits the hidden console.
+#
 # Remove with: Unregister-ScheduledTask -TaskName ctd-morning; Unregister-ScheduledTask -TaskName ctd-morning-check
 param(
     [string]$At = "09:15",
@@ -51,8 +55,8 @@ $pypath = ". '$repo\scripts\prod_env.ps1'; "
 # rotate_logs.py archives earlier months of the log first, while nothing holds it open; its failure is ignored.
 $rotate = "& '$py' '$repo\scripts\rotate_logs.py' *>> '$repo\data\morning_check.log'; "
 $run = "$utf8$pypath$rotate& '$py' '$repo\scripts\morning.py'$notify *>> '$repo\data\morning.log'; exit `$LASTEXITCODE"
-$action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$run`"" -WorkingDirectory $repo
+$action = New-ScheduledTaskAction -Execute "conhost.exe" `
+    -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$run`"" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At $At
 # -At writes today's UTC offset into the start time, which pins the task to UTC and shifts it an hour at each
 # daylight-saving change; without an offset it stays at local time.
@@ -77,8 +81,8 @@ $unlock.Enabled = $true
 $late = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At "10:30"
 $late.StartBoundary = ([datetime]$late.StartBoundary).ToString("yyyy-MM-ddTHH:mm:ss")  # local time, as above
 $check = "$utf8$pypath& '$py' '$repo\scripts\morning_check.py' *>> '$repo\data\morning_check.log'; exit `$LASTEXITCODE"
-$checkAction = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$check`"" -WorkingDirectory $repo
+$checkAction = New-ScheduledTaskAction -Execute "conhost.exe" `
+    -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$check`"" -WorkingDirectory $repo
 $checkSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-ScheduledTask -TaskName "ctd-morning-check" -Action $checkAction -Trigger $logon, $unlock, $late `
     -Settings $checkSettings -Description "Starts ctd-morning if it hasn't run today; alerts if it's stuck (roadmap 1f.10)" `
