@@ -16,11 +16,12 @@ from pathlib import Path
 from ctd.curve.par import NODES
 from ctd.model.light import LightResult
 
-SCHEMA = 11  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
+SCHEMA = 12  # 2: futures DV01; 3: key-rate DV01s; 4: clusters; 5: ATM vol and distance to switch; 6: profile;
 # 7: repo from the SR1 strip; 8: the delivery window and the carry behind the horizon; 9: inputs read
 # through a derived table are its raw files, each marked with the ``table``; 10: per digital and for the ATM
 # vol, the strikes used that traded that day and those with no open interest (no longer a warning); 11: the
-# horizon from probability-weighted carry (``delivery``: carry, carry_flat, weights, carry_by_bond)
+# horizon from probability-weighted carry (``delivery``: carry, carry_flat, weights, carry_by_bond); 12:
+# ``carry_by_bond`` is each weighted bond's carry (in 11 it held the CTD probabilities, not carry)
 
 
 def light_path(results_dir: Path, contract: str, asof: date) -> Path:

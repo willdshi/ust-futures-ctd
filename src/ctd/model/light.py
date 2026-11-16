@@ -257,7 +257,7 @@ def run(x: LightInputs) -> LightResult:
         by_bond = {c: conv[x.first_delivery][c] - conv[x.last_delivery][c] for c in weights}
         return weighted_carry(weights, conv[x.first_delivery], conv[x.last_delivery]), by_bond
 
-    (c_repo, by_bond), (c_flat, _) = carry(g), carry(g_flat)
+    (c_repo, carry_by_bond), (c_flat, _) = carry(g), carry(g_flat)
     horizon = light_horizon(x.first_delivery, x.last_delivery, c_repo)
     reason = (f"{'positive' if horizon == x.last_delivery else 'negative'} probability-weighted carry, "
               f"{c_repo * 32:+.2f}/32 of converted price from {x.first_delivery} to {x.last_delivery}")
@@ -288,7 +288,7 @@ def run(x: LightInputs) -> LightResult:
     if em_hi - em_lo > EM_WARN_YEARS:
         warnings.append(f"KRDs use interval midpoints of the probabilities; effective maturity could be "
                         f"{em_lo:.2f}–{em_hi:.2f}y")
-    delivery = Delivery(x.first_delivery, x.last_delivery, c_repo, c_flat, weights, by_bond)
+    delivery = Delivery(x.first_delivery, x.last_delivery, c_repo, c_flat, weights, carry_by_bond)
     return LightResult(x.contract, x.asof, x.settle, horizon, reason, delivery, x.sofr, x.sofr_date, repo, x.f_market, e0,
                        x.expiry, df, tuple(rows), tuple(crossovers), probs,
                        dv01.weighted(per, by_bond), per[ctd0], x.face,
