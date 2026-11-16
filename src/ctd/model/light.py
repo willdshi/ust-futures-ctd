@@ -252,7 +252,7 @@ def run(x: LightInputs) -> LightResult:
     stage = at(x.last_delivery)
     weights = krd.point_weights(stage[6].by_bond())
 
-    def carry(g: Growth) -> tuple[float, dict[str, float]]:
+    def carry(g: Growth, weights: dict[str, float] = weights) -> tuple[float, dict[str, float]]:
         conv = {d: {c: fwd(c, d, g) / x.cfs[c] for c in weights} for d in (x.first_delivery, x.last_delivery)}
         by_bond = {c: conv[x.first_delivery][c] - conv[x.last_delivery][c] for c in weights}
         return weighted_carry(weights, conv[x.first_delivery], conv[x.last_delivery]), by_bond
@@ -266,6 +266,13 @@ def run(x: LightInputs) -> LightResult:
         warnings.append(f"carry sign depends on the repo path: flat SOFR would put the horizon on {flat_horizon}")
     if horizon != x.last_delivery:
         stage = at(horizon)
+        # Self-consistency (design 5.2): the probabilities published at the first day should still
+        # give negative carry. If not, neither delivery day is consistent with its own probabilities.
+        c_self, _ = carry(g, krd.point_weights(stage[6].by_bond()))
+        if light_horizon(x.first_delivery, x.last_delivery, c_self) != horizon:
+            warnings.append(f"horizon not self-consistent: the probabilities at {horizon} give positive "
+                            f"weighted carry ({c_self * 32:+.2f}/32), so neither delivery day agrees with "
+                            f"its own probabilities")
     rows, bonds, e0, ctd0, sws, digs, probs = stage
     repo = Repo("sr1" if months else "flat", (g(x.settle, horizon) - 1) * 360 / (horizon - x.settle).days,
                 months, why_flat)

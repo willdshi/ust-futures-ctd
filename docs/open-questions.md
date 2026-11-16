@@ -32,6 +32,16 @@ A contract trades for about a month after its own options expire, and its CTD qu
 - **Needed either way:** the expiry's distribution is on the *next* contract's futures, so it is mapped through that contract's envelope and the betas to the expiring contract's factor. Weakest for ZB, whose two contracts' CTDs can differ most.
 - **To find out:** how often this case arises (negative-carry dates after option expiry), and whether rescaling and deconvolution differ materially there.
 
+### One delivery date, or one per state (design §5.2; roadmap 3.5)
+
+The rule commits the whole basket to one date today, as if the short chose before knowing the CTD. In practice the short chooses in the delivery month, when the CTD is mostly known: early where the CTD's carry is negative, late where it's positive.
+
+- **What it changes:** a short who commits now earns `Σ p_i carry_i`; one who chooses later earns about `Σ p_i max(carry_i, 0)`. The futures then behaves like a mix of horizons, each bond's region at its own best date, not one date.
+- **Where it matters:** baskets whose contenders have opposite carry. ZNZ6 (2026-09-01 to 10-23) is the case: its CTD differs between the two days on 25 of 37 dates. ZBZ6, UBZ6 and TNZ6 have positive carry throughout.
+- **Also left out:** the switch option is worth more at the later date (more variance), which favours the last day beyond carry. The phase-3 rule, comparing expected cheapest converted price at each day, captures this but not the per-state choice.
+- **Options:** (1) keep one date (simple, published as a date); (2) a per-state date: each shifted state priced at its CTD's better day, with a horizon per region; (3) near zero carry, blend or publish both days.
+- **To decide with phase 3:** whether a per-state date moves DV01 and KRDs enough to justify a horizon per region, measured on ZN.
+
 ### Recentring gap: what size means inconsistent inputs (design §5.11, §9)
 
 The gap `F_market − E(0)` absorbs the delivery options (its level) and the timing difference between TreasuryDirect prices and the 2pm CT settlement (most of its daily change, about 1.3bp of yield common to all contracts).

@@ -241,3 +241,18 @@ def test_traded_label():
     assert traded((103.0, 104.0, 105.0), (105.0,)) == "105"
     assert traded((104.0, 105.0), (104.0, 105.0)) == "all"
     assert traded((), ()) == "-"
+
+
+def test_negative_carry_horizon_is_checked_against_its_own_probabilities(monkeypatch):
+    from ctd.model import light
+
+    r = run(inputs(sofr=0.08))  # repo above the 5.5% yields: negative carry
+    assert r.delivery.carry < 0 and r.horizon == date(2026, 12, 1)
+    assert not any("self-consistent" in w for w in r.warnings)
+
+    # the probabilities at the first day giving positive carry: neither day is consistent
+    carries = iter([-0.01, -0.01, 0.01])  # at the strip, at flat SOFR, with the first-day probabilities
+    monkeypatch.setattr(light, "weighted_carry", lambda *a: next(carries))
+    r = run(inputs(sofr=0.08))
+    assert r.horizon == date(2026, 12, 1)
+    assert any("horizon not self-consistent" in w and "+0.32/32" in w for w in r.warnings)
