@@ -254,6 +254,7 @@ CLAUDE.md
   - **Why the strip:** it needs no new data and prices whatever the market expects for the FOMC and the year-end turn, though spread evenly over each month. On 2026-10-21 it gave 4.02% to a 31 December horizon against 3.89% flat (October's remaining days 3.91%, November 3.94%, December 4.11%): carry about 0.02 points lower per bond, the recentring gap about 0.026 points wider, horizon and CTD unchanged, futures DV01 +$40 per $100mm.
 - **Deferred: stepped path (phase 3).** Steps at FOMC decisions, solved month by month, with the year-end spike placed on 31 December. Spread over December, the turn lifts repo to a 31 December horizon by about 1bp, though that day's rate isn't part of that repo. Needs an FOMC calendar in `reference/` (meeting and effective dates from 2016, unscheduled meetings included).
 - Ignore term premium.
+- No convexity adjustment to the SR1 futures: the implied averages are used as forward rates. At these horizons (a few months) the futures-versus-forward bias is likely very small.
 - Sensitivity: a 10bp repo error ≈ 0.013 points on a ZB bond over ~0.2 years (≈0.3bp of crossover); it matters more for the carry sign and so the horizon.
 - Forward clean price at T for each bond from dirty price, term repo and coupons before T; converted to forward yield `y_i^fwd`. Everything is centred on these.
 
