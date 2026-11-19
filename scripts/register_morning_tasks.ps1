@@ -11,9 +11,10 @@
 #                            if the derive succeeded)
 #                         5. scripts\morning_publish.py: commit and push the pages (only if the run succeeded)
 #
-#   ctd-morning-check   15 minutes after logon or unlock, and 10:30 on weekdays: scripts\morning_check.py starts
-#                       ctd-morning if it hasn't run today (with an alert) or, from 10:30, if it failed a step;
-#                       alerts if it has been running for more than 2 hours. Silent otherwise.
+#   ctd-morning-check   15 minutes after logon or unlock, and every 30 minutes from 10:30 to 15:00 on weekdays:
+#                       scripts\morning_check.py starts ctd-morning if it hasn't run today (with an alert) or,
+#                       from 10:30 to 15:00, if it failed a step; alerts if it has been running for more than
+#                       2 hours. Silent otherwise.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\register_morning_tasks.ps1
 #
@@ -68,7 +69,9 @@ Register-ScheduledTask -TaskName "ctd-morning" -Action $action -Trigger $trigger
 "ctd-morning at $At, log data\morning.log"
 
 # The check: logon and unlock (resuming from sleep is an unlock, not a logon), each 15 minutes later so a
-# catch-up run that the wake set off has started; and 10:30, run on wake if the PC was asleep then.
+# catch-up run that the wake set off has started; and every 30 minutes from 10:30 to 15:00 (morning_check.py's
+# retry window), run on wake if the PC was asleep then. A weekly trigger can't take a repetition directly, so it
+# borrows one from a -Once trigger; a 4h45m duration fires 10:30 to 15:00 and not 15:30.
 $user = "$env:USERDOMAIN\$env:USERNAME"
 $logon = New-ScheduledTaskTrigger -AtLogOn -User $user
 $logon.Delay = "PT15M"
@@ -80,6 +83,8 @@ $unlock.Delay = "PT15M"
 $unlock.Enabled = $true
 $late = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $days -At "10:30"
 $late.StartBoundary = ([datetime]$late.StartBoundary).ToString("yyyy-MM-ddTHH:mm:ss")  # local time, as above
+$late.Repetition = (New-ScheduledTaskTrigger -Once -At "10:30" -RepetitionInterval (New-TimeSpan -Minutes 30) `
+    -RepetitionDuration (New-TimeSpan -Hours 4 -Minutes 45)).Repetition
 $check = "$utf8$pypath& '$py' '$repo\scripts\morning_check.py' *>> '$repo\data\morning_check.log'; exit `$LASTEXITCODE"
 $checkAction = New-ScheduledTaskAction -Execute "conhost.exe" `
     -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `"$check`"" -WorkingDirectory $repo
@@ -87,4 +92,4 @@ $checkSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTime
 Register-ScheduledTask -TaskName "ctd-morning-check" -Action $checkAction -Trigger $logon, $unlock, $late `
     -Settings $checkSettings -Description "Starts ctd-morning if it hasn't run today; alerts if it's stuck (roadmap 1f.10)" `
     -Force | Out-Null
-"ctd-morning-check after logon and unlock (+15 min) and at 10:30, log data\morning_check.log"
+"ctd-morning-check after logon and unlock (+15 min) and every 30 min from 10:30 to 15:00, log data\morning_check.log"

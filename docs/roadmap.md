@@ -78,7 +78,7 @@ What's built and what's next. One line per item, ticked in the commit that finis
 - [x] **1f.6** Robustness: tasks run from a `main` worktree, so half-edited code on `dev` is never run (data.md §4)
 - [ ] **1f.15** Widen `--catch-up` from 5 to 10 business days, so a week away fills itself in (data.md §4)
 - [x] **1f.9** The morning task wakes the PC to run (`-WakeToRun`) and holds it awake until done (data.md §4)
-- [x] **1f.10** Morning check `ctd-morning-check` (15 minutes after logon or unlock, and 10:30): starts a run that didn't happen, with an alert; reruns a failed one once; alerts on a stuck one (data.md §4)
+- [x] **1f.10** Morning check `ctd-morning-check` (15 minutes after logon or unlock, and every 30 minutes from 10:30 to 15:00): starts a run that didn't happen, with an alert; reruns a failed one each half hour until 15:00; alerts on a stuck one (data.md §4)
 - [x] **1f.11** Log archive: each month's entries of `data/morning.log` move to their own file in `data/log_archive/`, for easier search (data.md §4)
 - [ ] **1f.12** Pre-publish sanity check, before publishing is automated or soon after: hold the day's publish and send an alert instead if the model run printed warnings (e.g. SOFR fell back to the previous day) or a DV01 moved by more than a set threshold from the previous day. A held day is released by hand. Thresholds to be chosen
 - [x] **1f.7** `scripts/morning_publish.py`: commit and push the pages to `gh-pages` from its own worktree, as the last morning step; production results and pages kept apart from development's (data.md §4)

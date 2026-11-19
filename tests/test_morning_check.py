@@ -1,5 +1,5 @@
-"""The morning check (data.md §4): it starts a run that didn't happen, retries a failed one once, and
-alerts on a run that never finished."""
+"""The morning check (data.md §4): it starts a run that didn't happen, retries a failed one every half hour
+until 15:00, and alerts on a run that never finished."""
 
 import sys
 from datetime import datetime
@@ -36,13 +36,29 @@ def test_a_run_in_progress_is_left_alone_until_past_the_time_limit():
     assert action is None and "10:06 and hasn't finished" in message
 
 
-def test_a_failed_run_is_retried_once_from_10_30_without_an_alert():
+def after_start(at: str) -> dict:
+    return {"started": True, "last_start": at, "alerted": []}
+
+
+def test_a_failed_run_is_retried_every_half_hour_from_10_30_to_15_00_without_an_alert():
     failed = run("2026-10-29T09:15:02", "2026-10-29T09:30:00", ["derive (exit 1)"])
     assert decide(datetime(2026, 10, 29, 10, 0), failed, FRESH, True) == (None, None)
-    assert decide(datetime(2026, 10, 29, 10, 30), failed, FRESH, True) == ("start", None)
-    assert decide(datetime(2026, 10, 29, 11, 0), failed, {"started": True, "alerted": []}, True) == (None, None)
+    assert decide(datetime(2026, 10, 29, 10, 30, 4), failed, FRESH, True) == ("start", None)
+    # the next half-hourly check retries, though it fires a few seconds less than 30 minutes later
+    assert decide(datetime(2026, 10, 29, 11, 0, 1), failed, after_start("2026-10-29T10:30:04"), True) == ("start", None)
+    # an unlock between the half-hourly checks doesn't add a retry
+    assert decide(datetime(2026, 10, 29, 10, 45), failed, after_start("2026-10-29T10:30:04"), True) == (None, None)
+    # 15:00 is the last retry; none after it
+    assert decide(datetime(2026, 10, 29, 15, 0, 3), failed, after_start("2026-10-29T14:30:02"), True) == ("start", None)
+    assert decide(datetime(2026, 10, 29, 15, 30), failed, after_start("2026-10-29T15:00:03"), True) == (None, None)
+    assert decide(datetime(2026, 10, 29, 15, 20), failed, FRESH, True) == (None, None)
     ok = run("2026-10-29T09:15:02", "2026-10-29T09:33:00")
     assert decide(datetime(2026, 10, 29, 10, 30), ok, FRESH, True) == (None, None)
+
+
+def test_a_record_from_before_last_start_was_kept_still_allows_a_retry():
+    failed = run("2026-10-29T09:15:02", "2026-10-29T09:30:00", ["derive (exit 1)"])
+    assert decide(datetime(2026, 10, 29, 11, 0), failed, {"started": True, "alerted": []}, True) == ("start", None)
 
 
 def test_the_run_record_round_trips(tmp_path):
